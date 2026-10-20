@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    background-color: #0f172a;
+    color: #f1f5f9;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #1e293b; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+    background-color: #0ea5e9;
+  }
+  .btn-primary:hover:not(:disabled) { background-color: #0284c7; }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 text-slate-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+    background-color: #334155;
+  }
+  .btn-secondary:hover:not(:disabled) { background-color: #475569; }
+
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+    background-color: #e11d48;
+  }
+  .btn-danger:hover:not(:disabled) { background-color: #be123c; }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 text-slate-400 text-sm font-medium rounded-lg transition-colors;
+  }
+  .btn-ghost:hover { color: #e2e8f0; background-color: #334155; }
+
+  .card {
+    @apply rounded-xl border border-slate-700;
+    background-color: #1e293b;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 border rounded-lg text-sm text-slate-200 placeholder-slate-500 transition-all;
+    background-color: #0f172a;
+    border-color: #334155;
+  }
+  .input:focus { outline: none; ring: 2px solid #0ea5e9; border-color: #0ea5e9; }
+
+  .section-title {
+    @apply text-xs font-semibold text-slate-400 uppercase tracking-wider;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+}

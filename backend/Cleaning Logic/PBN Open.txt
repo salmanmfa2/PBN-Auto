@@ -1,0 +1,16 @@
+Auto Clean Logic (PBN Open) :
+
+Delete :
+Col 1,2,5-10,13,28, 31,32,33,45,46,48,49,50,51
+
+Rename :
+Col 36 -> MKerja Unit Eselon II (Th)
+Col 37 -> MKerja Unit Eselon II (Bl)
+Col 39 -> MKerja Unit Eselon III (Th)
+Col 40 -> MKerja Unit Eselon III (Bl)
+Col 42 -> MKerja Unit Eselon IV (Th)
+Col 43 -> MKerja Unit Eselon IV (Bl)
+Col 52 -> MKerja Golongan (Th)
+Col 53 -> MKerja Golongan (Bl)
+Col 54 -> MKerja Seluruhnya (Th)
+Col 55 -> MKerja Seluruhnya (Bl)

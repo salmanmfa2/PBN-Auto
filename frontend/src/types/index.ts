@@ -1,0 +1,143 @@
+// ─── Dataset Types ─────────────────────────────────────────────────────────
+
+export interface SheetPreview {
+  name: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  row_count: number;
+  column_count: number;
+}
+
+export interface DatasetPreview {
+  dataset_id: string;
+  selected_sheet: string;
+  sheets: SheetPreview[];
+  columns: string[];
+  rows: Record<string, unknown>[];
+  row_count: number;
+  column_count: number;
+}
+
+export interface StoredDatasetRun {
+  dataset_id: string;
+  run_name: string;
+  original_filename: string;
+  latest_version: number;
+  updated_at: string;
+}
+
+export interface PbnDashboardFilters {
+  age_min?: number;
+  age_max?: number;
+  tenure_min?: number;
+  tenure_max?: number;
+  eselon: string[];
+  education: string[];
+  region: string[];
+  unit: string[];
+  rumpun: string[];
+}
+
+export interface PbnDashboardCount {
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface PbnDashboardResponse {
+  dataset_id: string;
+  sheet_name: string;
+  total_employees: number;
+  sex_distribution: PbnDashboardCount[];
+  age_group_distribution: PbnDashboardCount[];
+  region_distribution: PbnDashboardCount[];
+  education_level_distribution: PbnDashboardCount[];
+  education_group_distribution: PbnDashboardCount[];
+  unit_distribution: PbnDashboardCount[];
+  religion_distribution: PbnDashboardCount[];
+  available_filters: {
+    age: { min: number; max: number };
+    tenure: { min: number; max: number };
+    eselon: string[];
+    education: string[];
+    region: string[];
+    unit: string[];
+    rumpun: string[];
+  };
+}
+
+export interface PbnDashboardPeopleResponse {
+  dataset_id: string;
+  sheet_name: string;
+  people: Array<{
+    index: number;
+    Nama: string | null;
+    Eselon: string | null;
+    Jabatan: string | null;
+    'Pendidikan Terakhir (Th.)': string | null;
+    Jurusan: string | null;
+    'Universitas/Sekolah Tinggi': string | null;
+  }>;
+}
+
+export interface RemoveDuplicatesResponse {
+  dataset_id: string;
+  original_rows: number;
+  removed_rows: number;
+  remaining_rows: number;
+  preview: DatasetPreview;
+}
+
+// ─── API Payloads ───────────────────────────────────────────────────────────
+
+export interface RemoveColumnsPayload {
+  dataset_id: string;
+  columns_to_keep: string[];
+  sheet_name?: string;
+}
+
+export interface RenameColumnsPayload {
+  dataset_id: string;
+  rename_map: Record<string, string>;
+  sheet_name?: string;
+}
+
+export interface RemoveDuplicatesPayload {
+  dataset_id: string;
+  columns: string[];
+  sheet_name?: string;
+}
+
+export interface DeleteRowsPayload {
+  dataset_id: string;
+  mode: 'first' | 'last' | 'custom';
+  count?: number;
+  row?: number;
+  sheet_name?: string;
+}
+
+export interface UseFirstRowAsHeaderPayload {
+  dataset_id: string;
+  sheet_name?: string;
+}
+
+export interface AutoCleanPayload {
+  dataset_id: string;
+  mode: string;
+  sheet_name?: string;
+}
+
+// ─── UI State ───────────────────────────────────────────────────────────────
+
+export type AppStatus =
+  | 'idle'
+  | 'uploading'
+  | 'ready'
+  | 'cleaning'
+  | 'error';
+
+export interface ColumnRenameEntry {
+  original: string;
+  current: string;
+  renamed: string;
+}

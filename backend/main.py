@@ -1,0 +1,77 @@
+"""
+Excel Data Cleaner - FastAPI Backend
+"""
+
+import json
+import os
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+from app.api import auth, cleaning, dataset, stored_datasets, upload
+from app.db import init_db
+from app.history_db import init_history_db
+
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+
+def _load_config() -> dict:
+    config_path = Path(__file__).resolve().parents[1] / "config.json"
+    if config_path.exists():
+        with config_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    return {}
+
+
+CONFIG = _load_config()
+
+
+def _get_cors_origins() -> list[str]:
+    configured = CONFIG.get("cors_origins", [])
+    if configured:
+        return [origin.strip() for origin in configured if origin.strip()]
+
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+HOST = os.getenv("APP_HOST", "0.0.0.0")
+PORT = int(os.getenv("APP_PORT", str(CONFIG.get("backend_port", 8000))))
+CORS_ORIGINS = _get_cors_origins()
+
+app = FastAPI(
+    title="Excel Data Cleaner API",
+    description="Upload, clean, and export Excel/CSV datasets",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()
+    init_history_db()
+
+
+app.include_router(auth.router)
+app.include_router(auth.admin_router)
+app.include_router(upload.router, tags=["upload"])
+app.include_router(cleaning.router)
+app.include_router(dataset.router)
+app.include_router(stored_datasets.router)
+
+
+@app.get("/health", tags=["health"])
+def health():
+    return {"status": "ok"}

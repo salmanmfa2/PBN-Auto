@@ -1,0 +1,25 @@
+Auto Clean Logic (Sitasi Es.IV) :
+
+Skiprows : 7
+
+Delete Column : 6,7,11,12,13,15
+
+Rows to be Deletd  : if Null in Column 2
+
+
+Rename (In case it is broken when Loaded) :
+Col 1 -> No
+Col 2 -> Nama/NIP
+Col 3 -> Usia
+Col 4 -> Pangkat/Gol/TMT
+Col 5 -> Jabatan Lama
+Col 6 -> (To Be Deleted)
+Col 7 -> (To Be Deleted)
+Col 8 -> TMT Jabatan Lama
+Col 9 -> Tour of Area
+Col 10 -> Jabatan Baru
+Col 11 -> (To Be Deleted)
+Col 12 -> (To Be Deleted)
+Col 13 -> (To Be Deleted)
+Col 14 -> Pertimbangan
+Col 15 -> (To Be Deleted)
