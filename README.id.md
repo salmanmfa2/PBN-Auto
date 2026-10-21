@@ -167,9 +167,20 @@ VITE_API_URL=http://localhost:8000
 | `POST` | `/clean/rename-columns` | Mengganti nama kolom |
 | `POST` | `/clean/remove-duplicates` | Menghapus baris duplikat |
 | `GET` | `/clean/history/{id}` | Mengambil riwayat pembersihan dataset |
+| `GET` | `/clean/recommend-method/{dataset_id}?sheet_name=Sheet1` | Merekomendasikan metode pembersihan dengan membandingkan sheet unggahan terhadap template verifikasi |
 | `GET` | `/dataset/{id}` | Mengambil pratinjau dataset saat ini |
 | `GET` | `/export/csv/{id}` | Mengunduh data sebagai CSV |
 | `GET` | `/export/excel/{id}` | Mengunduh data sebagai Excel |
+
+### Sitasi Es.III (Lite)
+
+`Sitasi Es.III (Lite)` menggunakan aturan pembersihan dan tata letak profil PowerPoint yang sama dengan `Sitasi Es.III`, tetapi mempertahankan baris yang kolom keduanya kosong. Saat dataset Lite yang sudah dibersihkan diekspor ke Excel, baris judul bagian (teks pada `No` dan kolom lainnya kosong) akan digabung melintang. Ekspor CSV dan pratinjau aplikasi tetap menampilkan teks judul di `No` dengan sel lainnya kosong; CSV tidak mendukung format sel gabungan. Mode `Sitasi Es.III` standar tidak berubah.
+
+Pembersihan Sitasi Es.III mengubah `Keterangan` menjadi proper case setelah enam karakter pertamanya dihapus. Pembersihan Sitasi Es.IV mengubah `Pertimbangan` menjadi proper case. Proper case menjadikan huruf pertama setiap kata sebagai huruf kapital; nilai yang kosong tetap kosong.
+
+### Rekomendasi metode pembersihan
+
+Setelah unggahan, aplikasi membandingkan sheet terpilih dengan workbook referensi di `backend/templates/verification/` dan menyorot metode yang direkomendasikan untuk template PBN Open, PBN Open + Edu + HB, Sitasi Es.III, dan Sitasi Es.IV yang tersedia. Rekomendasi tidak menjalankan pembersihan secara otomatis. PBN Open + Edu dan Sitasi Es.III (Lite) belum memiliki template verifikasi tersendiri sehingga tidak direkomendasikan secara otomatis.
 
 ## Pengaturan MySQL (Riwayat Pembersihan)
 

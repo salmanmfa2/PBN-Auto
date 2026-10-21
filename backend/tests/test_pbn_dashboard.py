@@ -9,6 +9,20 @@ from app.services.pbn_dashboard_service import build_pbn_dashboard, get_pbn_dash
 from app.storage.dataset_store import DatasetStore
 
 
+class PbnDashboardRouteTests(unittest.TestCase):
+    def test_dashboard_endpoints_are_registered(self) -> None:
+        from main import app
+
+        registered_routes = {
+            (route.path, method)
+            for route in app.routes
+            for method in getattr(route, "methods", set())
+        }
+
+        self.assertIn(("/insights/pbn/dashboard/{dataset_id}", "POST"), registered_routes)
+        self.assertIn(("/insights/pbn/dashboard/{dataset_id}/people", "POST"), registered_routes)
+
+
 class PbnDashboardTests(unittest.TestCase):
     def setUp(self) -> None:
         self.dataset_id = DatasetStore.save({

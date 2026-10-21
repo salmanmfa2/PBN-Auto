@@ -17,8 +17,24 @@ from app.schemas.dataset import (
     AutoCleanRequest,
 )
 from app.schemas.history import CleaningHistoryRead
+from app.schemas.dataset import CleaningMethodRecommendation
+from app.services import cleaning_recommendation_service
 
 router = APIRouter(prefix="/clean", tags=["cleaning"])
+
+
+@router.get(
+    "/recommend-method/{dataset_id}",
+    response_model=CleaningMethodRecommendation,
+)
+def recommend_cleaning_method(dataset_id: str, sheet_name: str | None = None):
+    try:
+        return cleaning_recommendation_service.recommend_dataset_cleaning_method(
+            dataset_id,
+            sheet_name,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
 
 
 def _handle_key_error(exc: KeyError):

@@ -57,6 +57,15 @@ class AutoCleanRequest(BaseModel):
     sheet_name: Optional[str] = None
 
 
+class CleaningMethodRecommendation(BaseModel):
+    dataset_id: str
+    sheet_name: str
+    recommended_mode: Optional[str] = None
+    template_name: Optional[str] = None
+    confidence: str
+    reason: str
+
+
 class RemoveDuplicatesResponse(BaseModel):
     dataset_id: str
     original_rows: int

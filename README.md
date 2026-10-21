@@ -167,9 +167,20 @@ VITE_API_URL=http://localhost:8000
 | `POST` | `/clean/rename-columns` | Rename columns |
 | `POST` | `/clean/remove-duplicates` | Remove duplicate rows |
 | `GET` | `/clean/history/{id}` | Fetch cleaning history entries for a dataset |
+| `GET` | `/clean/recommend-method/{dataset_id}?sheet_name=Sheet1` | Recommend a cleaning method by comparing the uploaded sheet with verification templates |
 | `GET` | `/dataset/{id}` | Fetch current dataset preview |
 | `GET` | `/export/csv/{id}` | Download as CSV |
 | `GET` | `/export/excel/{id}` | Download as Excel |
+
+### Sitasi Es.III (Lite)
+
+`Sitasi Es.III (Lite)` uses the same cleaning rules and PowerPoint profile layout as `Sitasi Es.III`, but keeps rows whose second column is empty instead of deleting them. When exporting a cleaned Lite dataset to Excel, section-heading rows (text in `No` and empty values in the remaining columns) are merged across the row. CSV exports and the in-app preview keep the heading text in `No` with other cells blank; CSV has no merged-cell formatting. The standard `Sitasi Es.III` mode is unchanged.
+
+Sitasi Es.III cleaning sets `Keterangan` to proper case after removing its first six characters. Sitasi Es.IV cleaning sets `Pertimbangan` to proper case. Proper case capitalizes the first letter of each word; missing values remain missing.
+
+### Cleaning method recommendation
+
+After upload, the app compares the selected sheet with reference workbooks in `backend/templates/verification/` and highlights a recommended method for the available PBN Open, PBN Open + Edu + HB, Sitasi Es.III, and Sitasi Es.IV templates. The recommendation never runs cleaning automatically. PBN Open + Edu and Sitasi Es.III (Lite) do not have separate verification templates, so they are not automatically recommended.
 
 ## MySQL Setup (Cleaning History)
 

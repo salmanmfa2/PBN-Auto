@@ -18,6 +18,7 @@ export default function AnalyticsPage() {
     applyRemoveColumns, applyRenameColumns, applyRemoveDuplicates, deleteRows,
     useFirstRowAsHeader, applyAutoClean, selectSheet,
     runName, setRunName, activeAutoCleanMode, storedRuns, isLoadingHistory, historyError,
+    cleaningRecommendation, recommendationStatus, recommendationError,
   } = useDataset();
 
   const [firstCount, setFirstCount] = useState('');
@@ -26,6 +27,15 @@ export default function AnalyticsPage() {
   const [autoCleanMode, setAutoCleanMode] = useState('PBN Open');
   const [activeGuide, setActiveGuide] = useState<'pbn' | 'sitasi' | null>(null);
   const [tableFilters, setTableFilters] = useState<Record<string, string[]>>({});
+  const autoCleanOptions = [
+    'PBN Open',
+    'PBN Open + Edu',
+    'PBN Open + Edu + HB',
+    'Sitasi Pelaksana',
+    'Sitasi Es.IV',
+    'Sitasi Es.III',
+    'Sitasi Es.III (Lite)',
+  ];
 
   const handleDownloadCsv = () => {
     if (!preview) return;
@@ -44,7 +54,7 @@ export default function AnalyticsPage() {
 
   const isBusy = status === 'uploading' || status === 'cleaning';
   const hasData = !!preview;
-  const canDownloadProfiles = activeAutoCleanMode === 'Sitasi Es.III' || activeAutoCleanMode === 'Sitasi Es.IV';
+  const canDownloadProfiles = activeAutoCleanMode === 'Sitasi Es.III' || activeAutoCleanMode === 'Sitasi Es.III (Lite)' || activeAutoCleanMode === 'Sitasi Es.IV';
 
   const handleColumnFilter = (column: string, values: string[]) => {
     setTableFilters((prev) => ({ ...prev, [column]: values }));
@@ -190,21 +200,58 @@ export default function AnalyticsPage() {
             {hasData && (
               <section className="card p-4">
                 <p className="section-title mb-3">Auto Clean</p>
+                {recommendationStatus === 'checking' && (
+                  <p className="mb-3 rounded-lg border border-slate-700 bg-surface-900 px-3 py-2 text-xs text-slate-400">
+                    Checking the uploaded sheet against available cleaning templates…
+                  </p>
+                )}
+                {recommendationStatus === 'error' && (
+                  <p role="alert" className="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+                    Could not verify the cleaning format: {recommendationError}
+                  </p>
+                )}
+                {recommendationStatus === 'done' && cleaningRecommendation && (
+                  <div className="mb-3 rounded-lg border border-sky-500/40 bg-sky-500/10 p-3">
+                    {cleaningRecommendation.recommended_mode ? (
+                      <>
+                        <p className="text-xs font-semibold text-sky-200">
+                          Recommended method: {cleaningRecommendation.recommended_mode}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">{cleaningRecommendation.reason}</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const mode = cleaningRecommendation.recommended_mode;
+                            if (mode) setAutoCleanMode(mode);
+                          }}
+                          className="mt-2 rounded-md bg-sky-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-sky-400"
+                        >
+                          Select recommendation
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-semibold text-amber-200">No unique method recommendation</p>
+                        <p className="mt-1 text-xs text-slate-400">{cleaningRecommendation.reason}</p>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <select
                     value={autoCleanMode}
                     onChange={(e) => setAutoCleanMode(e.target.value)}
                     className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
                   >
-                    {['PBN Open','PBN Open + Edu','PBN Open + Edu + HB' ,'Sitasi Pelaksana', 'Sitasi Es.IV', 'Sitasi Es.III'].map((option) => (
+                    {autoCleanOptions.map((option) => (
                       <option key={option} value={option} className="bg-slate-950 text-slate-100">
-                        {option}
+                        {option}{cleaningRecommendation?.recommended_mode === option ? ' (Recommended)' : ''}
                       </option>
                     ))}
                   </select>
                   <button
                     type="button"
-                    disabled={isBusy || !['PBN Open', 'PBN Open + Edu', 'PBN Open + Edu + HB', 'Sitasi Es.IV', 'Sitasi Es.III'].includes(autoCleanMode)}
+                    disabled={isBusy || !['PBN Open', 'PBN Open + Edu', 'PBN Open + Edu + HB', 'Sitasi Es.IV', 'Sitasi Es.III', 'Sitasi Es.III (Lite)'].includes(autoCleanMode)}
                     onClick={() => applyAutoClean(autoCleanMode)}
                     className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-brand-500 text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -431,7 +478,7 @@ export default function AnalyticsPage() {
                 <li>Buka file dan pilih <strong>Save As</strong> dengan format <strong>.xlsx</strong>, tanpa mengubah apa pun.</li>
                 <li>Masuk ke <strong>Aplikasi PBN Cleaner</strong>.</li>
                 <li>Upload file yang disimpan pada tahap 2.</li>
-                <li>Pilih Cleaning Method (<strong>Sitasi Es.III</strong>/<strong>Sitasi Es.IV</strong>) sesuai kebutuhan.</li>
+                <li>Pilih Cleaning Method (<strong>Sitasi Es.III</strong>/<strong>Sitasi Es.III (Lite)</strong>/<strong>Sitasi Es.IV</strong>) sesuai kebutuhan.</li>
                 <li>Pilih tombol <strong>Download Profiles PPTX</strong> di bawah.</li>
               </ol>
             )}

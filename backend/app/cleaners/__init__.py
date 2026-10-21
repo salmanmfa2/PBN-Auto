@@ -22,6 +22,7 @@ CLEANER_MODULES = {
     "PBN Open + Edu + HB": "pbn_edu_hb",
     "Sitasi Es.IV": "sitasi_esiv",
     "Sitasi Es.III": "sitasi_esiii",
+    "Sitasi Es.III (Lite)": "sitasi_esiii_lite",
 }
 
 

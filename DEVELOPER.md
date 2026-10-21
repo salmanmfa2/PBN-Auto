@@ -26,6 +26,8 @@ This file helps new contributors (especially juniors) understand where to make c
   - `main.py` — app entrypoint and router registration.
   - `run_server.py` — Uvicorn launcher with dynamic port detection (finds free port starting from 8000).
   - `app/api/cleaning.py` — cleaning endpoints (apply auto-clean, remove columns, rename, remove duplicates, delete rows, header actions).
+  - `app/services/cleaning_recommendation_service.py` — compares an uploaded sheet with the verification workbooks and returns a recommendation without modifying the dataset.
+  - `templates/verification/` — source-format workbooks used by cleaning-method recommendation.
   - `app/api/insights.py` — PBN dashboard endpoint; filter requests return recalculated full-dataset aggregates.
   - `app/services/dataset_service.py` — core DataFrame logic. Routes to programmatic cleaners or parses legacy text rule files.
   - `app/services/pbn_dashboard_service.py` — validates cleaned dashboard columns, applies filters, calculates employee totals and chart distributions.
@@ -69,6 +71,15 @@ This file helps new contributors (especially juniors) understand where to make c
   5. Test by uploading a file and selecting your new mode from the dropdown.
   
   **Legacy text-file option:** If you prefer, add a rule file in `backend/Cleaning Logic/` and map it in `backend/app/services/dataset_service.py` via `_load_auto_clean_rules()`. Programmatic cleaners are preferred for clarity and performance.
+
+- `Sitasi Es.III (Lite)` reuses the standard Es.III cleaning rules and PowerPoint template, but sets `delete_rows_null_columns` to an empty list so rows with a null value in column 2 are retained. Keep its category detection and six-character `Keterangan` prefix removal aligned with the standard mode.
+- Excel export merges Lite rows where `No` contains a non-numeric section heading and every other value is blank. This is controlled by the `sitasi_esiii_lite` DataFrame attribute set during that mode's cleaning; CSV and in-app preview remain ordinary cell data, and standard Es.III exports are not merged.
+- Sitasi Es.III and Lite apply `_to_proper_case` to `Keterangan` after removing the first six characters. Sitasi Es.IV applies the same helper to `Pertimbangan` after resolving/renaming the source column. The helper leaves non-string and missing values unchanged.
+
+**Cleaning method recommendation**
+- `GET /clean/recommend-method/{dataset_id}?sheet_name=...` compares a sheet to the available workbooks under `backend/templates/verification/`.
+- PBN workbooks share the same headers, so the recommender also compares non-empty data patterns in the additional Homebase/Education columns. Sitasi templates are distinguished by the positions of their table headers.
+- The recommender only returns a suggested method; it does not apply cleaning. PBN Open + Edu and Sitasi Es.III (Lite) currently have no distinct verification workbook and are not automatically suggested.
 
 **PowerPoint export templates**
 - PPT generation is handled in `backend/app/services/powerpoint_service.py`.

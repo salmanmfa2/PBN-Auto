@@ -1,8 +1,10 @@
 import unittest
+from io import BytesIO
 
 import pandas as pd
+from openpyxl import load_workbook
 
-from app.services.dataset_service import add_sitasi_category, apply_auto_clean
+from app.services.dataset_service import add_sitasi_category, apply_auto_clean, export_excel
 from app.storage.dataset_store import DatasetStore
 
 
@@ -48,6 +50,82 @@ class SitasiCategoryTests(unittest.TestCase):
         )
         self.assertEqual([row["Nama/NIP"] for row in result["rows"]], ["Staff A", "Staff B", "Staff C"])
 
+    def test_esiii_sets_keterangan_to_proper_case_after_ignoring_prefix(self) -> None:
+        columns = [f"Column {index}" for index in range(1, 20)]
+        rows = [
+            [f"header-{column}" for column in range(1, 20)]
+            for _ in range(2)
+        ]
+        rows.extend([
+            ["1", "Staff A", "age", "x", "x", "x", "x", "x", "Role A", "2", "3", "Area A", "Duty A", "Role B", "x", "123456MUTASI PEGAWAI ANTAR UNIT", "x", "x", "x"],
+            ["2", "Staff B", "age", "x", "x", "x", "x", "x", "Role B", "2", "3", "Area B", "Duty B", "Role C", "x", "abcdefpromosi JABATAN BARU", "x", "x", "x"],
+        ])
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
+
+        result = apply_auto_clean(dataset_id, "Sitasi Es.III", "Data")
+
+        self.assertEqual(
+            [row["Keterangan"] for row in result["rows"]],
+            ["Mutasi Pegawai Antar Unit", "Promosi Jabatan Baru"],
+        )
+
+    def test_esiii_lite_preserves_rows_with_null_name_and_applies_same_cleaning(self) -> None:
+        columns = [f"Column {index}" for index in range(1, 20)]
+        rows = [
+            [f"header-{column}" for column in range(1, 20)]
+            for _ in range(2)
+        ]
+        rows.extend([
+            ["1", "Staff A", "age", "x", "x", "x", "x", "x", "Role A", "2", "3", "Area A", "Duty A", "Role B", "x", "123456Mutasi", "x", "x", "x"],
+            ["2", None, "age", "x", "x", "x", "x", "x", "Role B", "2", "3", "Area B", "Duty B", "Role C", "x", "abcdefPromosi", "x", "x", "x"],
+        ])
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
+
+        result = apply_auto_clean(dataset_id, "Sitasi Es.III (Lite)", "Data")
+
+        self.assertEqual(result["row_count"], 2)
+        self.assertEqual([row["Keterangan"] for row in result["rows"]], ["Mutasi", "Promosi"])
+        self.assertEqual([row["Kategori"] for row in result["rows"]], ["Mutasi", "Promosi"])
+        self.assertEqual([row["Nama/NIP"] for row in result["rows"]], ["Staff A", None])
+
+    def test_esiii_lite_excel_export_merges_section_heading_rows(self) -> None:
+        columns = [f"Column {index}" for index in range(1, 20)]
+        rows = [
+            [f"header-{column}" for column in range(1, 20)]
+            for _ in range(2)
+        ]
+        rows.extend([
+            ["A. Direktorat Pelaksanaan Anggaran"] + [None] * 18,
+            ["1", "Staff A", "age", "x", "x", "x", "x", "x", "Role A", "2", "3", "Area A", "Duty A", "Role B", "x", "123456Mutasi", "x", "x", "x"],
+        ])
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
+
+        apply_auto_clean(dataset_id, "Sitasi Es.III (Lite)", "Data")
+        output = export_excel(dataset_id, "Data")
+        workbook = load_workbook(BytesIO(output))
+
+        self.assertIn("A2:M2", {str(cell_range) for cell_range in workbook["Data"].merged_cells.ranges})
+        self.assertEqual(workbook["Data"]["A2"].value, "A. Direktorat Pelaksanaan Anggaran")
+        self.assertEqual(workbook["Data"]["A3"].value, "1")
+
+    def test_standard_esiii_excel_export_does_not_merge_section_heading_rows(self) -> None:
+        columns = [f"Column {index}" for index in range(1, 20)]
+        rows = [
+            [f"header-{column}" for column in range(1, 20)]
+            for _ in range(2)
+        ]
+        rows.extend([
+            ["A. Direktorat Pelaksanaan Anggaran"] + [None] * 18,
+            ["1", "Staff A", "age", "x", "x", "x", "x", "x", "Role A", "2", "3", "Area A", "Duty A", "Role B", "x", "123456Mutasi", "x", "x", "x"],
+        ])
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
+
+        apply_auto_clean(dataset_id, "Sitasi Es.III", "Data")
+        output = export_excel(dataset_id, "Data")
+        workbook = load_workbook(BytesIO(output))
+
+        self.assertEqual(list(workbook["Data"].merged_cells.ranges), [])
+
     def test_esiv_uses_pertimbangan_and_skips_first_seven_rows(self) -> None:
         columns = [f"Column {index}" for index in range(1, 16)]
         rows = [[f"ignored-{row}-{column}" for column in range(1, 16)] for row in range(7)]
@@ -61,10 +139,31 @@ class SitasiCategoryTests(unittest.TestCase):
         result = apply_auto_clean(dataset_id, "Sitasi Es.IV", "Data")
 
         self.assertEqual(result["row_count"], 3)
-        self.assertEqual([row["Pertimbangan"] for row in result["rows"]], ["Mutasi", "Promosi", "Mutasi dan Promosi"])
+        self.assertEqual([row["Pertimbangan"] for row in result["rows"]], ["Mutasi", "Promosi", "Mutasi Dan Promosi"])
         self.assertEqual([row["Kategori"] for row in result["rows"]], ["Mutasi", "Promosi", "Mutasi"])
         self.assertNotIn("Column 15", result["columns"])
         self.assertIn("Pertimbangan", result["columns"])
+
+    def test_esiv_sets_pertimbangan_to_proper_case(self) -> None:
+        columns = [f"Column {index}" for index in range(1, 16)]
+        rows = [[f"ignored-{row}-{column}" for column in range(1, 16)] for row in range(7)]
+        rows.extend([
+            ["10", "Staff A", "40", "IV/a", "Role A", "discard", "discard", "2020", "Area A", "Role B", "x", "x", "x", "MUTASI PEGAWAI ANTAR UNIT", "discard"],
+            ["11", "Staff B", "41", "IV/b", "Role C", "discard", "discard", "2021", "Area B", "Role D", "x", "x", "x", "promosi JABATAN BARU", "discard"],
+            ["12", "Staff C", "42", "IV/c", "Role E", "discard", "discard", "2022", "Area C", "Role F", "x", "x", "x", None, "discard"],
+        ])
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
+
+        result = apply_auto_clean(dataset_id, "Sitasi Es.IV", "Data")
+
+        self.assertEqual(
+            [row["Pertimbangan"] for row in result["rows"]],
+            ["Mutasi Pegawai Antar Unit", "Promosi Jabatan Baru", None],
+        )
+        self.assertEqual(
+            [row["Kategori"] for row in result["rows"]],
+            ["Mutasi", "Promosi", ""],
+        )
 
     def test_esiv_preserves_pertimbangan_when_header_is_in_position_15(self) -> None:
         columns = [f"Column {index}" for index in range(1, 16)]

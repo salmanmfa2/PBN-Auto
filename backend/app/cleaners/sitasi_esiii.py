@@ -1,6 +1,5 @@
 from typing import Dict, List
 
-
 def get_rules() -> Dict:
     # Rules ported from `Cleaning Logic/Sitasi EsIII.txt`
     return {

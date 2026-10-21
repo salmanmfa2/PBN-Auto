@@ -1,5 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
-import type { DatasetPreview, AppStatus, StoredDatasetRun } from '../types';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import type {
+  DatasetPreview,
+  AppStatus,
+  CleaningMethodRecommendation,
+  StoredDatasetRun,
+} from '../types';
 import * as api from '../services/api';
 
 export function useDataset() {
@@ -17,6 +22,29 @@ export function useDataset() {
   const [storedRuns, setStoredRuns] = useState<StoredDatasetRun[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [cleaningRecommendation, setCleaningRecommendation] = useState<CleaningMethodRecommendation | null>(null);
+  const [recommendationStatus, setRecommendationStatus] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const recommendationRequestId = useRef(0);
+
+  const checkCleaningRecommendation = useCallback(async (datasetId: string, sheetName: string) => {
+    const requestId = ++recommendationRequestId.current;
+    setCleaningRecommendation(null);
+    setRecommendationError(null);
+    setRecommendationStatus('checking');
+    try {
+      const result = await api.recommendCleaningMethod(datasetId, sheetName);
+      if (requestId === recommendationRequestId.current) {
+        setCleaningRecommendation(result);
+        setRecommendationStatus('done');
+      }
+    } catch (err) {
+      if (requestId === recommendationRequestId.current) {
+        setRecommendationError((err as Error).message);
+        setRecommendationStatus('error');
+      }
+    }
+  }, []);
 
   const refreshStoredRuns = useCallback(async () => {
     setIsLoadingHistory(true);
@@ -37,6 +65,7 @@ export function useDataset() {
   const clearError = useCallback(() => setError(null), []);
 
   const reset = useCallback(() => {
+    recommendationRequestId.current += 1;
     setStatus('idle');
     setPreview(null);
     setError(null);
@@ -44,6 +73,9 @@ export function useDataset() {
     setDupStats(null);
     setRunName('');
     setActiveAutoCleanMode(null);
+    setCleaningRecommendation(null);
+    setRecommendationStatus('idle');
+    setRecommendationError(null);
   }, []);
 
   const upload = useCallback(async (file: File) => {
@@ -57,12 +89,13 @@ export function useDataset() {
       setActiveAutoCleanMode(null);
       setDupStats(null);
       setStatus('ready');
+      void checkCleaningRecommendation(result.dataset_id, result.selected_sheet);
       void refreshStoredRuns();
     } catch (err) {
       setError((err as Error).message);
       setStatus('error');
     }
-  }, []);
+  }, [checkCleaningRecommendation, refreshStoredRuns]);
 
   const saveRunName = useCallback(async () => {
     if (!preview || !runName.trim()) return;
@@ -83,6 +116,10 @@ export function useDataset() {
       const result = await api.restoreStoredDataset(datasetId);
       setPreview(result);
       setDupStats(null);
+      recommendationRequestId.current += 1;
+      setCleaningRecommendation(null);
+      setRecommendationStatus('idle');
+      setRecommendationError(null);
       const restored = storedRuns.find((run) => run.dataset_id === datasetId);
       setRunName(restored?.run_name ?? '');
       setStatus('ready');
@@ -260,8 +297,9 @@ export function useDataset() {
         row_count: target.row_count,
         column_count: target.column_count,
       });
+      void checkCleaningRecommendation(preview.dataset_id, sheetName);
     },
-    [preview]
+    [checkCleaningRecommendation, preview]
   );
 
   return {
@@ -272,6 +310,9 @@ export function useDataset() {
     dupStats,
     runName,
     activeAutoCleanMode,
+    cleaningRecommendation,
+    recommendationStatus,
+    recommendationError,
     setRunName,
     storedRuns,
     isLoadingHistory,

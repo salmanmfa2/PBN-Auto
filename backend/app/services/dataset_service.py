@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+from openpyxl.utils import get_column_letter
 
 from app.storage.dataset_store import DatasetStore
 from app.cleaners import get_rules_for_mode, CLEANER_MODULES
@@ -218,6 +219,7 @@ def apply_auto_clean(dataset_id: str, mode: str, sheet_name: Optional[str] = Non
 
     category_source = {
         "Sitasi Es.III": "Keterangan",
+        "Sitasi Es.III (Lite)": "Keterangan",
         "Sitasi Es.IV": "Pertimbangan",
     }.get(mode)
     if mode == "Sitasi Es.IV":
@@ -252,11 +254,15 @@ def apply_auto_clean(dataset_id: str, mode: str, sheet_name: Optional[str] = Non
         if columns_to_drop:
             df = df.drop(columns=columns_to_drop)
 
-    if mode == "Sitasi Es.III" and "Keterangan" in df.columns:
+    if mode in {"Sitasi Es.III", "Sitasi Es.III (Lite)"} and "Keterangan" in df.columns:
         df = df.assign(
             Keterangan=df["Keterangan"].map(
-                lambda value: value[6:] if isinstance(value, str) else value
+                lambda value: _to_proper_case(value[6:]) if isinstance(value, str) else value
             )
+        )
+    elif mode == "Sitasi Es.IV" and "Pertimbangan" in df.columns:
+        df = df.assign(
+            Pertimbangan=df["Pertimbangan"].map(_to_proper_case)
         )
 
     if category_source:
@@ -264,9 +270,14 @@ def apply_auto_clean(dataset_id: str, mode: str, sheet_name: Optional[str] = Non
             raise ValueError(f"Cannot create 'Kategori': the selected dataset does not contain '{category_source}'.")
         df = add_sitasi_category(df, category_source)
 
+    df.attrs["sitasi_esiii_lite"] = mode == "Sitasi Es.III (Lite)"
     sheets[sheet_name] = df
     DatasetStore.update(dataset_id, sheets)
     return _build_preview(dataset_id, sheets, sheet_name)
+
+
+def _to_proper_case(value: Any) -> Any:
+    return value.title() if isinstance(value, str) else value
 
 
 def add_sitasi_category(df: pd.DataFrame, source_column: str = "Keterangan") -> pd.DataFrame:
@@ -382,11 +393,46 @@ def export_excel(dataset_id: str, sheet_name: Optional[str] = None, filters: Opt
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         if sheet_name:
-            filter_dataframe(sheets[sheet_name], filters).to_excel(writer, index=False, sheet_name=sheet_name)
+            df = filter_dataframe(sheets[sheet_name], filters)
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+            if df.attrs.get("sitasi_esiii_lite"):
+                _merge_sitasi_lite_heading_rows(writer, sheet_name, df)
         else:
             for name, df in sheets.items():
-                filter_dataframe(df, filters).to_excel(writer, index=False, sheet_name=name[:31])
+                filtered = filter_dataframe(df, filters)
+                sheet_title = name[:31]
+                filtered.to_excel(writer, index=False, sheet_name=sheet_title)
+                if filtered.attrs.get("sitasi_esiii_lite"):
+                    _merge_sitasi_lite_heading_rows(writer, sheet_title, filtered)
     return buf.getvalue()
+
+
+def _merge_sitasi_lite_heading_rows(
+    writer: pd.ExcelWriter,
+    sheet_name: str,
+    dataframe: pd.DataFrame,
+) -> None:
+    worksheet = writer.sheets[sheet_name]
+    no_column = next(
+        (
+            index
+            for index, column in enumerate(dataframe.columns, start=1)
+            if "".join(char for char in str(column).casefold() if char.isalnum()) == "no"
+        ),
+        None,
+    )
+    if no_column is None or len(dataframe.columns) < 2:
+        return
+
+    last_column = get_column_letter(len(dataframe.columns))
+    for row_number, row in enumerate(dataframe.itertuples(index=False, name=None), start=2):
+        number_value = row[no_column - 1]
+        if number_value is None or pd.isna(number_value) or not str(number_value).strip():
+            continue
+        if not pd.isna(pd.to_numeric(number_value, errors="coerce")):
+            continue
+        if all(value is None or pd.isna(value) or not str(value).strip() for index, value in enumerate(row) if index != no_column - 1):
+            worksheet.merge_cells(f"A{row_number}:{last_column}{row_number}")
 
 
 def _require_dataset(dataset_id: str) -> Dict[str, pd.DataFrame]:

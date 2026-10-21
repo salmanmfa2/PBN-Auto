@@ -9,6 +9,7 @@ import type {
   UseFirstRowAsHeaderPayload,
   AutoCleanPayload,
   StoredDatasetRun,
+  CleaningMethodRecommendation,
   PbnDashboardFilters,
   PbnDashboardPeopleResponse,
   PbnDashboardResponse,
@@ -57,6 +58,17 @@ export async function uploadFile(
 
 export async function getDataset(datasetId: string): Promise<DatasetPreview> {
   const { data } = await api.get<DatasetPreview>(`/dataset/${datasetId}`);
+  return data;
+}
+
+export async function recommendCleaningMethod(
+  datasetId: string,
+  sheetName: string
+): Promise<CleaningMethodRecommendation> {
+  const { data } = await api.get<CleaningMethodRecommendation>(
+    `/clean/recommend-method/${datasetId}`,
+    { params: { sheet_name: sheetName } }
+  );
   return data;
 }
 

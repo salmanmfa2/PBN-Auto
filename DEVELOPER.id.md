@@ -29,6 +29,8 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `main.py` — entry point aplikasi dan pendaftaran router.
   - `run_server.py` — launcher Uvicorn dengan deteksi port dinamis (mencari port kosong mulai dari 8000).
   - `app/api/cleaning.py` — endpoint pembersihan (auto-clean, hapus kolom, ganti nama, hapus duplikat, hapus baris, dan pengaturan header).
+  - `app/services/cleaning_recommendation_service.py` — membandingkan sheet yang diunggah dengan workbook verifikasi dan memberikan rekomendasi tanpa mengubah dataset.
+  - `templates/verification/` — workbook format sumber yang digunakan untuk rekomendasi metode pembersihan.
   - `app/api/insights.py` — endpoint dashboard PBN; permintaan filter menghitung ulang agregat dari seluruh dataset.
   - `app/services/dataset_service.py` — logika DataFrame utama. Mengarahkan proses ke cleaner programatis atau membaca file aturan teks lama.
   - `app/services/pbn_dashboard_service.py` — memvalidasi kolom dashboard yang sudah dibersihkan, menerapkan filter, dan menghitung jumlah pegawai serta distribusi grafik.
@@ -73,6 +75,15 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   5. Uji dengan mengunggah file dan memilih mode baru dari dropdown.
 
   **Pilihan file teks lama:** Jika memilih aturan teks, tambahkan file di `backend/Cleaning Logic/` dan petakan melalui `_load_auto_clean_rules()` di `backend/app/services/dataset_service.py`. Cleaner programatis lebih disarankan karena lebih jelas dan efisien.
+
+- `Sitasi Es.III (Lite)` menggunakan kembali aturan pembersihan dan template PowerPoint Es.III standar, tetapi menetapkan `delete_rows_null_columns` ke daftar kosong agar baris dengan nilai null pada kolom 2 tetap dipertahankan. Deteksi kategori dan penghapusan enam karakter awal pada `Keterangan` tetap sama dengan mode standar.
+- Ekspor Excel menggabungkan baris Lite jika `No` berisi judul bagian non-numerik dan seluruh nilai lainnya kosong. Perilaku ini dikendalikan oleh atribut DataFrame `sitasi_esiii_lite` yang ditetapkan saat mode tersebut membersihkan data; CSV dan pratinjau aplikasi tetap berupa data sel biasa, sedangkan ekspor Es.III standar tidak digabung.
+- Sitasi Es.III dan Lite menerapkan `_to_proper_case` pada `Keterangan` setelah menghapus enam karakter awal. Sitasi Es.IV menerapkan helper yang sama pada `Pertimbangan` setelah kolom sumber ditemukan/diganti nama. Helper tidak mengubah nilai non-teks dan nilai kosong.
+
+**Rekomendasi metode pembersihan**
+- `GET /clean/recommend-method/{dataset_id}?sheet_name=...` membandingkan sheet dengan workbook yang tersedia di `backend/templates/verification/`.
+- Workbook PBN menggunakan header yang sama, sehingga recommender juga membandingkan pola isi pada kolom tambahan Homebase/Pendidikan. Template Sitasi dibedakan melalui posisi header tabel.
+- Recommender hanya menyarankan metode dan tidak menjalankan pembersihan. PBN Open + Edu dan Sitasi Es.III (Lite) belum memiliki workbook verifikasi tersendiri sehingga tidak disarankan otomatis.
 
 ## Template Ekspor PowerPoint
 

@@ -26,6 +26,15 @@ export interface StoredDatasetRun {
   updated_at: string;
 }
 
+export interface CleaningMethodRecommendation {
+  dataset_id: string;
+  sheet_name: string;
+  recommended_mode: string | null;
+  template_name: string | null;
+  confidence: 'high' | 'ambiguous' | 'none';
+  reason: string;
+}
+
 export interface PbnDashboardFilters {
   age_min?: number;
   age_max?: number;

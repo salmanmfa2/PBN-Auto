@@ -11,7 +11,7 @@ class PbnDashboardFilters(BaseModel):
     region: list[str] = Field(default_factory=list)
     unit: list[str] = Field(default_factory=list)
     rumpun: list[str] = Field(default_factory=list)
-
+    
 
 class PbnDashboardCount(BaseModel):
     label: str

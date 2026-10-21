@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from app.api import auth, cleaning, dataset, stored_datasets, upload
+from app.api import auth, cleaning, dataset, insights, stored_datasets, upload
 from app.db import init_db
 from app.history_db import init_history_db
 
@@ -69,6 +69,7 @@ app.include_router(auth.admin_router)
 app.include_router(upload.router, tags=["upload"])
 app.include_router(cleaning.router)
 app.include_router(dataset.router)
+app.include_router(insights.router)
 app.include_router(stored_datasets.router)
 
 
