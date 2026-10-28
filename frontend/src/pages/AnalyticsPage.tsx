@@ -10,6 +10,9 @@ import { DataTable } from '../features/cleaning/DataTable';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Spinner } from '../components/Spinner';
 
+const SIDEBAR_MIN_WIDTH = 256;
+const SIDEBAR_MAX_WIDTH = 560;
+
 export default function AnalyticsPage() {
   const navigate = useNavigate();
   const {
@@ -27,6 +30,7 @@ export default function AnalyticsPage() {
   const [autoCleanMode, setAutoCleanMode] = useState('PBN Open');
   const [activeGuide, setActiveGuide] = useState<'pbn' | 'sitasi' | null>(null);
   const [tableFilters, setTableFilters] = useState<Record<string, string[]>>({});
+  const [sidebarWidth, setSidebarWidth] = useState(288);
   const autoCleanOptions = [
     'PBN Open',
     'PBN Open + Edu',
@@ -55,6 +59,13 @@ export default function AnalyticsPage() {
   const isBusy = status === 'uploading' || status === 'cleaning';
   const hasData = !!preview;
   const canDownloadProfiles = activeAutoCleanMode === 'Sitasi Es.III' || activeAutoCleanMode === 'Sitasi Es.III (Lite)' || activeAutoCleanMode === 'Sitasi Es.IV';
+  const maxSidebarWidth = Math.max(
+    SIDEBAR_MIN_WIDTH,
+    Math.min(SIDEBAR_MAX_WIDTH, window.innerWidth * 0.5),
+  );
+  const resizeSidebar = (width: number) => {
+    setSidebarWidth(Math.min(Math.max(width, SIDEBAR_MIN_WIDTH), maxSidebarWidth));
+  };
 
   const handleColumnFilter = (column: string, values: string[]) => {
     setTableFilters((prev) => ({ ...prev, [column]: values }));
@@ -107,7 +118,10 @@ export default function AnalyticsPage() {
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-72 shrink-0 bg-surface-800 border-r border-surface-700 flex flex-col overflow-y-auto">
+        <aside
+          className="shrink-0 bg-surface-800 border-r border-surface-700 flex flex-col overflow-y-auto"
+          style={{ flexBasis: sidebarWidth, width: sidebarWidth }}
+        >
           <div className="flex flex-col gap-4 p-4">
             <section className="card p-4">
               <p className="section-title mb-3">Upload File</p>
@@ -237,23 +251,25 @@ export default function AnalyticsPage() {
                     )}
                   </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={autoCleanMode}
                     onChange={(e) => setAutoCleanMode(e.target.value)}
-                    className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                    className="min-w-0 flex-1 basis-40 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
                   >
                     {autoCleanOptions.map((option) => (
                       <option key={option} value={option} className="bg-slate-950 text-slate-100">
-                        {option}{cleaningRecommendation?.recommended_mode === option ? ' (Recommended)' : ''}
+                        {option}
                       </option>
                     ))}
                   </select>
                   <button
                     type="button"
+                    aria-label="Apply selected cleaning method"
+                    title="Apply selected cleaning method"
                     disabled={isBusy || !['PBN Open', 'PBN Open + Edu', 'PBN Open + Edu + HB', 'Sitasi Es.IV', 'Sitasi Es.III', 'Sitasi Es.III (Lite)'].includes(autoCleanMode)}
                     onClick={() => applyAutoClean(autoCleanMode)}
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-brand-500 text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -353,9 +369,39 @@ export default function AnalyticsPage() {
             )}
           </div>
         </aside>
+        <div
+          role="separator"
+          aria-label="Resize analytics sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={maxSidebarWidth}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              resizeSidebar(event.clientX);
+            }
+          }}
+          onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') {
+              event.preventDefault();
+              resizeSidebar(sidebarWidth - 16);
+            } else if (event.key === 'ArrowRight') {
+              event.preventDefault();
+              resizeSidebar(sidebarWidth + 16);
+            }
+          }}
+          className="w-2 shrink-0 cursor-col-resize bg-surface-700 transition-colors hover:bg-brand-500 focus-visible:outline-none focus-visible:bg-brand-500"
+          style={{ touchAction: 'none' }}
+        />
 
         {/* Main */}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="min-w-0 flex-1 flex flex-col overflow-hidden">
           {error && (
             <div className="px-6 pt-4">
               <ErrorBanner message={error} onDismiss={clearError} />

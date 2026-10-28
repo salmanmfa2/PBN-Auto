@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 from pptx import Presentation
+from pptx.enum.text import PP_ALIGN
 from pptx.slide import Slide
 from pptx.util import Pt
 
@@ -49,12 +50,14 @@ def get_template_layout(mode: str) -> dict[str, Any]:
             "template_path": TEMPLATE_PATHS[mode],
             "header_rows": 1,
             "column_aliases": ESIV_COLUMN_ALIASES,
+            "centered_columns": (2, 3, 5),
             "people_per_slide": 6,
         }
     return {
         "template_path": TEMPLATE_PATHS["Sitasi Es.III"],
         "header_rows": 3,
         "column_aliases": ESIII_COLUMN_ALIASES,
+        "centered_columns": (2, 3, 4, 6, 7),
         "people_per_slide": 0,
     }
 
@@ -100,6 +103,7 @@ def build_sitasi_profiles(dataset_id: str, sheet_name: str, mode: str, filters: 
             values = _record_values(records[record_index], column_aliases) if record_index < len(records) else [""] * len(column_aliases)
             for column_index, value in enumerate(values):
                 _set_cell_text(table.cell(table_row, column_index), value)
+        _center_table_columns(table, template_layout["centered_columns"])
 
     output = BytesIO()
     presentation.save(output)
@@ -132,6 +136,13 @@ def _set_cell_text(cell, value: str) -> None:
     for paragraph in cell.text_frame.paragraphs:
         for run in paragraph.runs:
             run.font.size = Pt(10)
+
+
+def _center_table_columns(table, column_indices: tuple[int, ...]) -> None:
+    for row in table.rows:
+        for column_index in column_indices:
+            for paragraph in row.cells[column_index].text_frame.paragraphs:
+                paragraph.alignment = PP_ALIGN.CENTER
 
 
 def _set_slide_number(slide: Slide, page_number: int) -> None:
