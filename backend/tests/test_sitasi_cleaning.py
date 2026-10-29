@@ -69,6 +69,25 @@ class SitasiCategoryTests(unittest.TestCase):
             ["Mutasi Pegawai Antar Unit", "Promosi Jabatan Baru"],
         )
 
+    def test_esiii_removes_unneeded_text_from_keterangan_and_jabatan_baru(self) -> None:
+        columns = [f"Column {index}" for index in range(1, 20)]
+        rows = [
+            [f"header-{column}" for column in range(1, 20)]
+            for _ in range(2)
+        ]
+        rows.append([
+            "1", "Staff A", "age", "x", "x", "x", "x", "x", "Role A", "2",
+            "3", "Area A", "Duty A", "Ex Officio: - Direktur", "x",
+            "123456Latar Belakang: -", "x", "x", "x",
+        ])
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
+
+        result = apply_auto_clean(dataset_id, "Sitasi Es.III", "Data")
+
+        self.assertEqual(result["rows"][0]["Keterangan"], "")
+        self.assertEqual(result["rows"][0]["Jabatan Baru"], "Direktur")
+        self.assertEqual(result["rows"][0]["Kategori"], "")
+
     def test_esiii_lite_preserves_rows_with_null_name_and_applies_same_cleaning(self) -> None:
         columns = [f"Column {index}" for index in range(1, 20)]
         rows = [
@@ -190,3 +209,4 @@ class SitasiCategoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -257,8 +257,24 @@ def apply_auto_clean(dataset_id: str, mode: str, sheet_name: Optional[str] = Non
     if mode in {"Sitasi Es.III", "Sitasi Es.III (Lite)"} and "Keterangan" in df.columns:
         df = df.assign(
             Keterangan=df["Keterangan"].map(
-                lambda value: _to_proper_case(value[6:]) if isinstance(value, str) else value
+                lambda value: _to_proper_case(
+                    value[6:].replace("Latar Belakang: -", "").strip()
+                    if mode == "Sitasi Es.III"
+                    else value[6:]
+                )
+                if isinstance(value, str)
+                else value
             )
+        )
+    if mode == "Sitasi Es.III" and "Jabatan Baru" in df.columns:
+        df = df.assign(
+            **{
+                "Jabatan Baru": df["Jabatan Baru"].map(
+                    lambda value: value.replace("Ex Officio: -", "").strip()
+                    if isinstance(value, str)
+                    else value
+                )
+            }
         )
     elif mode == "Sitasi Es.IV" and "Pertimbangan" in df.columns:
         df = df.assign(

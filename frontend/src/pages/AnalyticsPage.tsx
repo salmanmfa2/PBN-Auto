@@ -31,6 +31,7 @@ export default function AnalyticsPage() {
   const [activeGuide, setActiveGuide] = useState<'pbn' | 'sitasi' | null>(null);
   const [tableFilters, setTableFilters] = useState<Record<string, string[]>>({});
   const [sidebarWidth, setSidebarWidth] = useState(288);
+  const [sitasiEsiiiTemplate, setSitasiEsiiiTemplate] = useState<'standard' | 'three-row'>('standard');
   const autoCleanOptions = [
     'PBN Open',
     'PBN Open + Edu',
@@ -53,7 +54,13 @@ export default function AnalyticsPage() {
 
   const handleDownloadPowerPoint = () => {
     if (!preview || !activeAutoCleanMode) return;
-    apiClient.downloadPowerPoint(preview.dataset_id, activeAutoCleanMode, preview.selected_sheet, tableFilters);
+    apiClient.downloadPowerPoint(
+      preview.dataset_id,
+      activeAutoCleanMode,
+      preview.selected_sheet,
+      tableFilters,
+      sitasiEsiiiTemplate,
+    );
   };
 
   const isBusy = status === 'uploading' || status === 'cleaning';
@@ -467,10 +474,29 @@ export default function AnalyticsPage() {
                 Download Excel
               </button>
               {canDownloadProfiles && (
-                <button onClick={handleDownloadPowerPoint} disabled={isBusy} className="btn-secondary text-xs">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 3h8l5 5v13H7a2 2 0 01-2-2V5a2 2 0 012-2zm8 0v5h5M9 13h6m-6 4h6" /></svg>
-                  Download Profiles PPTX
-                </button>
+                <>
+                  {activeAutoCleanMode === 'Sitasi Es.III' && (
+                    <label className="flex items-center gap-2 text-xs text-slate-400">
+                      <span>PowerPoint template</span>
+                      <select
+                        aria-label="Sitasi Es.III PowerPoint template"
+                        value={sitasiEsiiiTemplate}
+                        onChange={(event) => setSitasiEsiiiTemplate(
+                          event.target.value === 'three-row' ? 'three-row' : 'standard'
+                        )}
+                        disabled={isBusy}
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:opacity-50"
+                      >
+                        <option value="standard">Standard (4 people per slide)</option>
+                        <option value="three-row">3-row (3 people per slide)</option>
+                      </select>
+                    </label>
+                  )}
+                  <button onClick={handleDownloadPowerPoint} disabled={isBusy} className="btn-secondary text-xs">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 3h8l5 5v13H7a2 2 0 01-2-2V5a2 2 0 012-2zm8 0v5h5M9 13h6m-6 4h6" /></svg>
+                    Download Profiles PPTX
+                  </button>
+                </>
               )}
             </div>
           )}

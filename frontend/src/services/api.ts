@@ -185,6 +185,22 @@ export function downloadExcel(datasetId: string, sheetName: string, filters: Rec
   downloadFilteredExport(`/export/excel/${datasetId}`, 'cleaned_data.xlsx', { sheet_name: sheetName }, filters);
 }
 
-export function downloadPowerPoint(datasetId: string, mode: string, sheetName: string, filters: Record<string, string[]> = {}): void {
-  downloadFilteredExport(`/export/powerpoint/${datasetId}`, 'sitasi_profiles.pptx', { mode, sheet_name: sheetName }, filters);
+export type SitasiEsIIITemplateVariant = 'standard' | 'three-row';
+
+export function downloadPowerPoint(
+  datasetId: string,
+  mode: string,
+  sheetName: string,
+  filters: Record<string, string[]> = {},
+  templateVariant: SitasiEsIIITemplateVariant = 'standard',
+): void {
+  const filename = mode === 'Sitasi Es.III' && templateVariant === 'three-row'
+    ? 'sitasi_esiii_profiles_3_row.pptx'
+    : 'sitasi_profiles.pptx';
+  downloadFilteredExport(
+    `/export/powerpoint/${datasetId}`,
+    filename,
+    { mode, sheet_name: sheetName, template_variant: templateVariant },
+    filters,
+  );
 }

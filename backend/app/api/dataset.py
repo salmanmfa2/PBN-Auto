@@ -91,9 +91,21 @@ def export_filtered_excel(dataset_id: str, sheet_name: str, filters: Optional[di
 
 
 @router.get("/export/powerpoint/{dataset_id}")
-def export_sitasi_profiles(dataset_id: str, mode: str, sheet_name: str, filters: Optional[str] = None):
+def export_sitasi_profiles(
+    dataset_id: str,
+    mode: str,
+    sheet_name: str,
+    filters: Optional[str] = None,
+    template_variant: str = "standard",
+):
     try:
-        data = powerpoint_service.build_sitasi_profiles(dataset_id, sheet_name, mode, _parse_filters(filters))
+        data = powerpoint_service.build_sitasi_profiles(
+            dataset_id,
+            sheet_name,
+            mode,
+            _parse_filters(filters),
+            template_variant,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
     except ValueError as exc:
@@ -113,9 +125,16 @@ def export_filtered_sitasi_profiles(
     mode: str,
     sheet_name: str,
     filters: Optional[dict[str, list[str]]] = Body(default=None),
+    template_variant: str = "standard",
 ):
     try:
-        data = powerpoint_service.build_sitasi_profiles(dataset_id, sheet_name, mode, filters)
+        data = powerpoint_service.build_sitasi_profiles(
+            dataset_id,
+            sheet_name,
+            mode,
+            filters,
+            template_variant,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
     except ValueError as exc:

@@ -37,6 +37,58 @@ class SitasiEsIIILitePowerPointLayoutTests(unittest.TestCase):
         self.assertEqual(len(layout["column_aliases"]), 10)
         self.assertEqual(layout["people_per_slide"], 0)
 
+    def test_standard_esiii_can_choose_three_row_template(self) -> None:
+        layout = powerpoint_service.get_template_layout(
+            "Sitasi Es.III",
+            template_variant="three-row",
+        )
+
+        self.assertEqual(layout["template_path"].name, "template_3 Row.pptx")
+        self.assertEqual(layout["header_rows"], 3)
+        self.assertEqual(len(layout["column_aliases"]), 10)
+
+    def test_three_row_template_is_restricted_to_standard_esiii(self) -> None:
+        for mode in ("Sitasi Es.III (Lite)", "Sitasi Es.IV"):
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                powerpoint_service.get_template_layout(mode, template_variant="three-row")
+
+    def test_three_row_template_generates_three_person_slides(self) -> None:
+        records = [
+            {
+                "No": str(index),
+                "Nama/NIP": f"Staff {index}",
+                "Usia (Th)": "42",
+                "Usia (Bl)": "3",
+                "Golongan": "IV/a",
+                "Jabatan Saat Ini": "Role A",
+                "Lama Jab (Th)": "2",
+                "Lama Jab (Bl)": "4",
+                "Jabatan Baru": "Role B",
+                "Keterangan": "Mutasi",
+            }
+            for index in range(1, 5)
+        ]
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame(records)})
+        try:
+            output = powerpoint_service.build_sitasi_profiles(
+                dataset_id,
+                "Data",
+                "Sitasi Es.III",
+                template_variant="three-row",
+            )
+        finally:
+            DatasetStore.delete(dataset_id)
+
+        presentation = Presentation(BytesIO(output))
+        self.assertEqual(len(presentation.slides), 2)
+        table = powerpoint_service._get_profile_table(presentation.slides[0])
+        for column_index in (2, 3, 4, 6, 7):
+            for row in table.rows:
+                self.assertEqual(
+                    row.cells[column_index].text_frame.paragraphs[0].alignment,
+                    PP_ALIGN.CENTER,
+                )
+
     def test_requested_esiii_columns_are_centered_in_generated_powerpoint(self) -> None:
         dataset_id = DatasetStore.save(
             {

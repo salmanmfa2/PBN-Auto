@@ -15,6 +15,7 @@ from app.storage.dataset_store import DatasetStore
 
 TEMPLATE_PATHS = {
     "Sitasi Es.III": Path(__file__).resolve().parents[2] / "templates" / "template.pptx",
+    "Sitasi Es.III (3-row)": Path(__file__).resolve().parents[2] / "templates" / "template_3 Row.pptx",
     "Sitasi Es.III (Lite)": Path(__file__).resolve().parents[2] / "templates" / "template.pptx",
     "Sitasi Es.IV": Path(__file__).resolve().parents[2] / "templates" / "template_es4.pptx",
 }
@@ -44,7 +45,12 @@ ESIV_COLUMN_ALIASES = (
 )
 
 
-def get_template_layout(mode: str) -> dict[str, Any]:
+def get_template_layout(mode: str, template_variant: str = "standard") -> dict[str, Any]:
+    if template_variant not in {"standard", "three-row"}:
+        raise ValueError(f"Unknown Sitasi Es.III PowerPoint template: {template_variant}.")
+    if template_variant != "standard" and mode != "Sitasi Es.III":
+        raise ValueError("The three-row PowerPoint template is available only for Sitasi Es.III.")
+
     if mode == "Sitasi Es.IV":
         return {
             "template_path": TEMPLATE_PATHS[mode],
@@ -53,8 +59,15 @@ def get_template_layout(mode: str) -> dict[str, Any]:
             "centered_columns": (2, 3, 5),
             "people_per_slide": 6,
         }
+    if mode not in {"Sitasi Es.III", "Sitasi Es.III (Lite)"}:
+        raise ValueError(f"PowerPoint profiles are not available for {mode}.")
+
     return {
-        "template_path": TEMPLATE_PATHS["Sitasi Es.III"],
+        "template_path": (
+            TEMPLATE_PATHS["Sitasi Es.III (3-row)"]
+            if template_variant == "three-row"
+            else TEMPLATE_PATHS["Sitasi Es.III"]
+        ),
         "header_rows": 3,
         "column_aliases": ESIII_COLUMN_ALIASES,
         "centered_columns": (2, 3, 4, 6, 7),
@@ -62,11 +75,17 @@ def get_template_layout(mode: str) -> dict[str, Any]:
     }
 
 
-def build_sitasi_profiles(dataset_id: str, sheet_name: str, mode: str, filters: dict[str, Any] | None = None) -> bytes:
+def build_sitasi_profiles(
+    dataset_id: str,
+    sheet_name: str,
+    mode: str,
+    filters: dict[str, Any] | None = None,
+    template_variant: str = "standard",
+) -> bytes:
     if mode not in {"Sitasi Es.III", "Sitasi Es.III (Lite)", "Sitasi Es.IV"}:
         raise ValueError("PowerPoint profiles are available only for Sitasi Es.III, Sitasi Es.III (Lite), and Sitasi Es.IV.")
 
-    template_layout = get_template_layout(mode)
+    template_layout = get_template_layout(mode, template_variant)
     template_path = template_layout["template_path"]
     if not template_path.is_file():
         raise FileNotFoundError(f"PowerPoint template not found: {template_path}")
