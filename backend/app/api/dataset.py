@@ -1,13 +1,16 @@
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from app.services import dataset_service, powerpoint_service
 from app.schemas.dataset import DatasetPreview
 
 router = APIRouter(tags=["dataset"])
+MAX_STAGED_POWERPOINTS = 20
+MAX_STAGED_POWERPOINT_SIZE = 25 * 1024 * 1024
+MAX_STAGED_POWERPOINT_TOTAL_SIZE = 100 * 1024 * 1024
 
 
 def _parse_filters(raw_filters: Optional[str]) -> Optional[dict[str, object]]:
@@ -87,6 +90,60 @@ def export_filtered_excel(dataset_id: str, sheet_name: str, filters: Optional[di
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="cleaned_data.xlsx"'},
+    )
+
+
+@router.post("/export/powerpoint/merge")
+async def merge_sitasi_profiles(files: list[UploadFile] = File(...)):
+    try:
+        if len(files) < 2:
+            raise HTTPException(
+                status_code=422,
+                detail="Stage at least two PowerPoint files before combining them.",
+            )
+        if len(files) > MAX_STAGED_POWERPOINTS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"A maximum of {MAX_STAGED_POWERPOINTS} staged presentations can be combined at once.",
+            )
+
+        presentation_files = []
+        total_size = 0
+        for index, file in enumerate(files, start=1):
+            if not (file.filename or "").casefold().endswith(".pptx"):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Staged item {index} must be a .pptx file.",
+                )
+            content = await file.read(MAX_STAGED_POWERPOINT_SIZE + 1)
+            if len(content) > MAX_STAGED_POWERPOINT_SIZE:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Staged item {index} exceeds the 25 MB limit.",
+                )
+            total_size += len(content)
+            if total_size > MAX_STAGED_POWERPOINT_TOTAL_SIZE:
+                raise HTTPException(
+                    status_code=413,
+                    detail="The combined PowerPoint upload exceeds the 100 MB limit.",
+                )
+            presentation_files.append(content)
+
+        data = powerpoint_service.merge_sitasi_presentations(
+            presentation_files
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        for file in files:
+            await file.close()
+
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": 'attachment; filename="sitasi_profiles_combined.pptx"'},
     )
 
 

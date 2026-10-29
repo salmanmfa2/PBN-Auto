@@ -1,6 +1,6 @@
 # PBN Cleaner
 
-A production-ready full-stack modular web application for data cleaning, link management, and analytics. Currently featuring PBN dataset cleaning with plans for secure link building and insights hub.
+A full-stack web application for PBN dataset cleaning and analytics.
 
 ## Features
 
@@ -10,8 +10,7 @@ A production-ready full-stack modular web application for data cleaning, link ma
 | **Duplicate Removal** | ✅ Live | Select columns as unique key; deduplication with stats |
 | **Column Management** | ✅ Live | Hide/remove columns; inline rename with preview table |
 | **Export** | ✅ Live | Download as `.csv` or `.xlsx` |
-| **Secure Link Building** | 🔄 Coming | Create custom button links with passwords and permissions |
-| **Insight Hub** | 🔄 Coming | Advanced analytics and data visualization |
+| **Insight Hub** | ✅ Live | PBN Open + Edu + HB dashboard with employee totals and distributions |
 
 ## Tech Stack
 
@@ -52,7 +51,6 @@ Project PBNCleaner/
 │       ├── pages/                 # React Router pages
 │       │   ├── LandingPage.tsx    # / route (feature selector)
 │       │   ├── AnalyticsPage.tsx  # /pbn-analytics route
-│       │   ├── MenuBuilderPage.tsx # /menu-builder route
 │       │   └── InsightHubPage.tsx  # /insights route
 │       ├── features/
 │       │   ├── upload/
@@ -143,10 +141,9 @@ The app uses **React Router v7** for URL-based navigation:
 
 | Route | Component | Description |
 |---|---|---|
-| `/` | LandingPage | Feature selector with cards for each module |
+| `/` | LandingPage | Feature selector |
 | `/pbn-analytics` | AnalyticsPage | PBN dataset cleaning (active) |
-| `/menu-builder` | MenuBuilderPage | Link builder (coming soon) |
-| `/insights` | InsightHubPage | Analytics hub (coming soon) |
+| `/insights` | InsightHubPage | PBN Open + Edu + HB analytics dashboard |
 
 Users can bookmark routes or share URLs directly to jump into any feature.
 

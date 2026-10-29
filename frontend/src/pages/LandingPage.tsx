@@ -1,11 +1,9 @@
 import { useNavigate } from 'react-router-dom';
 import logoAnalysis from '../assets/logo_analysis.png';
-import logoLink from '../assets/logo_link.png';
 import logoBrain from '../assets/logo_brain.png';
 
 const features = [
   { key: 'analytics', title: 'PBN Analytics', image: logoAnalysis, gradient: 'from-emerald-400 via-emerald-500 to-emerald-600', subtitle: 'Upload, clean, export', path: '/pbn-analytics' },
-  { key: 'menu', title: 'Secure Link Building', image: logoLink, gradient: 'from-amber-400 via-amber-500 to-orange-500', subtitle: 'Create secure button links', path: '/menu-builder' },
   { key: 'insights', title: 'Insight Hub', image: logoBrain, gradient: 'from-sky-400 via-sky-500 to-indigo-500', subtitle: 'PBN Open + Edu + HB dashboard', path: '/insights' },
 ];
 
@@ -18,17 +16,16 @@ export default function LandingPage() {
         <div className="mb-12">
           <p className="text-sm uppercase tracking-[0.4em] text-slate-500 mb-3">Welcome</p>
           <h1 className="text-4xl md:text-5xl font-semibold text-white">What would you like to do today?</h1>
-          <p className="mt-4 text-slate-400 max-w-2xl mx-auto">Start with PBN Analytics, build secure links, or explore future insights. The first feature is ready to use now.</p>
+          <p className="mt-4 text-slate-400 max-w-2xl mx-auto">Clean and analyze your PBN datasets.</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+        <div className="mx-auto grid max-w-2xl grid-cols-1 gap-6 sm:grid-cols-2">
           {features.map((feature) => (
             <button
               key={feature.key}
               type="button"
               onClick={() => navigate(feature.path)}
-              disabled={feature.key === 'menu'}
-              className={`group flex flex-col items-center justify-center rounded-3xl px-6 py-10 text-left transition ${feature.key !== 'menu' ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+              className="group flex flex-col items-center justify-center rounded-3xl px-6 py-10 text-center transition cursor-pointer"
             >
               <div className={`mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br ${feature.gradient} shadow-lg shadow-slate-950/20 transition group-hover:-translate-y-1`}>
                 <img src={feature.image} alt={`${feature.title} logo`} className="h-12 w-12 object-contain" />
@@ -36,9 +33,6 @@ export default function LandingPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-semibold text-white">{feature.title}</h2>
                 <p className="text-sm text-slate-400">{feature.subtitle}</p>
-                {feature.key === 'menu' && (
-                  <span className="inline-flex rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-400">Coming soon</span>
-                )}
               </div>
             </button>
           ))}

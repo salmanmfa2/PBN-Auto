@@ -19,8 +19,7 @@ src/
 ├── pages/                        # React Router page components
 │   ├── LandingPage.tsx          # / route (feature cards)
 │   ├── AnalyticsPage.tsx        # /pbn-analytics (data cleaning)
-│   ├── MenuBuilderPage.tsx      # /menu-builder (coming soon)
-│   └── InsightHubPage.tsx       # /insights (coming soon)
+│   └── InsightHubPage.tsx       # /insights (analytics dashboard)
 ├── features/                     # Feature-scoped components
 │   ├── upload/
 │   │   └── UploadZone.tsx
@@ -39,7 +38,6 @@ src/
 │   └── index.ts                 # Shared TypeScript interfaces
 ├── assets/
 │   ├── logo_analysis.png
-│   ├── logo_link.png
 │   └── logo_brain.png
 ├── App.tsx                      # React Router setup
 ├── main.tsx                     # App entry point with BrowserRouter
@@ -74,8 +72,7 @@ Using **React Router v7** with file-based page structure:
 ```
 /                    → LandingPage (feature selector)
 /pbn-analytics       → AnalyticsPage (data cleaning interface)
-/menu-builder        → MenuBuilderPage (coming soon)
-/insights            → InsightHubPage (coming soon)
+/insights            → InsightHubPage (analytics dashboard)
 /anything-else       → Redirects to / (catch-all)
 ```
 

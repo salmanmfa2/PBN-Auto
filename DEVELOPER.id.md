@@ -4,7 +4,7 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 
 ## Gambaran Umum
 
-- **Tujuan**: Platform pengelolaan data modular. Fase pertama berfokus pada pembersihan dataset PBN. Fase berikutnya direncanakan mencakup pembuatan tautan dan modul analitik. Backend menggunakan FastAPI (Python), sedangkan frontend menggunakan React 19, Vite, dan React Router (TypeScript).
+- **Tujuan**: Platform pengelolaan data untuk pembersihan dataset PBN dan analitik. Backend menggunakan FastAPI (Python), sedangkan frontend menggunakan React 19, Vite, dan React Router (TypeScript).
 - **Arsitektur**: Routing modular berbasis halaman menggunakan React Router v7. Setiap fitur utama memiliki rute sendiri di `frontend/src/pages/`, dengan hook dan layanan bersama.
 
 ## Mulai Cepat (Lokal)
@@ -16,7 +16,7 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - Health check: `GET http://localhost:8000/health`.
 - Frontend:
   - Dari `frontend/`, jalankan `npm install`, kemudian `npm run dev` untuk pengembangan atau `npm run build` untuk build produksi.
-  - Rute tersedia di `http://localhost:5173/`, `/pbn-analytics`, `/menu-builder`, dan `/insights`.
+  - Rute tersedia di `http://localhost:5173/`, `/pbn-analytics`, dan `/insights`.
 - Menjalankan aplikasi lokal dengan satu klik:
   - Klik dua kali `run-app-testing.bat` dari direktori utama proyek (menjalankan backend dan frontend dengan auto-reload).
 - Menjalankan aplikasi di jaringan dengan satu klik:
@@ -48,7 +48,6 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `src/pages/` — komponen halaman untuk setiap rute:
     - `LandingPage.tsx` — halaman utama dengan pilihan fitur (rute `/`).
     - `AnalyticsPage.tsx` — antarmuka pembersihan dataset PBN (rute `/pbn-analytics`).
-    - `MenuBuilderPage.tsx` — placeholder pembuat tautan (rute `/menu-builder`).
     - `InsightHubPage.tsx` — dashboard interaktif PBN Open + Edu + HB (rute `/insights`).
   - `src/App.tsx` — definisi rute React Router (tidak menampilkan UI; hanya mengatur routing).
   - `src/main.tsx` — entry point frontend yang membungkus App dengan `<BrowserRouter>`.
@@ -228,17 +227,11 @@ npm run build              # TypeScript check + Vite build to dist/
 
 ---
 
-## Langkah Berikutnya dan Modul Mendatang
+## Modul Saat Ini
 
-**Fase saat ini (1):** PBN Analytics ✅ Aktif
+**PBN Analytics:** aktif untuk membersihkan dan mengekspor dataset.
 
-**Fase 2 (akan datang):** Secure Link Builder
-- Rute: `/menu-builder`
-- Halaman placeholder tersedia di `frontend/src/pages/MenuBuilderPage.tsx`
-- Memerlukan endpoint backend untuk CRUD tautan
-- Memerlukan integrasi database (PostgreSQL)
-
-**Fase 3:** Insights Hub
+**Insights Hub:**
 - Rute: `/insights`
 - Dashboard PBN Open + Edu + HB aktif dengan jumlah pegawai dan distribusi yang mengikuti filter.
 - Pengembangan mendatang dapat menambahkan modul analitik dan visualisasi lainnya.
@@ -247,6 +240,5 @@ npm run build              # TypeScript check + Vite build to dist/
 - Mengganti `DatasetStore` dalam memori dengan PostgreSQL agar data persisten
 - Menambahkan autentikasi dan otorisasi pengguna
 - Menambahkan kontrol akses berbasis peran (RBAC) untuk modul
-- Menambahkan fitur berbagi tautan dengan perlindungan kata sandi (untuk Link Builder)
 
 Jika diperlukan, pengujian unit untuk `dataset_service._load_auto_clean_rules` dapat ditambahkan untuk memastikan perilaku parser, begitu pula panduan kontribusi yang mencakup alur kerja Git tim.

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import * as apiClient from '../services/api';
 import { useDataset } from '../hooks/useDataset';
 import { UploadZone } from '../features/upload/UploadZone';
@@ -12,6 +12,12 @@ import { Spinner } from '../components/Spinner';
 
 const SIDEBAR_MIN_WIDTH = 256;
 const SIDEBAR_MAX_WIDTH = 560;
+
+interface StagedPowerPoint {
+  id: number;
+  label: string;
+  file: Blob;
+}
 
 export default function AnalyticsPage() {
   const navigate = useNavigate();
@@ -32,6 +38,11 @@ export default function AnalyticsPage() {
   const [tableFilters, setTableFilters] = useState<Record<string, string[]>>({});
   const [sidebarWidth, setSidebarWidth] = useState(288);
   const [sitasiEsiiiTemplate, setSitasiEsiiiTemplate] = useState<'standard' | 'three-row'>('standard');
+  const [stagedPowerPoints, setStagedPowerPoints] = useState<StagedPowerPoint[]>([]);
+  const [isStagingPowerPoint, setIsStagingPowerPoint] = useState(false);
+  const [isCombiningPowerPoints, setIsCombiningPowerPoints] = useState(false);
+  const [powerPointStagingError, setPowerPointStagingError] = useState<string | null>(null);
+  const nextStagedPowerPointId = useRef(1);
   const autoCleanOptions = [
     'PBN Open',
     'PBN Open + Edu',
@@ -61,6 +72,69 @@ export default function AnalyticsPage() {
       tableFilters,
       sitasiEsiiiTemplate,
     );
+  };
+
+  const handleStagePowerPoint = async () => {
+    if (!preview || !activeAutoCleanMode) return;
+    setPowerPointStagingError(null);
+    setIsStagingPowerPoint(true);
+    try {
+      const file = await apiClient.generatePowerPoint(
+        preview.dataset_id,
+        activeAutoCleanMode,
+        preview.selected_sheet,
+        tableFilters,
+        sitasiEsiiiTemplate,
+      );
+      const filterLabel = Object.entries(tableFilters)
+        .map(([column, values]) => `${column}: ${values.join(', ')}`)
+        .join(' · ');
+      const templateLabel = activeAutoCleanMode === 'Sitasi Es.III'
+        ? sitasiEsiiiTemplate === 'three-row'
+          ? ' · 3-row template'
+          : ' · 4-row template'
+        : activeAutoCleanMode === 'Sitasi Es.IV'
+          ? ' · 6 people per slide (default template)'
+          : '';
+      const id = nextStagedPowerPointId.current++;
+      setStagedPowerPoints((staged) => [
+        ...staged,
+        {
+          id,
+          label: `${activeAutoCleanMode}${templateLabel}${filterLabel ? ` · ${filterLabel}` : ' · No filters'}`,
+          file,
+        },
+      ]);
+    } catch (stageError) {
+      setPowerPointStagingError((stageError as Error).message);
+    } finally {
+      setIsStagingPowerPoint(false);
+    }
+  };
+
+  const handleCombinePowerPoints = async () => {
+    setPowerPointStagingError(null);
+    setIsCombiningPowerPoints(true);
+    try {
+      const combinedFile = await apiClient.combinePowerPoints(
+        stagedPowerPoints.map((staged) => staged.file),
+      );
+      apiClient.downloadCombinedPowerPoint(combinedFile);
+    } catch (combineError) {
+      setPowerPointStagingError((combineError as Error).message);
+    } finally {
+      setIsCombiningPowerPoints(false);
+    }
+  };
+
+  const moveStagedPowerPoint = (index: number, offset: -1 | 1) => {
+    setStagedPowerPoints((staged) => {
+      const next = [...staged];
+      const target = index + offset;
+      if (target < 0 || target >= next.length) return staged;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
   };
 
   const isBusy = status === 'uploading' || status === 'cleaning';
@@ -496,12 +570,92 @@ export default function AnalyticsPage() {
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 3h8l5 5v13H7a2 2 0 01-2-2V5a2 2 0 012-2zm8 0v5h5M9 13h6m-6 4h6" /></svg>
                     Download Profiles PPTX
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleStagePowerPoint()}
+                    disabled={isBusy || isStagingPowerPoint || isCombiningPowerPoints}
+                    className="btn-secondary text-xs"
+                  >
+                    {isStagingPowerPoint ? 'Generating slides…' : 'Add filtered slides to staging'}
+                  </button>
                 </>
               )}
             </div>
           )}
         </main>
       </div>
+      {(stagedPowerPoints.length > 0 || powerPointStagingError) && (
+        <section className="fixed bottom-20 right-4 z-40 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-surface-700 bg-surface-800 p-4 shadow-2xl">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-100">
+                PowerPoint staging ({stagedPowerPoints.length})
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                Generated slides are held in this browser session, not as table data.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStagedPowerPoints([])}
+              disabled={isCombiningPowerPoints || isStagingPowerPoint}
+              className="text-xs text-slate-400 hover:text-slate-100 disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+          <ol className="mb-3 max-h-48 space-y-2 overflow-y-auto">
+            {stagedPowerPoints.map((staged, index) => (
+              <li key={staged.id} className="flex items-center gap-2 rounded-lg bg-surface-900 p-2">
+                <span className="w-5 shrink-0 text-xs text-slate-500">{index + 1}.</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-slate-200" title={staged.label}>
+                  {staged.label}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Move staged presentation ${index + 1} up`}
+                  onClick={() => moveStagedPowerPoint(index, -1)}
+                  disabled={index === 0 || isCombiningPowerPoints || isStagingPowerPoint}
+                  className="rounded px-1.5 py-1 text-xs text-slate-300 hover:bg-surface-700 disabled:opacity-30"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Move staged presentation ${index + 1} down`}
+                  onClick={() => moveStagedPowerPoint(index, 1)}
+                  disabled={index === stagedPowerPoints.length - 1 || isCombiningPowerPoints || isStagingPowerPoint}
+                  className="rounded px-1.5 py-1 text-xs text-slate-300 hover:bg-surface-700 disabled:opacity-30"
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remove staged presentation ${index + 1}`}
+                  onClick={() => setStagedPowerPoints((stagedItems) => stagedItems.filter((item) => item.id !== staged.id))}
+                  disabled={isCombiningPowerPoints || isStagingPowerPoint}
+                  className="rounded px-1.5 py-1 text-xs text-rose-300 hover:bg-surface-700 disabled:opacity-30"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ol>
+          {powerPointStagingError && (
+            <p role="alert" className="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+              {powerPointStagingError}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleCombinePowerPoints()}
+            disabled={stagedPowerPoints.length < 2 || isCombiningPowerPoints || isStagingPowerPoint}
+            className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isCombiningPowerPoints ? 'Combining staged slides…' : 'Combine in order and download'}
+          </button>
+        </section>
+      )}
       {activeGuide && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4"

@@ -3,7 +3,7 @@ Developer Guide
 This file helps new contributors (especially juniors) understand where to make changes, how the project is organized, and common development tasks.
 
 **Overview**
-- **Purpose**: A modular data management platform. Phase 1 focuses on PBN dataset cleaning. Future phases will add link building and analytics modules. Backend is FastAPI (Python), frontend is React 19 + Vite with React Router (TypeScript).
+- **Purpose**: A data management platform for PBN dataset cleaning and analytics. Backend is FastAPI (Python), frontend is React 19 + Vite with React Router (TypeScript).
 - **Architecture**: Modular page-based routing using React Router v7. Each major feature lives in its own route under `frontend/src/pages/` with shared hooks and services.
 
 **Quick start (local)**
@@ -14,7 +14,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - Health: `GET http://localhost:8000/health`.
 - Frontend:
   - From `frontend/`: `npm install` then `npm run dev` for development or `npm run build` for production build.
-  - Routes are available at `http://localhost:5173/`, `/pbn-analytics`, `/menu-builder`, `/insights`.
+  - Routes are available at `http://localhost:5173/`, `/pbn-analytics`, and `/insights`.
 - One-click local launch:
   - Double-click `run-app-testing.bat` from the repo root (starts both backend & frontend with auto-reload).
 - One-click network launch:
@@ -45,7 +45,6 @@ This file helps new contributors (especially juniors) understand where to make c
   - `src/pages/` — page components for each route:
     - `LandingPage.tsx` — landing page with feature selector cards (`/` route).
     - `AnalyticsPage.tsx` — PBN dataset cleaning interface (`/pbn-analytics` route).
-    - `MenuBuilderPage.tsx` — link builder placeholder (`/menu-builder` route).
     - `InsightHubPage.tsx` — PBN Open + Edu + HB interactive dashboard (`/insights` route).
   - `src/App.tsx` — React Router Routes definition (no UI in App itself; just routing).
   - `src/main.tsx` — app entry point wrapping App with `<BrowserRouter>`.
@@ -217,13 +216,7 @@ npm run build              # TypeScript check + Vite build to dist/
 
 **Current phase (1):** PBN Analytics ✅ Live
 
-**Phase 2 (coming):** Secure Link Builder
-- Route: `/menu-builder`
-- Placeholder page created at `frontend/src/pages/MenuBuilderPage.tsx`
-- Will need backend endpoints for link CRUD
-- Need database integration (PostgreSQL)
-
-**Phase 3:** Insights Hub
+**Current analytics module:** Insights Hub
 - Route: `/insights`
 - Live PBN Open + Edu + HB dashboard with filtered employee totals and distributions.
 - Future work can add additional analytics and visualization modules.
@@ -232,7 +225,6 @@ npm run build              # TypeScript check + Vite build to dist/
 - Replace in-memory `DatasetStore` with PostgreSQL for persistence
 - Add user authentication & authorization
 - Role-based access control (RBAC) for modules
-- Link sharing with password protection (for Link Builder)
 
 If you'd like, I can also:
 - Add unit tests around `dataset_service._load_auto_clean_rules` to lock parser behavior.

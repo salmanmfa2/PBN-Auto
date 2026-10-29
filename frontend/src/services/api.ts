@@ -26,11 +26,26 @@ const api = axios.create({
 
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
+  async (err) => {
     const detail =
       err.response?.data?.detail ??
       err.message ??
       'An unexpected error occurred.';
+    if (err.response?.data instanceof Blob) {
+      const responseText = await err.response.data.text();
+      try {
+        const responseBody = JSON.parse(responseText) as { detail?: unknown };
+        return Promise.reject(
+          new Error(
+            typeof responseBody.detail === 'string'
+              ? responseBody.detail
+              : responseText || err.message,
+          )
+        );
+      } catch {
+        return Promise.reject(new Error(responseText || err.message));
+      }
+    }
     return Promise.reject(new Error(typeof detail === 'string' ? detail : JSON.stringify(detail)));
   }
 );
@@ -166,15 +181,32 @@ export async function applyAutoClean(payload: AutoCleanPayload): Promise<Dataset
 
 // ─── Export ─────────────────────────────────────────────────────────────────
 
-function downloadFilteredExport(path: string, filename: string, params: Record<string, string>, filters?: Record<string, string[]>): void {
-  api.post<Blob>(path, filters ?? {}, { params, responseType: 'blob' }).then(({ data }) => {
-    const url = URL.createObjectURL(data);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-  });
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function requestFilteredExport(
+  path: string,
+  params: Record<string, string>,
+  filters?: Record<string, string[]>,
+): Promise<Blob> {
+  return api.post<Blob>(path, filters ?? {}, { params, responseType: 'blob' })
+    .then(({ data }) => data);
+}
+
+function downloadFilteredExport(
+  path: string,
+  filename: string,
+  params: Record<string, string>,
+  filters?: Record<string, string[]>,
+): void {
+  void requestFilteredExport(path, params, filters)
+    .then((blob) => downloadBlob(blob, filename));
 }
 
 export function downloadCsv(datasetId: string, sheetName: string, filters: Record<string, string[]> = {}): void {
@@ -197,10 +229,36 @@ export function downloadPowerPoint(
   const filename = mode === 'Sitasi Es.III' && templateVariant === 'three-row'
     ? 'sitasi_esiii_profiles_3_row.pptx'
     : 'sitasi_profiles.pptx';
-  downloadFilteredExport(
+  void generatePowerPoint(datasetId, mode, sheetName, filters, templateVariant)
+    .then((blob) => downloadBlob(blob, filename));
+}
+
+export function generatePowerPoint(
+  datasetId: string,
+  mode: string,
+  sheetName: string,
+  filters: Record<string, string[]> = {},
+  templateVariant: SitasiEsIIITemplateVariant = 'standard',
+): Promise<Blob> {
+  return requestFilteredExport(
     `/export/powerpoint/${datasetId}`,
-    filename,
     { mode, sheet_name: sheetName, template_variant: templateVariant },
     filters,
   );
+}
+
+export async function combinePowerPoints(presentations: Blob[]): Promise<Blob> {
+  const form = new FormData();
+  presentations.forEach((presentation, index) => {
+    form.append('files', presentation, `staged-${index + 1}.pptx`);
+  });
+  const { data } = await api.post<Blob>('/export/powerpoint/merge', form, {
+    responseType: 'blob',
+    timeout: 120_000,
+  });
+  return data;
+}
+
+export function downloadCombinedPowerPoint(presentation: Blob): void {
+  downloadBlob(presentation, 'sitasi_profiles_combined.pptx');
 }

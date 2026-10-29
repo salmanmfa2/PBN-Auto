@@ -1,6 +1,6 @@
 # PBN Cleaner
 
-Aplikasi web modular full-stack untuk pembersihan data, pengelolaan tautan, dan analitik. Saat ini aplikasi menyediakan fitur pembersihan dataset PBN. Fitur pembuatan tautan aman dan pusat insight direncanakan untuk pengembangan berikutnya.
+Aplikasi web full-stack untuk pembersihan dataset PBN dan analitik.
 
 ## Fitur
 
@@ -10,8 +10,7 @@ Aplikasi web modular full-stack untuk pembersihan data, pengelolaan tautan, dan 
 | **Penghapusan Duplikat** | ✅ Aktif | Memilih kolom sebagai kunci unik serta menghapus duplikat dengan statistik hasil |
 | **Pengelolaan Kolom** | ✅ Aktif | Menyembunyikan atau menghapus kolom serta mengganti nama kolom secara langsung dengan pratinjau tabel |
 | **Ekspor** | ✅ Aktif | Mengunduh data dalam format `.csv` atau `.xlsx` |
-| **Pembuatan Tautan Aman** | 🔄 Akan datang | Membuat tautan tombol khusus dengan kata sandi dan pengaturan izin |
-| **Insight Hub** | 🔄 Akan datang | Analitik lanjutan dan visualisasi data |
+| **Insight Hub** | ✅ Aktif | Dashboard PBN Open + Edu + HB dengan jumlah pegawai dan distribusi data |
 
 ## Teknologi
 
@@ -52,7 +51,6 @@ Project PBNCleaner/
 │       ├── pages/                 # React Router pages
 │       │   ├── LandingPage.tsx    # / route (feature selector)
 │       │   ├── AnalyticsPage.tsx  # /pbn-analytics route
-│       │   ├── MenuBuilderPage.tsx # /menu-builder route
 │       │   └── InsightHubPage.tsx  # /insights route
 │       ├── features/
 │       │   ├── upload/
@@ -145,8 +143,7 @@ Aplikasi menggunakan **React Router v7** untuk navigasi berbasis URL:
 |---|---|---|
 | `/` | LandingPage | Pemilih fitur dengan kartu untuk setiap modul |
 | `/pbn-analytics` | AnalyticsPage | Pembersihan dataset PBN (aktif) |
-| `/menu-builder` | MenuBuilderPage | Pembuat tautan (akan datang) |
-| `/insights` | InsightHubPage | Pusat analitik (akan datang) |
+| `/insights` | InsightHubPage | Dashboard analitik PBN Open + Edu + HB |
 
 Pengguna dapat menandai rute atau membagikan URL secara langsung untuk membuka fitur tertentu.
 
