@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import * as apiClient from '../services/api';
 import { useDataset } from '../hooks/useDataset';
 import { UploadZone } from '../features/upload/UploadZone';
@@ -12,6 +12,20 @@ import { Spinner } from '../components/Spinner';
 
 const SIDEBAR_MIN_WIDTH = 256;
 const SIDEBAR_MAX_WIDTH = 560;
+
+function ActionTooltip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className="group relative inline-flex">
+      {children}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-slate-600 bg-slate-950 px-2.5 py-1.5 text-xs font-medium text-slate-100 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
 
 interface StagedPowerPoint {
   id: number;
@@ -426,14 +440,18 @@ export default function AnalyticsPage() {
                   </div>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-slate-200">Header Row</p>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={useFirstRowAsHeader}
-                      className="w-full rounded-lg bg-brand-500 px-3 py-2 text-left text-sm font-semibold text-white transition hover:bg-brand-400 disabled:opacity-50"
-                    >
-                      Make first row become column header
-                    </button>
+                    <ActionTooltip label="Make the first row the column headers">
+                      <button
+                        type="button"
+                        aria-label="Make the first row the column headers"
+                        title="Make the first row the column headers"
+                        disabled={isBusy}
+                        onClick={useFirstRowAsHeader}
+                        className="w-full rounded-lg bg-brand-500 px-3 py-2 text-left text-sm font-semibold text-white transition hover:bg-brand-400 disabled:opacity-50"
+                      >
+                        Use first row
+                      </button>
+                    </ActionTooltip>
                   </div>
                 </div>
               </section>
@@ -530,28 +548,54 @@ export default function AnalyticsPage() {
               <div className="flex-1" />
               {isBusy && <Spinner size="sm" label="Applying…" />}
               {activeAutoCleanMode === 'PBN Open + Edu + HB' && preview && (
+                <ActionTooltip label="Open Insights dashboard">
+                  <button
+                    type="button"
+                    aria-label="Open Insights dashboard"
+                    onClick={() => navigate(`/insights?dataset_id=${encodeURIComponent(preview.dataset_id)}&sheet_name=${encodeURIComponent(preview.selected_sheet)}`)}
+                    disabled={isBusy}
+                    className="btn-primary !px-3 !py-2 text-xs"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 14l4-4 4 4 6-7" />
+                    </svg>
+                    Insights
+                  </button>
+                </ActionTooltip>
+              )}
+              <ActionTooltip label="Download filtered data as CSV">
                 <button
                   type="button"
-                  onClick={() => navigate(`/insights?dataset_id=${encodeURIComponent(preview.dataset_id)}&sheet_name=${encodeURIComponent(preview.selected_sheet)}`)}
+                  aria-label="Download filtered data as CSV"
+                  onClick={handleDownloadCsv}
                   disabled={isBusy}
-                  className="btn-primary text-xs"
+                  className="btn-secondary !px-3 !py-2 text-xs"
                 >
-                  Open Dashboard
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  CSV
                 </button>
-              )}
-              <button onClick={handleDownloadCsv} disabled={isBusy} className="btn-secondary text-xs">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                Download CSV
-              </button>
-              <button onClick={handleDownloadExcel} disabled={isBusy} className="btn-secondary text-xs">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                Download Excel
-              </button>
+              </ActionTooltip>
+              <ActionTooltip label="Download filtered data as Excel">
+                <button
+                  type="button"
+                  aria-label="Download filtered data as Excel"
+                  onClick={handleDownloadExcel}
+                  disabled={isBusy}
+                  className="btn-secondary !px-3 !py-2 text-xs"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Excel
+                </button>
+              </ActionTooltip>
               {canDownloadProfiles && (
                 <>
                   {activeAutoCleanMode === 'Sitasi Es.III' && (
                     <label className="flex items-center gap-2 text-xs text-slate-400">
-                      <span>PowerPoint template</span>
+                      <span>Template</span>
                       <select
                         aria-label="Sitasi Es.III PowerPoint template"
                         value={sitasiEsiiiTemplate}
@@ -561,23 +605,39 @@ export default function AnalyticsPage() {
                         disabled={isBusy}
                         className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:opacity-50"
                       >
-                        <option value="standard">Standard (4 people per slide)</option>
-                        <option value="three-row">3-row (3 people per slide)</option>
+                        <option value="standard">4-row · 4 people</option>
+                        <option value="three-row">3-row · 3 people</option>
                       </select>
                     </label>
                   )}
-                  <button onClick={handleDownloadPowerPoint} disabled={isBusy} className="btn-secondary text-xs">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 3h8l5 5v13H7a2 2 0 01-2-2V5a2 2 0 012-2zm8 0v5h5M9 13h6m-6 4h6" /></svg>
-                    Download Profiles PPTX
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleStagePowerPoint()}
-                    disabled={isBusy || isStagingPowerPoint || isCombiningPowerPoints}
-                    className="btn-secondary text-xs"
-                  >
-                    {isStagingPowerPoint ? 'Generating slides…' : 'Add filtered slides to staging'}
-                  </button>
+                  <ActionTooltip label="Download profile PowerPoint">
+                    <button
+                      type="button"
+                      aria-label="Download profile PowerPoint"
+                      onClick={handleDownloadPowerPoint}
+                      disabled={isBusy}
+                      className="btn-secondary !px-3 !py-2 text-xs"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 3h8l5 5v13H7a2 2 0 01-2-2V5a2 2 0 012-2zm8 0v5h5M9 13h6m-6 4h6" />
+                      </svg>
+                      PPTX
+                    </button>
+                  </ActionTooltip>
+                  <ActionTooltip label={isStagingPowerPoint ? 'Generating filtered slides' : 'Add filtered slides to staging'}>
+                    <button
+                      type="button"
+                      aria-label={isStagingPowerPoint ? 'Generating filtered slides' : 'Add filtered slides to staging'}
+                      onClick={() => void handleStagePowerPoint()}
+                      disabled={isBusy || isStagingPowerPoint || isCombiningPowerPoints}
+                      className="btn-secondary !px-3 !py-2 text-xs"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-3M8 5a2 2 0 012-2h3l5 5v1M8 5v3a2 2 0 002 2h3M21 3v6m-3-3h6" />
+                      </svg>
+                      {isStagingPowerPoint ? 'Wait' : 'Stage'}
+                    </button>
+                  </ActionTooltip>
                 </>
               )}
             </div>
@@ -646,14 +706,18 @@ export default function AnalyticsPage() {
               {powerPointStagingError}
             </p>
           )}
-          <button
-            type="button"
-            onClick={() => void handleCombinePowerPoints()}
-            disabled={stagedPowerPoints.length < 2 || isCombiningPowerPoints || isStagingPowerPoint}
-            className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isCombiningPowerPoints ? 'Combining staged slides…' : 'Combine in order and download'}
-          </button>
+          <ActionTooltip label="Combine staged presentations in order and download">
+            <button
+              type="button"
+              aria-label={isCombiningPowerPoints ? 'Combining staged presentations' : 'Combine staged presentations in order and download'}
+              title="Combine staged presentations in order and download"
+              onClick={() => void handleCombinePowerPoints()}
+              disabled={stagedPowerPoints.length < 2 || isCombiningPowerPoints || isStagingPowerPoint}
+              className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isCombiningPowerPoints ? 'Combining…' : 'Combine & Download'}
+            </button>
+          </ActionTooltip>
         </section>
       )}
       {activeGuide && (

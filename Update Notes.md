@@ -26,6 +26,7 @@ Secure Link Building is no longer part of the planned app experience. The user d
 - Updated the landing-page introduction and changed the feature grid from three columns to a centered, narrower two-column group for **PBN Analytics** and **Insight Hub**.
 - Center-aligned the text inside both feature cards.
 - Updated English/Indonesian README and developer documentation to remove Secure Link Building references and describe the remaining routes/features.
+- The latest landing-page centering adjustment limits the feature area to a centered `max-w-2xl` grid, uses two equal columns at the `sm` breakpoint, and centers the text inside each card.
 
 ### Desktop sync guidance
 
@@ -40,7 +41,32 @@ If the desktop version has the same placeholder/menu, remove its visible menu op
 
 ---
 
-## 2. Sitasi Es.III and Es.IV PowerPoint column alignment
+## 2. Compact Analytics action bar
+
+### Expected behavior
+
+Keep the dataset action bar compact, especially at the bottom of the Analytics screen where multiple export actions and the Es.III template selector can otherwise take up too much horizontal space.
+
+- Replace long visible action captions with a short label and recognizable icon: `CSV`, `Excel`, `PPTX`, and `Stage`. The optional dashboard shortcut is labeled `Insights`.
+- Keep the full action description available on mouse hover and keyboard focus using a tooltip. Buttons must also have descriptive accessible names; icon SVGs are decorative to assistive technology.
+- Use concise labels for the other long actions as well: `Use first row` for promoting the first row to column headers, and `Combine & Download` for combining staged presentations in queue order. Keep the complete explanation in a tooltip and accessible name; show a short `Combining…` progress label.
+- Preserve the existing actions and behavior: CSV/Excel exports include active filters; PPTX export uses the selected Es.III template; staging generates and queues a filtered PPTX; Insights opens the current dataset dashboard.
+- Keep the Es.III selector understandable but compact. Its choices identify the number of people per slide (`4-row · 4 people` and `3-row · 3 people`).
+- Keep Reset visible and unchanged. Buttons must remain keyboard-operable, with disabled and progress states intact.
+
+### Desktop sync guidance
+
+Apply the same compact-label-plus-icon treatment to the desktop export toolbar. Provide a hover/focus hint or the desktop platform's equivalent, while preserving clear accessible names/tooltips so short labels are not ambiguous. Do not remove export actions or change their filtering/template behavior just to save space.
+
+### Web reference
+
+- `frontend/src/pages/AnalyticsPage.tsx` — `ActionTooltip` and the Analytics action bar markup.
+- The app uses existing inline SVG icons and Tailwind utility classes; no new icon dependency was added.
+- Verify at both narrow and wide window widths that actions wrap cleanly and tooltips are not clipped.
+
+---
+
+## 3. Sitasi Es.III and Es.IV PowerPoint column alignment
 
 ### Expected behavior
 
@@ -67,7 +93,7 @@ The indexes refer to columns in the PowerPoint template table, not source spread
 
 ---
 
-## 3. Sitasi Es.III cleaning refinements and 3-row template option
+## 4. Sitasi Es.III cleaning refinements and 3-row template option
 
 ### Cleaning behavior
 
@@ -104,7 +130,7 @@ Preserve all other text and existing cleaning behavior. Verify how the desktop c
 
 ---
 
-## 4. Sitasi PowerPoint staging and ordered merge (Es.III and Es.IV)
+## 5. Sitasi PowerPoint staging and ordered merge (Es.III and Es.IV)
 
 ### User workflow and intended data flow
 
@@ -175,6 +201,7 @@ Sitasi Es.III (Lite) keeps its existing template behavior. Do not expose the Es.
 ## Final desktop sync checklist
 
 - [ ] Remove the Secure Link Building placeholder/menu, its route/page, and unused asset if present; center and rebalance the remaining landing-page cards.
+- [ ] Compact the Analytics action bar with icons, short labels, and full hover/focus descriptions; retain accessible names and existing export/staging behavior.
 - [ ] Port Es.III and Es.IV PowerPoint alignment; keep Es.IV `Pertimbangan` excluded.
 - [ ] Port the two exact Sitasi Es.III text cleanups.
 - [ ] Package `template_3 Row.pptx` and expose its manual choice for Sitasi Es.III only.
