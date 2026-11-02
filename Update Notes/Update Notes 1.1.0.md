@@ -1,14 +1,16 @@
-# Update Notes: Web App to Desktop Sync Guide
+THIS UPDATE IS SYNCED TO DESKTOP VERSION
 
-This document records web-app changes that still need to be reviewed and ported to the separate desktop version. The web app is the reference implementation; the desktop version has **not** been updated by the changes described here.
+# Update Notes: Web App to Desktop Sync
+
+The web-app changes below have been ported to the separate Windows desktop project as version **1.1.0**. Keep this document as a behavioral reference for future maintenance; the listed sync work is complete in the desktop source. The desktop backend tests, frontend build/lint, Electron syntax checks, and packaging-script syntax checks have passed. The versioned installer/runtime bundle has also been built, structurally verified, and published at [GitHub Releases](https://github.com/salmanmfa2/PBNCLeaner-desktop-releases/releases/tag/v1.1.0). End-to-end runtime download and app-update testing remain.
 
 ## How to use this guide
 
-1. Find the matching screen, API/service, template assets, and tests in the desktop project. File names may differ; search by the function names and behavior listed below rather than assuming the folder structure is identical.
-2. Port one feature at a time, following the data flow from UI to export service and then through packaging/build configuration.
-3. Keep the existing desktop behavior unless a change below explicitly replaces it. In particular, preserve single-file PowerPoint export while adding staging as an additional workflow.
-4. Bring over or adapt the listed tests. Run the desktop project's focused tests and build/package checks after each feature.
-5. Do not copy web-only React or FastAPI code verbatim into a desktop app. Recreate the same behavior using the desktop project's established UI, storage, and IPC/API patterns.
+1. Use the behavior and test notes below when changing these features in either app.
+2. Keep the desktop and web implementations aligned without assuming their UI, API, or packaging architecture is identical.
+3. Preserve single-file PowerPoint export while maintaining staging as an additional workflow.
+4. Run the desktop project's focused tests and build/package checks after future changes.
+5. Do not copy web-only React or FastAPI code verbatim into a desktop app; preserve the behavior using its established UI, storage, and API patterns.
 
 ---
 
@@ -28,9 +30,9 @@ Secure Link Building is no longer part of the planned app experience. The user d
 - Updated English/Indonesian README and developer documentation to remove Secure Link Building references and describe the remaining routes/features.
 - The latest landing-page centering adjustment limits the feature area to a centered `max-w-2xl` grid, uses two equal columns at the `sm` breakpoint, and centers the text inside each card.
 
-### Desktop sync guidance
+### Desktop sync result
 
-If the desktop version has the same placeholder/menu, remove its visible menu option and any dedicated placeholder page/route or unused icon resource. Update its landing-page wording and layout to show the remaining features as a balanced, centered group. Do not remove any unrelated link-shortening tools or external links that may be used elsewhere; this change concerns only the in-app Secure Link Building placeholder/feature.
+The desktop placeholder route/page and landing-page card were removed, and the remaining landing-page cards were centered. Do not recreate the Secure Link Building placeholder or add a replacement link-building feature as part of this sync. This does not concern unrelated external links or tools.
 
 ### Web reference files
 
@@ -54,9 +56,9 @@ Keep the dataset action bar compact, especially at the bottom of the Analytics s
 - Keep the Es.III selector understandable but compact. Its choices identify the number of people per slide (`4-row · 4 people` and `3-row · 3 people`).
 - Keep Reset visible and unchanged. Buttons must remain keyboard-operable, with disabled and progress states intact.
 
-### Desktop sync guidance
+### Desktop sync result
 
-Apply the same compact-label-plus-icon treatment to the desktop export toolbar. Provide a hover/focus hint or the desktop platform's equivalent, while preserving clear accessible names/tooltips so short labels are not ambiguous. Do not remove export actions or change their filtering/template behavior just to save space.
+The desktop export toolbar now uses compact labels/icons and tooltips while preserving the existing actions and export behavior.
 
 ### Web reference
 
@@ -79,7 +81,11 @@ Center-align the following cells in every generated profile slide:
 
 The indexes refer to columns in the PowerPoint template table, not source spreadsheet column positions. Es.IV `Pertimbangan` is intentionally not included in its PowerPoint output.
 
-### Implementation to port
+### Desktop sync result
+
+Desktop profile generation centers the specified Es.III and Es.IV table columns while preserving all other column alignments.
+
+### Implementation details
 
 - In the PowerPoint generator, associate the centered-column indexes with the relevant mode/template layout.
 - Apply `PP_ALIGN.CENTER` to each cell in those columns on every generated slide. In the web implementation this is handled by `_center_table_columns` in `backend/app/services/powerpoint_service.py`.
@@ -112,7 +118,11 @@ Preserve all other text and existing cleaning behavior. Verify how the desktop c
 - The choice is manual per export. It is also used when adding an export to staging; changing the selection for a later export must not alter a presentation already generated and staged.
 - Do not offer the 3-row option for Sitasi Es.III (Lite) or Sitasi Es.IV. Those continue using their existing templates.
 
-### Implementation to port
+### Desktop sync result
+
+The desktop cleaner applies the two Es.III-only placeholder removals. The Es.III export offers the 4-row standard and 3-row template options; staging captures the generated PPTX and the selected template.
+
+### Implementation details
 
 1. Include `template_3 Row.pptx` in the desktop app's source assets and packaged/released application. Verify the packaged app can open it after installation, not only from a development checkout.
 2. Add an Es.III-only template selector to the export UI. Default it to the existing standard template.
@@ -166,7 +176,11 @@ Sitasi Es.III (Lite) keeps its existing template behavior. Do not expose the Es.
 - Disable conflicting actions while a PPTX is being generated or the queue is being combined; show errors instead of silently dropping a failed stage/combine.
 - Combining requires at least two presentations. The web backend currently accepts at most 20 presentations, at most 25 MB per file, and 100 MB total. It validates `.pptx` filenames and presentation validity. If the desktop version uses different practical limits, preserve clear validation and user-facing errors, and keep the UI constraints in sync with its backend.
 
-### Web implementation map (follow this order when porting)
+### Desktop sync result
+
+Desktop staging generates and stores each PPTX before combining. Users can order/remove/clear entries; Es.III can mix its 4-row and 3-row layouts, while Es.IV uses its single six-row template. Combined slide order follows the staging queue.
+
+### Web implementation map
 
 1. **UI state and actions — `frontend/src/pages/AnalyticsPage.tsx`**
    - `StagedPowerPoint` stores an ID, a display label, and the generated PPTX `Blob`.
@@ -200,14 +214,41 @@ Sitasi Es.III (Lite) keeps its existing template behavior. Do not expose the Es.
 
 ## Final desktop sync checklist
 
-- [ ] Remove the Secure Link Building placeholder/menu, its route/page, and unused asset if present; center and rebalance the remaining landing-page cards.
-- [ ] Compact the Analytics action bar with icons, short labels, and full hover/focus descriptions; retain accessible names and existing export/staging behavior.
-- [ ] Port Es.III and Es.IV PowerPoint alignment; keep Es.IV `Pertimbangan` excluded.
-- [ ] Port the two exact Sitasi Es.III text cleanups.
-- [ ] Package `template_3 Row.pptx` and expose its manual choice for Sitasi Es.III only.
-- [ ] Add staging for Es.III, Es.III (Lite), and Es.IV; show the correct template/filter in each entry.
-- [ ] Verify Es.IV uses its single default template with **6 people per slide** and has no template selector.
-- [ ] Preserve the generated PPTX itself as the staged item; do not substitute saved table data.
-- [ ] Support queue ordering/removal/clear and ordered combine while retaining mixed slide layouts.
-- [ ] Keep direct PPTX download working independently.
-- [ ] Adapt/add focused tests and validate the installed/packaged desktop app, including mixed 4-row/3-row Es.III and Es.IV combinations.
+- [x] Remove the Secure Link Building placeholder/menu, its route/page, and unused asset; center the remaining landing-page cards.
+- [x] Compact the Analytics action bar with icons, short labels, tooltips, and accessible names without changing actions.
+- [x] Align Es.III and Es.IV PowerPoint columns; keep Es.IV `Pertimbangan` excluded.
+- [x] Apply the two exact Sitasi Es.III text cleanups.
+- [x] Package `template_3 Row.pptx` and expose its manual choice for Sitasi Es.III only.
+- [x] Add staging for Es.III, Es.III (Lite), and Es.IV; identify the selected template/filter in each entry.
+- [x] Keep Es.IV on its single default template with **6 people per slide** and no template selector.
+- [x] Preserve each generated PPTX as the staged item and combine presentations in queue order while retaining mixed layouts.
+- [x] Keep direct PPTX download independent of staging.
+- [x] Add focused desktop tests and validate backend/frontend source behavior.
+- [x] Build and structurally inspect the versioned installer/runtime bundle, verify updater metadata names the generated installer, and check runtime contents/checksum.
+- [x] Publish the v1.1.0 installer/runtime release and verify its assets are present.
+- [ ] Verify first-launch runtime download, subsequent offline launch, and confirmed update installation on an installed desktop app.
+
+---
+
+## Desktop runtime bundles and GitHub Releases updater
+
+This infrastructure is desktop-only and does not change web deployment.
+
+- Desktop version `1.1.0` targets the public `salmanmfa2/PBNCLeaner-desktop-releases` repository.
+- `package-offline.ps1` creates a versioned NSIS installer without embedding the PyInstaller backend. The backend/dependencies are archived separately as `pbn-cleaner-backend-<version>-win-x64.zip` with a `.sha256` sidecar.
+- First launch requests permission to download the runtime matching the installed app version, verifies its SHA-256 checksum, extracts it under Electron's `app.getPath('userData')`, and starts the local backend. Internet is required for initial setup; SQLite/workbook user data remains under `%LOCALAPPDATA%\\PBNCleaner`.
+- Packaged apps check GitHub Releases for updates and download available installers automatically; the user confirms before an update installs and restarts the app.
+- `publish-release.ps1` uploads the installer, `latest.yml`, blockmap, runtime ZIP, and checksum using the authenticated GitHub CLI. The v1.1.0 release has been published; future releases require a version bump, a new package build, and authenticated GitHub CLI.
+- The `1.1.0` build is complete. `latest.yml` points to the exact generated installer filename; the runtime ZIP has the root executable, all three PowerPoint templates, and a matching SHA-256 sidecar; `app.asar` contains the updater/bootstrap dependencies; and the installer resources do not embed the Python runtime.
+- The `v1.1.0` release is live at `https://github.com/salmanmfa2/PBNCLeaner-desktop-releases/releases/tag/v1.1.0` with installer, blockmap, updater metadata, runtime ZIP, and checksum assets. Build and asset checks passed. First-run runtime download, subsequent offline startup, and confirmed update flow still need validation on an installed app.
+
+### Finalized 1.1.0 desktop patch
+
+- Added two home-screen buttons: **Catatan Pembaruan** opens Indonesian patch notes, and **Catatan yang Belum Diperbaiki** opens the current staging caveat.
+- The caveat instructs users to choose **Repair** if prompted while opening a PPTX and manually add any missing title header from staging.
+- Rebuilt the finalized package without changing the app version using `.\package-offline.ps1 -Finalized`; local output is `release\desktop-win-1.1.0 Finalized`.
+- Replaced the assets on the existing public `v1.1.0` GitHub release with the finalized installer, blockmap, updater metadata, and backend runtime bundle/checksum.
+- Added `PBN-Cleaner-Setup-1.1.0.exe.sha256` and `SHA256SUMS-1.1.0.txt` for this final 1.1.0 publication. Verified every manifest entry locally and compared all seven uploaded GitHub asset SHA-256 digests against the local finalized files. Also verified the installer SHA-512 against `latest.yml` and the runtime SHA-256 sidecar.
+- These additional checksum files are a one-off for finalized 1.1.0. The runtime's existing SHA-256 verification and electron-updater's SHA-512 validation from `latest.yml` continue to work as normal app behavior.
+- Since the app version remains 1.1.0, existing 1.1.0 installations will not auto-update to the replaced same-version assets; users must download and run the finalized installer manually.
+- Fixed stale same-version runtime caching: uninstalling Electron can leave `%APPDATA%` user data behind, and the old 1.1.0 bootstrap previously reused any cached `PBNCleaner.exe` without knowing it was built before the finalized UI. Only version 1.1.0 uses the `.runtime.sha256` marker: a cached executable without it triggers a consent prompt to refresh from the finalized release, then gets replaced with the verified runtime. The marker is not required by later app versions. After reinstalling the finalized installer, accept this refresh when prompted.
