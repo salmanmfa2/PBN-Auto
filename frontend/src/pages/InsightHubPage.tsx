@@ -290,7 +290,7 @@ export default function InsightHubPage() {
 
   return (
     <div className="min-h-screen bg-surface-950 text-slate-100">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-700 bg-surface-800 px-5 py-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-700 bg-surface-800 px-5 pb-4 pt-[4.5rem] xl:pr-[360px] xl:pt-4">
         <div className="flex items-center gap-3">
           <button
             type="button"

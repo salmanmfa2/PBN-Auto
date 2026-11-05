@@ -13,14 +13,223 @@ import type {
   PbnDashboardFilters,
   PbnDashboardPeopleResponse,
   PbnDashboardResponse,
+  PltPlhMonitoringRecord,
+  PltPlhRecordFields,
 } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
+
+export function getSnakeGameUrl(): string {
+  return new URL('/games/snake', BASE_URL).toString();
+}
 
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 60_000,
 });
+
+export type ApiDiagnostic = {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+};
+
+type OpenApiDocument = {
+  paths?: Record<string, Record<string, unknown>>;
+};
+
+function hasRoutes(
+  document: OpenApiDocument,
+  routes: Array<{ path: string; method: string }>,
+): boolean {
+  return routes.every(({ path, method }) =>
+    Object.keys(document.paths?.[path] ?? {}).some((key) => key.toLowerCase() === method),
+  );
+}
+
+function diagnostic(
+  id: string,
+  label: string,
+  passed: boolean,
+  detail: string,
+): ApiDiagnostic {
+  return { id, label, passed, detail };
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
+  const [healthResult, openApiResult, datasetsResult, pltPlhResult] = await Promise.allSettled([
+    api.get<{ status: string }>('/health', { timeout: 10_000 }),
+    api.get<OpenApiDocument>('/openapi.json', { timeout: 10_000 }),
+    getStoredDatasets(),
+    Promise.all([getPltPlhRecords(), getPltPlhNotifications()]),
+  ]);
+
+  const diagnostics: ApiDiagnostic[] = [];
+
+  if (healthResult.status === 'fulfilled' && healthResult.value.data.status === 'ok') {
+    diagnostics.push(diagnostic('api', 'Koneksi API', true, 'API merespons normal.'));
+  } else {
+    diagnostics.push(diagnostic(
+      'api',
+      'Koneksi API',
+      false,
+      healthResult.status === 'rejected'
+        ? describeError(healthResult.reason)
+        : `Status API tidak sesuai: ${healthResult.value.data.status || 'kosong'}.`,
+    ));
+  }
+
+  if (openApiResult.status === 'rejected') {
+    const error = describeError(openApiResult.reason);
+    diagnostics.push(
+      diagnostic('cleaning', 'PBN Analytics · Cleaning', false, error),
+      diagnostic('dataset', 'PBN Analytics · Dataset & Export', false, error),
+      diagnostic('insights', 'Insight Hub', false, error),
+      diagnostic('plt-plh', 'Manajemen Plt./Plh.', false, error),
+    );
+    return diagnostics;
+  }
+
+  const openApi = openApiResult.value.data;
+  const routeGroups = [
+    {
+      id: 'cleaning',
+      label: 'PBN Analytics · Cleaning',
+      routes: [
+        { path: '/upload', method: 'post' },
+        { path: '/clean/recommend-method/{dataset_id}', method: 'get' },
+        { path: '/clean/remove-columns', method: 'post' },
+        { path: '/clean/rename-columns', method: 'post' },
+        { path: '/clean/remove-duplicates', method: 'post' },
+        { path: '/clean/delete-rows', method: 'post' },
+        { path: '/clean/use-first-row-as-header', method: 'post' },
+        { path: '/clean/apply-auto-clean', method: 'post' },
+        { path: '/clean/history/{dataset_id}', method: 'get' },
+      ],
+    },
+    {
+      id: 'dataset',
+      label: 'PBN Analytics · Dataset & Export',
+      routes: [
+        { path: '/dataset/{dataset_id}', method: 'get' },
+        { path: '/export/csv/{dataset_id}', method: 'get' },
+        { path: '/export/csv/{dataset_id}', method: 'post' },
+        { path: '/export/excel/{dataset_id}', method: 'get' },
+        { path: '/export/excel/{dataset_id}', method: 'post' },
+        { path: '/export/powerpoint/{dataset_id}', method: 'get' },
+        { path: '/export/powerpoint/{dataset_id}', method: 'post' },
+        { path: '/export/powerpoint/merge', method: 'post' },
+        { path: '/stored-datasets', method: 'get' },
+      ],
+    },
+    {
+      id: 'insights',
+      label: 'Insight Hub',
+      routes: [
+        { path: '/insights/pbn/dashboard/{dataset_id}', method: 'post' },
+        { path: '/insights/pbn/dashboard/{dataset_id}/people', method: 'post' },
+      ],
+    },
+    {
+      id: 'plt-plh',
+      label: 'Manajemen Plt./Plh.',
+      routes: [
+        { path: '/plt-plh/records', method: 'get' },
+        { path: '/plt-plh/notifications', method: 'get' },
+        { path: '/plt-plh/records/export', method: 'get' },
+        { path: '/plt-plh/records', method: 'post' },
+        { path: '/plt-plh/records/{record_id}', method: 'put' },
+        { path: '/plt-plh/records/{record_id}/active', method: 'patch' },
+        { path: '/plt-plh/records/{record_id}', method: 'delete' },
+      ],
+    },
+    {
+      id: 'games',
+      label: 'Mini Game · Snake',
+      routes: [{ path: '/games/snake', method: 'get' }],
+    },
+  ];
+
+  diagnostics.push(...routeGroups.map(({ id, label, routes }) => {
+    const passed = hasRoutes(openApi, routes);
+    return diagnostic(
+      id,
+      label,
+      passed,
+      passed ? `${routes.length} endpoint tersedia.` : 'Ada endpoint yang belum terdaftar.',
+    );
+  }));
+
+  diagnostics.push(
+    datasetsResult.status === 'fulfilled'
+      ? diagnostic('stored-data', 'Database · Riwayat Dataset', true, `${datasetsResult.value.length} riwayat berhasil dimuat.`)
+      : diagnostic('stored-data', 'Database · Riwayat Dataset', false, describeError(datasetsResult.reason)),
+    pltPlhResult.status === 'fulfilled'
+      ? diagnostic('plt-plh-data', 'Database · Data Plt./Plh.', true, 'Data monitoring berhasil dimuat.')
+      : diagnostic('plt-plh-data', 'Database · Data Plt./Plh.', false, describeError(pltPlhResult.reason)),
+  );
+
+  return diagnostics;
+}
+
+export async function getPltPlhRecords(): Promise<PltPlhMonitoringRecord[]> {
+  const { data } = await api.get<PltPlhMonitoringRecord[]>('/plt-plh/records');
+  return data;
+}
+
+export async function getPltPlhNotifications(): Promise<PltPlhMonitoringRecord[]> {
+  const { data } = await api.get<PltPlhMonitoringRecord[]>('/plt-plh/notifications');
+  return data;
+}
+
+export async function createPltPlhRecord(
+  fields: PltPlhRecordFields,
+  editPassword: string,
+): Promise<PltPlhMonitoringRecord> {
+  const { data } = await api.post<PltPlhMonitoringRecord>('/plt-plh/records', {
+    ...fields,
+    edit_password: editPassword,
+  });
+  return data;
+}
+
+export async function updatePltPlhRecord(
+  recordId: number,
+  fields: PltPlhRecordFields,
+  editPassword: string,
+): Promise<PltPlhMonitoringRecord> {
+  const { data } = await api.put<PltPlhMonitoringRecord>(`/plt-plh/records/${recordId}`, {
+    ...fields,
+    edit_password: editPassword,
+  });
+  return data;
+}
+
+export async function setPltPlhRecordActive(
+  recordId: number,
+  isActive: boolean,
+  editPassword: string,
+): Promise<PltPlhMonitoringRecord> {
+  const { data } = await api.patch<PltPlhMonitoringRecord>(`/plt-plh/records/${recordId}/active`, {
+    is_active: isActive,
+    edit_password: editPassword,
+  });
+  return data;
+}
+
+export async function deletePltPlhRecord(recordId: number, editPassword: string): Promise<void> {
+  await api.delete(`/plt-plh/records/${recordId}`, { data: { edit_password: editPassword } });
+}
+
+export async function downloadPltPlhRecords(): Promise<void> {
+  const { data } = await api.get<Blob>('/plt-plh/records/export', { responseType: 'blob' });
+  downloadBlob(data, 'manajemen_plt_plh.xlsx');
+}
 
 // ─── Interceptors ───────────────────────────────────────────────────────────
 
@@ -259,6 +468,9 @@ export async function combinePowerPoints(presentations: Blob[]): Promise<Blob> {
   return data;
 }
 
-export function downloadCombinedPowerPoint(presentation: Blob): void {
-  downloadBlob(presentation, 'sitasi_profiles_combined.pptx');
+export function downloadCombinedPowerPoint(
+  presentation: Blob,
+  filename = 'sitasi_profiles_combined.pptx',
+): void {
+  downloadBlob(presentation, filename);
 }

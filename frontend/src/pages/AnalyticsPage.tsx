@@ -56,6 +56,8 @@ export default function AnalyticsPage() {
   const [isStagingPowerPoint, setIsStagingPowerPoint] = useState(false);
   const [isCombiningPowerPoints, setIsCombiningPowerPoints] = useState(false);
   const [powerPointStagingError, setPowerPointStagingError] = useState<string | null>(null);
+  const [isGeneratingBahanBaperjakat, setIsGeneratingBahanBaperjakat] = useState(false);
+  const [bahanBaperjakatError, setBahanBaperjakatError] = useState<string | null>(null);
   const nextStagedPowerPointId = useRef(1);
   const autoCleanOptions = [
     'PBN Open',
@@ -126,6 +128,49 @@ export default function AnalyticsPage() {
     }
   };
 
+  const handleGenerateBahanBaperjakat = async () => {
+    if (!preview || activeAutoCleanMode !== 'Sitasi Es.III') return;
+
+    const categoryColumn = preview.columns.find((column) => column.trim().toLowerCase() === 'kategori');
+    if (!categoryColumn) {
+      setBahanBaperjakatError('Kolom Kategori tidak ditemukan pada sheet yang dipilih.');
+      return;
+    }
+
+    setBahanBaperjakatError(null);
+    setIsGeneratingBahanBaperjakat(true);
+    const filtersWithoutCategory = Object.fromEntries(
+      Object.entries(tableFilters).filter(([column]) => column.trim().toLowerCase() !== 'kategori'),
+    );
+    try {
+      const mutasiPresentation = await apiClient.generatePowerPoint(
+        preview.dataset_id,
+        'Sitasi Es.III',
+        preview.selected_sheet,
+        { ...filtersWithoutCategory, [categoryColumn]: ['Mutasi'] },
+        'standard',
+      );
+      const promosiPresentation = await apiClient.generatePowerPoint(
+        preview.dataset_id,
+        'Sitasi Es.III',
+        preview.selected_sheet,
+        { ...filtersWithoutCategory, [categoryColumn]: ['Promosi'] },
+        'three-row',
+      );
+      const combinedPresentation = await apiClient.combinePowerPoints([
+        mutasiPresentation,
+        promosiPresentation,
+      ]);
+      apiClient.downloadCombinedPowerPoint(combinedPresentation, 'bahan_baperjakat.pptx');
+    } catch (generationError) {
+      setBahanBaperjakatError(
+        generationError instanceof Error ? generationError.message : String(generationError),
+      );
+    } finally {
+      setIsGeneratingBahanBaperjakat(false);
+    }
+  };
+
   const handleCombinePowerPoints = async () => {
     setPowerPointStagingError(null);
     setIsCombiningPowerPoints(true);
@@ -179,7 +224,7 @@ export default function AnalyticsPage() {
   return (
     <div className="min-h-screen flex flex-col bg-surface-900 text-slate-100">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-3 bg-surface-800 border-b border-surface-700 shrink-0">
+      <header className="flex items-center justify-between px-6 pb-3 pt-[4.5rem] bg-surface-800 border-b border-surface-700 shrink-0 xl:pr-[360px] xl:pt-3">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -594,6 +639,26 @@ export default function AnalyticsPage() {
               {canDownloadProfiles && (
                 <>
                   {activeAutoCleanMode === 'Sitasi Es.III' && (
+                    <ActionTooltip label="Gabungkan template 4 orang kategori Mutasi dan template 3 orang kategori Promosi">
+                      <button
+                        type="button"
+                        aria-label="Generate Bahan Baperjakat"
+                        onClick={() => void handleGenerateBahanBaperjakat()}
+                        disabled={isBusy || isGeneratingBahanBaperjakat || isStagingPowerPoint || isCombiningPowerPoints}
+                        className="btn-primary !px-3 !py-2 text-xs"
+                      >
+                        {isGeneratingBahanBaperjakat ? (
+                          <Spinner size="sm" label="Membuat…" />
+                        ) : (
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 3.75h7l4.25 4.5v12A.75.75 0 0117.5 21h-10a.75.75 0 01-.75-.75v-16A.75.75 0 017.5 3.5h6.25M14 3.75v4.5h4.25M9 12h6m-6 3.5h6" />
+                          </svg>
+                        )}
+                        {isGeneratingBahanBaperjakat ? 'Wait' : 'Generate Bahan Baperjakat'}
+                      </button>
+                    </ActionTooltip>
+                  )}
+                  {activeAutoCleanMode === 'Sitasi Es.III' && (
                     <label className="flex items-center gap-2 text-xs text-slate-400">
                       <span>Template</span>
                       <select
@@ -629,7 +694,7 @@ export default function AnalyticsPage() {
                       type="button"
                       aria-label={isStagingPowerPoint ? 'Generating filtered slides' : 'Add filtered slides to staging'}
                       onClick={() => void handleStagePowerPoint()}
-                      disabled={isBusy || isStagingPowerPoint || isCombiningPowerPoints}
+                      disabled={isBusy || isStagingPowerPoint || isCombiningPowerPoints || isGeneratingBahanBaperjakat}
                       className="btn-secondary !px-3 !py-2 text-xs"
                     >
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -639,6 +704,11 @@ export default function AnalyticsPage() {
                     </button>
                   </ActionTooltip>
                 </>
+              )}
+              {bahanBaperjakatError && (
+                <p role="alert" className="basis-full text-xs text-rose-300">
+                  Bahan Baperjakat gagal dibuat: {bahanBaperjakatError}
+                </p>
               )}
             </div>
           )}

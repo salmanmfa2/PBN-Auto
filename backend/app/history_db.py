@@ -44,8 +44,13 @@ def init_history_db() -> None:
     from app.models.cleaning_history import CleaningHistory  # noqa: F401
     from app.models.dataset_file import DatasetFile  # noqa: F401
     from app.models.dataset_run import DatasetRun  # noqa: F401
+    from app.models.plt_plh import PltPlhEditPassword, PltPlhMonitoringRecord  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+
+    with SessionLocal.begin() as session:
+        if session.get(PltPlhEditPassword, 1) is None:
+            session.add(PltPlhEditPassword(id=1, edit_password="3154"))
 
     columns = {column["name"]: column for column in inspect(engine).get_columns("dataset_files")}
     if "google_drive_file_id" in columns and not columns["google_drive_file_id"]["nullable"]:

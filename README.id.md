@@ -11,6 +11,8 @@ Aplikasi web full-stack untuk pembersihan dataset PBN dan analitik.
 | **Pengelolaan Kolom** | ✅ Aktif | Menyembunyikan atau menghapus kolom serta mengganti nama kolom secara langsung dengan pratinjau tabel |
 | **Ekspor** | ✅ Aktif | Mengunduh data dalam format `.csv` atau `.xlsx` |
 | **Insight Hub** | ✅ Aktif | Dashboard PBN Open + Edu + HB dengan jumlah pegawai dan distribusi data |
+| **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, dan mengekspor data |
+| **Toolbar Aplikasi** | ✅ Aktif | Menjalankan pemeriksaan API/menu tanpa mengubah data dan memainkan Snake melalui popup |
 
 ## Teknologi
 
@@ -51,7 +53,8 @@ Project PBNCleaner/
 │       ├── pages/                 # React Router pages
 │       │   ├── LandingPage.tsx    # / route (feature selector)
 │       │   ├── AnalyticsPage.tsx  # /pbn-analytics route
-│       │   └── InsightHubPage.tsx  # /insights route
+│       │   ├── InsightHubPage.tsx  # /insights route
+│       │   └── PltPlhManagementPage.tsx # /manajemen-plt-plh route
 │       ├── features/
 │       │   ├── upload/
 │       │   │   └── UploadZone.tsx
@@ -144,6 +147,7 @@ Aplikasi menggunakan **React Router v7** untuk navigasi berbasis URL:
 | `/` | LandingPage | Pemilih fitur dengan kartu untuk setiap modul |
 | `/pbn-analytics` | AnalyticsPage | Pembersihan dataset PBN (aktif) |
 | `/insights` | InsightHubPage | Dashboard analitik PBN Open + Edu + HB |
+| `/manajemen-plt-plh` | PltPlhManagementPage | Tabel monitoring Plt./Plh., notifikasi, dan ekspor |
 
 Pengguna dapat menandai rute atau membagikan URL secara langsung untuk membuka fitur tertentu.
 
@@ -168,6 +172,10 @@ VITE_API_URL=http://localhost:8000
 | `GET` | `/dataset/{id}` | Mengambil pratinjau dataset saat ini |
 | `GET` | `/export/csv/{id}` | Mengunduh data sebagai CSV |
 | `GET` | `/export/excel/{id}` | Mengunduh data sebagai Excel |
+| `GET` | `/plt-plh/records` | Menampilkan semua record monitoring Plt./Plh. |
+| `POST` / `PUT` / `PATCH` / `DELETE` | `/plt-plh/records` | Membuat, mengubah, mengaktifkan/menonaktifkan, atau menghapus record (memerlukan password edit bersama) |
+| `GET` | `/plt-plh/notifications` | Menampilkan record aktif yang mencapai ambang notifikasi enam bulan |
+| `GET` | `/plt-plh/records/export` | Mengunduh seluruh record sebagai `.xlsx` |
 
 ### Sitasi Es.III (Lite)
 
@@ -191,6 +199,14 @@ Operasi pembersihan kini dicatat di tabel MySQL `cleaning_history`.
 
 ```bash
 mysql -u <user> -p < backend/sql/001_create_cleaning_history.sql
+```
+
+Modul Plt./Plh. menggunakan database yang sama. Skemanya tersedia di `backend/sql/002_create_plt_plh_monitoring.sql`.
+
+Jalankan juga inisialisasi skemanya satu kali:
+
+```bash
+mysql -u <user> -p < backend/sql/002_create_plt_plh_monitoring.sql
 ```
 
 4. Jalankan backend seperti biasa. Saat startup, tabel akan dibuat jika belum tersedia.

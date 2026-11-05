@@ -11,6 +11,8 @@ A full-stack web application for PBN dataset cleaning and analytics.
 | **Column Management** | ✅ Live | Hide/remove columns; inline rename with preview table |
 | **Export** | ✅ Live | Download as `.csv` or `.xlsx` |
 | **Insight Hub** | ✅ Live | PBN Open + Edu + HB dashboard with employee totals and distributions |
+| **Manajemen Plt./Plh.** | ✅ Live | Monitor acting assignments, calculate tenure/status, receive dashboard notices, and export records |
+| **App Toolbar** | ✅ Live | Run read-only API/section checks and play Snake in a popup |
 
 ## Tech Stack
 
@@ -51,7 +53,8 @@ Project PBNCleaner/
 │       ├── pages/                 # React Router pages
 │       │   ├── LandingPage.tsx    # / route (feature selector)
 │       │   ├── AnalyticsPage.tsx  # /pbn-analytics route
-│       │   └── InsightHubPage.tsx  # /insights route
+│       │   ├── InsightHubPage.tsx # /insights route
+│       │   └── PltPlhManagementPage.tsx # /manajemen-plt-plh route
 │       ├── features/
 │       │   ├── upload/
 │       │   │   └── UploadZone.tsx
@@ -144,6 +147,7 @@ The app uses **React Router v7** for URL-based navigation:
 | `/` | LandingPage | Feature selector |
 | `/pbn-analytics` | AnalyticsPage | PBN dataset cleaning (active) |
 | `/insights` | InsightHubPage | PBN Open + Edu + HB analytics dashboard |
+| `/manajemen-plt-plh` | PltPlhManagementPage | Plt./Plh. assignment register, notifications, and export |
 
 Users can bookmark routes or share URLs directly to jump into any feature.
 
@@ -168,6 +172,10 @@ VITE_API_URL=http://localhost:8000
 | `GET` | `/dataset/{id}` | Fetch current dataset preview |
 | `GET` | `/export/csv/{id}` | Download as CSV |
 | `GET` | `/export/excel/{id}` | Download as Excel |
+| `GET` | `/plt-plh/records` | List Plt./Plh. monitoring records |
+| `POST` / `PUT` / `PATCH` / `DELETE` | `/plt-plh/records` | Create, edit, activate/deactivate, or delete a record (shared edit password required) |
+| `GET` | `/plt-plh/notifications` | List active records at or past the six-month notification threshold |
+| `GET` | `/plt-plh/records/export` | Download all records as `.xlsx` |
 
 ### Sitasi Es.III (Lite)
 
@@ -191,6 +199,14 @@ Cleaning operations are now written to MySQL in `cleaning_history`.
 
 ```bash
 mysql -u <user> -p < backend/sql/001_create_cleaning_history.sql
+```
+
+The Plt./Plh. module uses the same database. Its schema is in `backend/sql/002_create_plt_plh_monitoring.sql`.
+
+Run its initial schema once as well:
+
+```bash
+mysql -u <user> -p < backend/sql/002_create_plt_plh_monitoring.sql
 ```
 
 4. Start backend normally. On startup, tables are created if missing.

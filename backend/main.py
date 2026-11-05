@@ -8,9 +8,10 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
-from app.api import auth, cleaning, dataset, insights, stored_datasets, upload
+from app.api import auth, cleaning, dataset, insights, plt_plh, stored_datasets, upload
 from app.db import init_db
 from app.history_db import init_history_db
 
@@ -70,9 +71,16 @@ app.include_router(upload.router, tags=["upload"])
 app.include_router(cleaning.router)
 app.include_router(dataset.router)
 app.include_router(insights.router)
+app.include_router(plt_plh.router)
 app.include_router(stored_datasets.router)
 
 
 @app.get("/health", tags=["health"])
 def health():
     return {"status": "ok"}
+
+
+@app.get("/games/snake", tags=["games"])
+def snake_game():
+    game_path = Path(__file__).resolve().parent / "app" / "Games" / "snake.html"
+    return FileResponse(game_path, media_type="text/html")

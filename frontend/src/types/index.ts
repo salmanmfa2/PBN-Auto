@@ -26,6 +26,32 @@ export interface StoredDatasetRun {
   updated_at: string;
 }
 
+export type PltPlhStatus = 'Inaktif' | 'Aktif' | 'Mendekati 6 Bulan' | 'Lebih dari 6 Bulan';
+
+export interface PltPlhMonitoringRecord {
+  id: number;
+  jabatan_kosong: string;
+  pejabat_pengganti: string;
+  jabatan_definitif_pengganti: string;
+  nomor_surat: string;
+  tmt: string;
+  masa_kerja_tahun: number;
+  masa_kerja_bulan: number;
+  masa_kerja: string;
+  status: PltPlhStatus;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PltPlhRecordFields {
+  jabatan_kosong: string;
+  pejabat_pengganti: string;
+  jabatan_definitif_pengganti: string;
+  nomor_surat: string;
+  tmt: string;
+}
+
 export interface CleaningMethodRecommendation {
   dataset_id: string;
   sheet_name: string;
