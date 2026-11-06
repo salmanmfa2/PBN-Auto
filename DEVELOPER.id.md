@@ -2,6 +2,12 @@
 
 Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami bagian yang perlu diubah, struktur proyek, dan tugas pengembangan yang umum.
 
+## Cakupan Rilis
+
+- Rilis web saat ini adalah **1.2**. Lihat [catatan pembaruan web](./Update%20Notes/Update%20Notes%201.2%20Web.md) dan [catatan pembaruan desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
+- Navigasi utama desktop hanya berisi PBN Analytics dan Insight Hub serta tidak memiliki sistem login. Menu tambahan dan alur akun hanya berlaku untuk web.
+- Generate ND Undangan Pelantikan dan Analisis Kinerja DJPb masih placeholder di web; versi **2.0** direncanakan sebagai milestone untuk menjadikan keduanya berfungsi.
+
 ## Gambaran Umum
 
 - **Tujuan**: Platform pengelolaan data untuk pembersihan dataset PBN dan analitik. Backend menggunakan FastAPI (Python), sedangkan frontend menggunakan React 19, Vite, dan React Router (TypeScript).
@@ -32,12 +38,16 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `app/services/cleaning_recommendation_service.py` — membandingkan sheet yang diunggah dengan workbook verifikasi dan memberikan rekomendasi tanpa mengubah dataset.
   - `templates/verification/` — workbook format sumber yang digunakan untuk rekomendasi metode pembersihan.
   - `app/api/insights.py` — endpoint dashboard PBN; permintaan filter menghitung ulang agregat dari seluruh dataset.
+  - `app/api/auth.py` — endpoint login, pendaftaran, sesi, preferensi pengguna, dan administrasi akun.
+  - `app/api/chat.py` — endpoint chat pengguna terautentikasi; kredensial penyedia tetap di backend.
   - `app/services/dataset_service.py` — logika DataFrame utama. Mengarahkan proses ke cleaner programatis atau membaca file aturan teks lama.
   - `app/services/pbn_dashboard_service.py` — memvalidasi kolom dashboard yang sudah dibersihkan, menerapkan filter, dan menghitung jumlah pegawai serta distribusi grafik.
+  - `app/services/auth_service.py` — siklus akun/sesi, aturan peran, dan preferensi tampilan tersimpan.
   - `app/cleaners/` — modul cleaner programatis:
     - `pbn.py`, `pbn_edu.py`, `pbn_edu_hb.py`, `sitasi_esiii.py`, `sitasi_esiv.py` — masing-masing mengembalikan konfigurasi pembersihan.
   - `app/storage/dataset_store.py` — penyimpanan dataset dalam memori (UUID -> sheets). Data bersifat sementara dan akan hilang saat server dimulai ulang.
   - `app/history_db.py` — koneksi dan sesi SQLAlchemy MySQL untuk riwayat pembersihan.
+  - `app/models/auth.py` — model akun, sesi, dan preferensi pengguna.
   - `app/models/cleaning_history.py` — model SQLAlchemy untuk tabel riwayat pembersihan.
   - `app/schemas/pbn_dashboard.py` — skema permintaan filter dashboard.
   - `app/services/history_service.py` — helper pencatatan dan pengambilan riwayat pembersihan.
@@ -49,7 +59,12 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
     - `LandingPage.tsx` — halaman utama dengan pilihan fitur (rute `/`).
     - `AnalyticsPage.tsx` — antarmuka pembersihan dataset PBN (rute `/pbn-analytics`).
     - `InsightHubPage.tsx` — dashboard interaktif PBN Open + Edu + HB (rute `/insights`).
-  - `src/App.tsx` — definisi rute React Router (tidak menampilkan UI; hanya mengatur routing).
+    - `LoginPage.tsx` / `AdminPage.tsx` — login web dan workspace pengelolaan akun oleh Super Admin.
+    - `PltPlhManagementPage.tsx` — UI monitoring khusus web.
+  - `src/App.tsx` — rute, gerbang sesi/peran, dan pemasangan toolbar/chat bersama.
+  - `src/contexts/AuthContext.tsx` — autentikasi, mode Guest, dan status sesi.
+  - `src/components/AppToolbar.tsx` — jam yang dapat digeser, tombol utilitas tersembunyi, menu tema, dan dialog toolbar.
+  - `src/components/ChatWidget.tsx` — UI Groq chat terautentikasi dan tampilan Markdown.
   - `src/main.tsx` — entry point frontend yang membungkus App dengan `<BrowserRouter>`.
   - `src/hooks/useDataset.ts` — aksi dataset tingkat tinggi dan panggilan API yang digunakan UI.
   - `src/services/api.ts` — fungsi pembungkus HTTP untuk endpoint backend.
@@ -227,18 +242,12 @@ npm run build              # TypeScript check + Vite build to dist/
 
 ---
 
-## Modul Saat Ini
+## Cakupan Saat Ini dan Milestone Berikutnya
 
-**PBN Analytics:** aktif untuk membersihkan dan mengekspor dataset.
-
-**Insights Hub:**
-- Rute: `/insights`
-- Dashboard PBN Open + Edu + HB aktif dengan jumlah pegawai dan distribusi yang mengikuti filter.
-- Pengembangan mendatang dapat menambahkan modul analitik dan visualisasi lainnya.
-
-**Rencana peningkatan:**
-- Mengganti `DatasetStore` dalam memori dengan PostgreSQL agar data persisten
-- Menambahkan autentikasi dan otorisasi pengguna
-- Menambahkan kontrol akses berbasis peran (RBAC) untuk modul
+- **Web 1.2:** PBN Analytics, Insight Hub, akun dan kontrol akses berbasis peran, workspace Admin, monitoring Plt./Plh., preferensi tema tersimpan per pengguna, toolbar utilitas ringkas, dan Groq chat untuk pengguna login.
+- **Placeholder web:** Generate ND Undangan Pelantikan dan Analisis Kinerja DJPb saat ini hanya menampilkan “On development”; alur kerja sesuai namanya belum tersedia.
+- **Milestone versi 2.0:** Menjadikan alur kerja placeholder tersebut berfungsi setelah kebutuhannya ditentukan. Jangan menganggap versi 2.0 sudah diimplementasikan.
+- **Desktop:** Menu navigasi utamanya hanya PBN Analytics dan Insight Hub; tidak ada login desktop, workspace Admin, atau menu placeholder web.
+- DatasetStore masih menggunakan memori dan akan kosong setelah backend dimulai ulang. Persistensi dataset ke database perlu dirancang terpisah jika diminta.
 
 Jika diperlukan, pengujian unit untuk `dataset_service._load_auto_clean_rules` dapat ditambahkan untuk memastikan perilaku parser, begitu pula panduan kontribusi yang mencakup alur kerja Git tim.

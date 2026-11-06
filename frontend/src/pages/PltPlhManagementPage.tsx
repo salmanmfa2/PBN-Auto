@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as apiClient from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import type { PltPlhMonitoringRecord, PltPlhRecordFields } from '../types';
 import { Spinner } from '../components/Spinner';
 
@@ -9,6 +10,15 @@ type PendingAction = {
   record: PltPlhMonitoringRecord;
   nextActive?: boolean;
 } | null;
+
+const veryEmpyFields: PltPlhRecordFields = {
+  jabatan_kosong: '',
+  pejabat_pengganti: '',
+  jabatan_definitif_pengganti: '',
+  nomor_surat: '',
+  tmt: ''
+}
+
 
 const emptyFields: PltPlhRecordFields = {
   jabatan_kosong: '',
@@ -49,6 +59,8 @@ function statusClass(status: PltPlhMonitoringRecord['status']): string {
 
 export default function PltPlhManagementPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canManageRecords = (user?.auth_level ?? 0) >= 2;
   const [records, setRecords] = useState<PltPlhMonitoringRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,11 +68,12 @@ export default function PltPlhManagementPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [fields, setFields] = useState<PltPlhRecordFields>(emptyFields);
-  const [editPassword, setEditPassword] = useState('');
   const [editingRecordId, setEditingRecordId] = useState<number | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isNdMenuOpen, setIsNdMenuOpen] = useState(false);
+  const [isDevelopmentDialogOpen, setIsDevelopmentDialogOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
-  const [actionPassword, setActionPassword] = useState('');
+  const ndMenuRef = useRef<HTMLDivElement>(null);
 
   const refreshRecords = async () => {
     setLoadError(null);
@@ -88,9 +101,38 @@ export default function PltPlhManagementPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFormOpen, isSaving]);
 
+  useEffect(() => {
+    if (!isNdMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !ndMenuRef.current?.contains(event.target)) {
+        setIsNdMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsNdMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isNdMenuOpen]);
+
+  useEffect(() => {
+    if (!isDevelopmentDialogOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsDevelopmentDialogOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDevelopmentDialogOpen]);
+
   const resetForm = () => {
     setFields(emptyFields);
-    setEditPassword('');
     setEditingRecordId(null);
     setIsFormOpen(false);
   };
@@ -103,7 +145,6 @@ export default function PltPlhManagementPage() {
       nomor_surat: record.nomor_surat,
       tmt: record.tmt.slice(0, 10),
     });
-    setEditPassword('');
     setEditingRecordId(record.id);
     setActionError(null);
     setIsFormOpen(true);
@@ -115,9 +156,9 @@ export default function PltPlhManagementPage() {
     setIsSaving(true);
     try {
       if (editingRecordId === null) {
-        await apiClient.createPltPlhRecord(fields, editPassword);
+        await apiClient.createPltPlhRecord(fields);
       } else {
-        await apiClient.updatePltPlhRecord(editingRecordId, fields, editPassword);
+        await apiClient.updatePltPlhRecord(editingRecordId, fields);
       }
       resetForm();
       await refreshRecords();
@@ -135,16 +176,14 @@ export default function PltPlhManagementPage() {
     setIsSaving(true);
     try {
       if (pendingAction.kind === 'delete') {
-        await apiClient.deletePltPlhRecord(pendingAction.record.id, actionPassword);
+        await apiClient.deletePltPlhRecord(pendingAction.record.id);
       } else {
         await apiClient.setPltPlhRecordActive(
           pendingAction.record.id,
           pendingAction.nextActive ?? false,
-          actionPassword,
         );
       }
       setPendingAction(null);
-      setActionPassword('');
       await refreshRecords();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
@@ -191,22 +230,79 @@ export default function PltPlhManagementPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400">{records.length} data</span>
+          <div className="relative" ref={ndMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsNdMenuOpen((isOpen) => !isOpen)}
+              aria-haspopup="menu"
+              aria-expanded={isNdMenuOpen}
+              className="btn-secondary"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 3.75h7l4.25 4.5v12A.75.75 0 0117.5 21h-10a.75.75 0 01-.75-.75v-16A.75.75 0 017.5 3.5h6.25M14 3.75v4.5h4.25M9 12h6m-6 3.5h6" />
+              </svg>
+              Susun ND Plt.
+              <svg className={`h-3.5 w-3.5 transition-transform ${isNdMenuOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {isNdMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Pilihan Susun ND Plt."
+                className="absolute right-0 z-30 mt-2 min-w-48 overflow-hidden rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl"
+              >
+                {['Mekanisme Plt.', 'PRIN Plt'].map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsNdMenuOpen(false);
+                      setIsDevelopmentDialogOpen(true);
+                    }}
+                    className="block w-full px-4 py-2.5 text-left text-sm text-slate-200 transition hover:bg-slate-800 focus:bg-slate-800 focus:outline-none"
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {canManageRecords && (
+            <button
+              type="button"
+              title="Tambah Monitoring"
+              aria-label="Tambah Monitoring"
+              onClick={() => {
+                resetForm();
+                setActionError(null);
+                setIsFormOpen(true);
+              }}
+              className="btn-primary p-2.5"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => {
-              resetForm();
-              setActionError(null);
-              setIsFormOpen(true);
-            }}
-            className="btn-primary"
+            title={isExporting ? 'Mengekspor Excel…' : 'Export Excel'}
+            aria-label={isExporting ? 'Mengekspor Excel' : 'Export Excel'}
+            aria-busy={isExporting}
+            onClick={() => void exportRecords()}
+            disabled={isExporting}
+            className="btn-secondary p-2.5"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" />
-            </svg>
-            Tambah Monitoring
-          </button>
-          <button type="button" onClick={() => void exportRecords()} disabled={isExporting} className="btn-secondary">
-            {isExporting ? <Spinner size="sm" label="Mengekspor…" /> : 'Export Excel'}
+            {isExporting ? (
+              <Spinner size="sm" label="Mengekspor…" />
+            ) : (
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 3.75h7l4.25 4.5v5.25M14 3.75v4.5h4.25M8 12H5.75A1.75 1.75 0 004 13.75v5.5C4 20.216 4.784 21 5.75 21h7.5A1.75 1.75 0 0015 19.25V17m-3-3l3 3 3-3m-3 3V9" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 16h.01M10 16h.01M7 18.5h.01M10 18.5h.01" />
+              </svg>
+            )}
           </button>
         </div>
       </header>
@@ -258,7 +354,7 @@ export default function PltPlhManagementPage() {
                     <th className="px-4 py-3">TMT</th>
                     <th className="px-4 py-3">Masa Kerja</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Aksi</th>
+                    {canManageRecords && <th className="px-4 py-3">Aksi</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -276,7 +372,7 @@ export default function PltPlhManagementPage() {
                           {record.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      {canManageRecords && <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
@@ -295,7 +391,6 @@ export default function PltPlhManagementPage() {
                             aria-label={`${record.is_active ? 'Deaktivasi' : 'Aktifkan'} record ${record.id}`}
                             onClick={() => {
                               setPendingAction({ kind: 'active', record, nextActive: !record.is_active });
-                              setActionPassword('');
                               setActionError(null);
                             }}
                             className={`rounded-md p-2 hover:bg-slate-700 focus:outline-none focus:ring-2 ${
@@ -320,7 +415,6 @@ export default function PltPlhManagementPage() {
                             aria-label={`Hapus record ${record.id}`}
                             onClick={() => {
                               setPendingAction({ kind: 'delete', record });
-                              setActionPassword('');
                               setActionError(null);
                             }}
                             className="rounded-md p-2 text-rose-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-400"
@@ -330,7 +424,7 @@ export default function PltPlhManagementPage() {
                             </svg>
                           </button>
                         </div>
-                      </td>
+                      </td>}
                     </tr>
                   ))}
                 </tbody>
@@ -429,17 +523,6 @@ export default function PltPlhManagementPage() {
                 className="input mt-1.5"
               />
             </label>
-            <label className="text-sm text-slate-300">
-              Password Edit
-              <input
-                required
-                type="password"
-                autoComplete="new-password"
-                value={editPassword}
-                onChange={(event) => setEditPassword(event.target.value)}
-                className="input mt-1.5"
-              />
-            </label>
             <div className="flex flex-wrap items-center justify-end gap-2 md:col-span-2">
               <button type="button" onClick={resetForm} disabled={isSaving} className="btn-secondary">Batal</button>
               <button type="submit" disabled={isSaving} className="btn-primary">
@@ -452,6 +535,35 @@ export default function PltPlhManagementPage() {
         )}
 
       </main>
+
+      {isDevelopmentDialogOpen && (
+        <div
+          className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/75 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsDevelopmentDialogOpen(false);
+          }}
+        >
+          <section
+            className="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="plt-plh-development-title"
+          >
+            <h2 id="plt-plh-development-title" className="text-lg font-semibold text-white">
+              On development
+            </h2>
+            <button
+              type="button"
+              onClick={() => setIsDevelopmentDialogOpen(false)}
+              className="btn-secondary mt-5"
+              autoFocus
+            >
+              Tutup
+            </button>
+          </section>
+        </div>
+      )}
 
       {pendingAction && (
         <div
@@ -474,17 +586,6 @@ export default function PltPlhManagementPage() {
               {pendingAction.record.pejabat_pengganti} — {pendingAction.record.jabatan_kosong}
             </p>
             <form onSubmit={(event) => void runPendingAction(event)} className="mt-4 space-y-4">
-              <label className="block text-sm text-slate-300">
-                Password Edit
-                <input
-                  required
-                  type="password"
-                  autoComplete="current-password"
-                  value={actionPassword}
-                  onChange={(event) => setActionPassword(event.target.value)}
-                  className="input mt-1.5"
-                />
-              </label>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setPendingAction(null)} disabled={isSaving} className="btn-secondary">Batal</button>
                 <button

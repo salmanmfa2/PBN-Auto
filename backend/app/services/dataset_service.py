@@ -4,6 +4,8 @@ Core dataset service — all DataFrame operations live here.
 
 import io
 import re
+from datetime import date, datetime, timedelta
+from numbers import Real
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -15,6 +17,16 @@ from app.cleaners import get_rules_for_mode, CLEANER_MODULES
 
 
 PREVIEW_LIMIT = 500  # rows returned in preview payloads
+PBN_EDU_HB_DATE_COLUMNS = (
+    "TMT JF Keterampilan",
+    "TMT JF Keahlian",
+    "TMT JF Ahli Muda",
+    "TMT JF Ahli Madya",
+    "TMT Es4",
+    "TMT Es3",
+    "TMT Es2",
+    "TMT Jabatan",
+)
 AUTO_CLEAN_RULES_FILES = {
     "PBN Open": Path(__file__).resolve().parents[2] / "Auto Clean Logic (PBN Open).txt",
     "PBN Open + Edu": Path(__file__).resolve().parents[2] / "Cleaning Logic" / "PBN Open + Edu.txt",
@@ -25,6 +37,7 @@ AUTO_CLEAN_RULES_FILES = {
 
 def _sanitize(df: pd.DataFrame) -> pd.DataFrame:
     """Replace NaN/Inf with None so JSON serialization doesn't blow up."""
+    df = df.astype(object)
     return df.where(pd.notnull(df), other=None)
 
 
@@ -281,6 +294,33 @@ def apply_auto_clean(dataset_id: str, mode: str, sheet_name: Optional[str] = Non
             Pertimbangan=df["Pertimbangan"].map(_to_proper_case)
         )
 
+    cleaning_warnings: List[str] = []
+    if mode == "PBN Open + Edu + HB":
+        df = df.map(
+            lambda value: value.replace("'", "").replace("`", "")
+            if isinstance(value, str)
+            else value
+        )
+        for column in PBN_EDU_HB_DATE_COLUMNS:
+            if column not in df.columns:
+                continue
+            parsed_values = []
+            invalid_rows = []
+            for row_number, value in enumerate(df[column], start=1):
+                parsed, valid = _parse_pbn_date(value)
+                parsed_values.append(parsed)
+                if not valid:
+                    invalid_rows.append(row_number)
+            df[column] = pd.Series(parsed_values, index=df.index)
+            if invalid_rows:
+                shown_rows = ", ".join(str(row) for row in invalid_rows[:10])
+                remaining = len(invalid_rows) - min(len(invalid_rows), 10)
+                extra_rows = f", and {remaining} more" if remaining else ""
+                cleaning_warnings.append(
+                    f'{column}: {len(invalid_rows)} value(s) could not be parsed and were preserved '
+                    f"(cleaned row(s) {shown_rows}{extra_rows})."
+                )
+
     if category_source:
         if category_source not in df.columns:
             raise ValueError(f"Cannot create 'Kategori': the selected dataset does not contain '{category_source}'.")
@@ -289,7 +329,41 @@ def apply_auto_clean(dataset_id: str, mode: str, sheet_name: Optional[str] = Non
     df.attrs["sitasi_esiii_lite"] = mode == "Sitasi Es.III (Lite)"
     sheets[sheet_name] = df
     DatasetStore.update(dataset_id, sheets)
-    return _build_preview(dataset_id, sheets, sheet_name)
+    preview = _build_preview(dataset_id, sheets, sheet_name)
+    if cleaning_warnings:
+        preview["cleaning_warnings"] = cleaning_warnings
+    return preview
+
+
+def _parse_pbn_date(value: Any) -> Tuple[Any, bool]:
+    if value is None or pd.isna(value):
+        return pd.NaT, True
+    if isinstance(value, (pd.Timestamp, datetime, date)):
+        return value, True
+    if isinstance(value, Real) and not isinstance(value, bool):
+        if 10_000 <= value <= 100_000:
+            return datetime(1899, 12, 30) + timedelta(days=float(value)), True
+        if float(value).is_integer():
+            try:
+                return datetime.strptime(str(int(value)), "%Y%m%d"), True
+            except ValueError:
+                pass
+        return value, False
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return pd.NaT, True
+        try:
+            return datetime.fromisoformat(cleaned.replace("Z", "+00:00")), True
+        except ValueError:
+            pass
+        for date_format in ("%d/%m/%Y", "%d-%m-%Y", "%Y%m%d"):
+            try:
+                return datetime.strptime(cleaned, date_format), True
+            except ValueError:
+                continue
+        return cleaned, False
+    return value, False
 
 
 def _to_proper_case(value: Any) -> Any:

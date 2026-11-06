@@ -5,7 +5,36 @@
 @tailwind utilities;
 
 @layer base {
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box;   }
+
+  .chat-markdown > :first-child { margin-top: 0; }
+  .chat-markdown > :last-child { margin-bottom: 0; }
+  .chat-markdown p { margin: 0.45rem 0; }
+  .chat-markdown h1,
+  .chat-markdown h2,
+  .chat-markdown h3,
+  .chat-markdown h4 { margin: 0.8rem 0 0.35rem; font-weight: 700; line-height: 1.3; }
+  .chat-markdown h1 { font-size: 1.1rem; }
+  .chat-markdown h2 { font-size: 1rem; }
+  .chat-markdown h3,
+  .chat-markdown h4 { font-size: 0.9rem; }
+  .chat-markdown ul,
+  .chat-markdown ol { margin: 0.45rem 0; padding-left: 1.35rem; }
+  .chat-markdown ul { list-style: disc; }
+  .chat-markdown ol { list-style: decimal; }
+  .chat-markdown li { margin: 0.15rem 0; }
+  .chat-markdown li > ul,
+  .chat-markdown li > ol { margin: 0.15rem 0; }
+  .chat-markdown blockquote { margin: 0.6rem 0; border-left: 2px solid #64748b; padding-left: 0.65rem; color: #cbd5e1; }
+  .chat-markdown hr { margin: 0.7rem 0; border-color: #475569; }
+  .chat-markdown a { color: #7dd3fc; text-decoration: underline; overflow-wrap: anywhere; }
+  .chat-markdown :not(pre) > code { border-radius: 0.25rem; background: #0f172a; padding: 0.1rem 0.25rem; font-size: 0.85em; }
+  .chat-markdown pre { margin: 0.6rem 0; max-width: 100%; overflow-x: auto; border-radius: 0.5rem; background: #0f172a; padding: 0.65rem; }
+  .chat-markdown pre code { white-space: pre; font-size: 0.8rem; }
+  .chat-markdown table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+  .chat-markdown th,
+  .chat-markdown td { border: 1px solid #475569; padding: 0.3rem 0.45rem; text-align: left; vertical-align: top; }
+  .chat-markdown th { background: #334155; font-weight: 600; }
   body {
     background-color: #0f172a;
     color: #f1f5f9;
@@ -60,4 +89,162 @@
   .badge {
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
   }
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+html[data-theme="default"],
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="light"] body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html[data-theme="light"] [class~="bg-slate-950"],
+html[data-theme="light"] [class~="bg-slate-950/50"],
+html[data-theme="light"] [class~="bg-slate-900/40"],
+html[data-theme="light"] [class~="bg-slate-900/60"],
+html[data-theme="light"] [class~="bg-slate-900/70"],
+html[data-theme="light"] [class~="bg-slate-800/50"],
+html[data-theme="light"] [class~="bg-slate-800/80"],
+html[data-theme="light"] [class~="bg-surface-950"],
+html[data-theme="light"] [class~="bg-surface-900"],
+html[data-theme="light"] [class~="bg-surface-900/40"],
+html[data-theme="light"] [class~="bg-surface-800"],
+html[data-theme="light"] [class~="bg-surface-800/30"],
+html[data-theme="light"] [class~="bg-surface-800/95"] {
+  background-color: #f8fafc;
+}
+
+html[data-theme="light"] [class~="bg-slate-900"],
+html[data-theme="light"] [class~="bg-slate-800"],
+html[data-theme="light"] [class~="bg-slate-700/60"],
+html[data-theme="light"] [class~="bg-surface-800/30"],
+html[data-theme="light"] [class~="bg-surface-700/30"] {
+  background-color: #f1f5f9;
+}
+
+html[data-theme="light"] [class~="bg-slate-700"],
+html[data-theme="light"] [class~="bg-surface-700"] {
+  background-color: #e2e8f0;
+}
+
+html[data-theme="light"] [class~="bg-slate-600"] {
+  background-color: #cbd5e1;
+}
+
+html[data-theme="light"] [class~="text-slate-100"],
+html[data-theme="light"] [class~="text-slate-200"] {
+  color: #0f172a;
+}
+
+html[data-theme="light"] [class~="text-slate-300"] {
+  color: #1e293b;
+}
+
+html[data-theme="light"] [class~="text-slate-400"] {
+  color: #334155;
+}
+
+html[data-theme="light"] [class~="text-slate-500"],
+html[data-theme="light"] [class~="text-slate-600"],
+html[data-theme="light"] [class~="placeholder:text-slate-500"]::placeholder,
+html[data-theme="light"] [class~="placeholder:text-slate-600"]::placeholder {
+  color: #475569;
+}
+
+html[data-theme="light"] [class~="border-slate-600"],
+html[data-theme="light"] [class~="border-slate-700"],
+html[data-theme="light"] [class~="border-slate-800"],
+html[data-theme="light"] [class~="border-surface-500"],
+html[data-theme="light"] [class~="border-surface-600"],
+html[data-theme="light"] [class~="border-surface-700"],
+html[data-theme="light"] [class~="border-surface-700/50"],
+html[data-theme="light"] [class~="border-surface-700/60"],
+html[data-theme="light"] [class~="divide-slate-800"] {
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] h1.text-white,
+html[data-theme="light"] h2.text-white,
+html[data-theme="light"] p.text-white {
+  color: #0f172a;
+}
+
+html[data-theme="light"] [class~="hover:bg-surface-700"]:hover,
+html[data-theme="light"] [class~="hover:bg-slate-800"]:hover {
+  background-color: #e2e8f0;
+}
+
+html[data-theme="light"] [class~="hover:text-white"]:hover {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .input {
+  background-color: #fff;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .input::placeholder {
+  color: #64748b;
+}
+
+html[data-theme="light"] .card {
+  border-color: #cbd5e1;
+  background-color: #fff;
+}
+
+html[data-theme="light"] .btn-secondary {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .btn-secondary:hover:not(:disabled) {
+  background-color: #cbd5e1;
+}
+
+html[data-theme="light"] .btn-ghost {
+  color: #475569;
+}
+
+html[data-theme="light"] .btn-ghost:hover {
+  color: #0f172a;
+  background-color: #e2e8f0;
+}
+
+html[data-theme="light"] .section-title {
+  color: #475569;
+}
+
+html[data-theme="light"] .chat-markdown blockquote {
+  color: #334155;
+}
+
+html[data-theme="light"] .chat-markdown :not(pre) > code,
+html[data-theme="light"] .chat-markdown pre {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .chat-markdown th {
+  background-color: #e2e8f0;
+}
+
+html[data-theme="light"] .chat-markdown th,
+html[data-theme="light"] .chat-markdown td {
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #94a3b8;
 }

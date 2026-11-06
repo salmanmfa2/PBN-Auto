@@ -1,10 +1,13 @@
 import unittest
-from datetime import date
+from datetime import date, datetime
+from io import BytesIO
 
+from openpyxl import load_workbook
 import pandas as pd
 
+from app.schemas.dataset import DatasetPreview
 from app.schemas.pbn_dashboard import PbnDashboardFilters
-from app.services.dataset_service import apply_auto_clean
+from app.services.dataset_service import apply_auto_clean, export_excel
 from app.services.pbn_dashboard_service import build_pbn_dashboard, get_pbn_dashboard_people
 from app.storage.dataset_store import DatasetStore
 
@@ -147,23 +150,53 @@ class PbnDashboardTests(unittest.TestCase):
             ],
         )
 
-    def test_pbn_edu_hb_cleaning_preserves_tmt_values(self) -> None:
+    def test_pbn_edu_hb_cleaning_strips_characters_and_converts_tmt_fields(self) -> None:
         columns = [f"Column {index}" for index in range(1, 91)]
-        columns[19] = "TMT Jabatan"
-        rows = []
-        for date_value in ("'2025-07-07", "'2025-08-09", None):
-            row = [f"value-{index}" for index in range(1, 91)]
-            row[19] = date_value
-            rows.append(row)
+        tmt_columns = [
+            "TMT JF Keterampilan",
+            "TMT JF Keahlian",
+            "TMT JF Ahli Muda",
+            "TMT JF Ahli Madya",
+            "TMT Es4",
+            "TMT Es3",
+            "TMT Es2",
+            "TMT Jabatan",
+        ]
+        for position, column in enumerate(tmt_columns, start=14):
+            columns[position - 1] = column
+        columns[21] = "Catatan"
+        row = [f"value-{index}" for index in range(1, 91)]
+        row[13:21] = ["'2025-07-07", "`09/08/2025`", None, None, None, None, None, "invalid-date"]
+        row[21] = "a'b`c"
+        rows = [row]
         dataset_id = DatasetStore.save({"Sheet1": pd.DataFrame(rows, columns=columns)})
 
         result = apply_auto_clean(dataset_id, "PBN Open + Edu + HB", "Sheet1")
-        tmt_values = [row["TMT Jabatan"] for row in result["rows"]]
+        cleaned_row = result["rows"][0]
 
-        self.assertEqual(tmt_values[0], "'2025-07-07")
-        self.assertEqual(tmt_values[1], "'2025-08-09")
-        self.assertTrue(pd.isna(tmt_values[2]))
+        self.assertEqual(cleaned_row["TMT JF Keterampilan"], pd.Timestamp("2025-07-07"))
+        self.assertEqual(cleaned_row["TMT JF Keahlian"], pd.Timestamp("2025-08-09"))
+        self.assertTrue(pd.isna(cleaned_row["TMT JF Ahli Muda"]))
+        self.assertEqual(cleaned_row["TMT Jabatan"], "invalid-date")
+        self.assertEqual(cleaned_row["Catatan"], "abc")
+        cleaned_dataframe = DatasetStore.get(dataset_id)["Sheet1"]
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(cleaned_dataframe["TMT JF Keterampilan"]))
+        self.assertFalse(pd.api.types.is_datetime64_any_dtype(cleaned_dataframe["TMT Jabatan"]))
+        self.assertEqual(
+            result["cleaning_warnings"],
+            ["TMT Jabatan: 1 value(s) could not be parsed and were preserved (cleaned row(s) 1)."],
+        )
         self.assertEqual(result["columns"].count("TMT Jabatan"), 1)
+        self.assertIsInstance(cleaned_row["TMT JF Keterampilan"], datetime)
+
+        response = DatasetPreview(**result).model_dump(mode="json")
+        self.assertEqual(response["cleaning_warnings"], result["cleaning_warnings"])
+        self.assertEqual(response["rows"][0]["TMT JF Keterampilan"], "2025-07-07T00:00:00")
+
+        workbook = load_workbook(BytesIO(export_excel(dataset_id, "Sheet1")))
+        worksheet = workbook["Sheet1"]
+        date_column = result["columns"].index("TMT JF Keterampilan") + 1
+        self.assertIsInstance(worksheet.cell(row=2, column=date_column).value, datetime)
 
 
 if __name__ == "__main__":

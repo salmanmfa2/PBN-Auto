@@ -15,6 +15,14 @@ import type {
   PbnDashboardResponse,
   PltPlhMonitoringRecord,
   PltPlhRecordFields,
+  AdminUserPayload,
+  AdminUserUpdatePayload,
+  AuthRegistrationPayload,
+  AuthSessionResponse,
+  AuthUser,
+  ThemeName,
+  ChatMessage,
+  ChatResponse,
 } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
@@ -27,6 +35,80 @@ const api = axios.create({
   baseURL: BASE_URL,
   timeout: 60_000,
 });
+
+export const AUTH_TOKEN_STORAGE_KEY = 'pbn.auth.token';
+export const AUTH_GUEST_STORAGE_KEY = 'pbn.auth.guest';
+
+api.interceptors.request.use((config) => {
+  const token = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export async function login(user: string, password: string): Promise<AuthSessionResponse> {
+  const { data } = await api.post<AuthSessionResponse>('/auth/login', { user, password });
+  return data;
+}
+
+export async function register(payload: AuthRegistrationPayload): Promise<AuthUser> {
+  const { data } = await api.post<AuthUser>('/auth/register', payload);
+  return data;
+}
+
+export async function getCurrentUser(): Promise<AuthUser> {
+  const { data } = await api.get<AuthUser>('/auth/me');
+  return data;
+}
+
+export async function getThemePreference(): Promise<ThemeName> {
+  const { data } = await api.get<{ theme: ThemeName }>('/auth/preferences/theme');
+  return data.theme;
+}
+
+export async function updateThemePreference(theme: ThemeName): Promise<void> {
+  await api.put('/auth/preferences/theme', { theme });
+}
+
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout');
+}
+
+export async function listAdminUsers(): Promise<AuthUser[]> {
+  const { data } = await api.get<AuthUser[]>('/admin/users');
+  return data;
+}
+
+export async function createAdminUser(payload: AdminUserPayload): Promise<AuthUser> {
+  const { data } = await api.post<AuthUser>('/admin/users', payload);
+  return data;
+}
+
+export async function updateAdminUser(
+  username: string,
+  payload: AdminUserUpdatePayload,
+): Promise<AuthUser> {
+  const { data } = await api.put<AuthUser>(
+    `/admin/users/${encodeURIComponent(username)}`,
+    payload,
+  );
+  return data;
+}
+
+export async function deleteAdminUser(username: string): Promise<void> {
+  await api.delete(`/admin/users/${encodeURIComponent(username)}`);
+}
+
+export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatResponse> {
+  try {
+    const { data } = await api.post<ChatResponse>('/chat', { messages });
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError<{ detail?: string }>(error) && error.response) {
+      throw new Error(error.response.data.detail ?? error.message);
+    }
+    throw error;
+  }
+}
 
 export type ApiDiagnostic = {
   id: string;
@@ -187,43 +269,31 @@ export async function getPltPlhNotifications(): Promise<PltPlhMonitoringRecord[]
   return data;
 }
 
-export async function createPltPlhRecord(
-  fields: PltPlhRecordFields,
-  editPassword: string,
-): Promise<PltPlhMonitoringRecord> {
-  const { data } = await api.post<PltPlhMonitoringRecord>('/plt-plh/records', {
-    ...fields,
-    edit_password: editPassword,
-  });
+export async function createPltPlhRecord(fields: PltPlhRecordFields): Promise<PltPlhMonitoringRecord> {
+  const { data } = await api.post<PltPlhMonitoringRecord>('/plt-plh/records', fields);
   return data;
 }
 
 export async function updatePltPlhRecord(
   recordId: number,
   fields: PltPlhRecordFields,
-  editPassword: string,
 ): Promise<PltPlhMonitoringRecord> {
-  const { data } = await api.put<PltPlhMonitoringRecord>(`/plt-plh/records/${recordId}`, {
-    ...fields,
-    edit_password: editPassword,
-  });
+  const { data } = await api.put<PltPlhMonitoringRecord>(`/plt-plh/records/${recordId}`, fields);
   return data;
 }
 
 export async function setPltPlhRecordActive(
   recordId: number,
   isActive: boolean,
-  editPassword: string,
 ): Promise<PltPlhMonitoringRecord> {
   const { data } = await api.patch<PltPlhMonitoringRecord>(`/plt-plh/records/${recordId}/active`, {
     is_active: isActive,
-    edit_password: editPassword,
   });
   return data;
 }
 
-export async function deletePltPlhRecord(recordId: number, editPassword: string): Promise<void> {
-  await api.delete(`/plt-plh/records/${recordId}`, { data: { edit_password: editPassword } });
+export async function deletePltPlhRecord(recordId: number): Promise<void> {
+  await api.delete(`/plt-plh/records/${recordId}`);
 }
 
 export async function downloadPltPlhRecords(): Promise<void> {

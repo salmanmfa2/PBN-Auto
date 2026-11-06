@@ -1,3 +1,3 @@
-from app.models.auth import User, UserSession
+from app.models.auth import User, UserPreference, UserSession
 
-__all__ = ["User", "UserSession"]
+__all__ = ["User", "UserPreference", "UserSession"]

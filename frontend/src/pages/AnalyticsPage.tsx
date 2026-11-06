@@ -551,6 +551,16 @@ export default function AnalyticsPage() {
               <ErrorBanner message={error} onDismiss={clearError} />
             </div>
           )}
+          {preview?.cleaning_warnings && preview.cleaning_warnings.length > 0 && (
+            <div className="px-6 pt-4">
+              <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                <p className="font-semibold">Some date values could not be parsed and were preserved.</p>
+                <ul className="mt-1 list-inside list-disc text-xs text-amber-100/80">
+                  {preview.cleaning_warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
           {!hasData && status !== 'uploading' && (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center p-8">
               <div className="w-16 h-16 rounded-2xl bg-surface-800 flex items-center justify-center">

@@ -32,20 +32,15 @@ class PltPlhRecordFields(BaseModel):
 
 
 class PltPlhRecordCreate(PltPlhRecordFields):
-    edit_password: str = Field(min_length=1, max_length=255)
+    pass
 
 
 class PltPlhRecordUpdate(PltPlhRecordFields):
-    edit_password: str = Field(min_length=1, max_length=255)
+    pass
 
 
 class PltPlhRecordActiveUpdate(BaseModel):
     is_active: bool
-    edit_password: str = Field(min_length=1, max_length=255)
-
-
-class PltPlhRecordDelete(BaseModel):
-    edit_password: str = Field(min_length=1, max_length=255)
 
 
 class PltPlhRecordRead(BaseModel):

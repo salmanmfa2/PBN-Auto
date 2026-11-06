@@ -1,11 +1,10 @@
-import hmac
 from datetime import date
 from io import BytesIO
 
 from fastapi import HTTPException
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.plt_plh import PltPlhMonitoringRecord
@@ -76,19 +75,6 @@ def list_records(db: Session) -> list[PltPlhRecordRead]:
 
 def list_notifications(db: Session) -> list[PltPlhRecordRead]:
     return [record for record in list_records(db) if record.status in NOTIFICATION_STATUSES]
-
-
-def verify_edit_password(db: Session, password: str) -> None:
-    configured_password = db.execute(
-        text("SELECT edit_password FROM plt_plh_edit_password WHERE id = 1")
-    ).scalar_one_or_none()
-    if configured_password is None:
-        raise HTTPException(status_code=503, detail="The edit password is not configured.")
-    if not hmac.compare_digest(
-        str(configured_password).encode("utf-8"),
-        password.encode("utf-8"),
-    ):
-        raise HTTPException(status_code=403, detail="Incorrect edit password.")
 
 
 def create_record(db: Session, fields: PltPlhRecordFields) -> PltPlhMonitoringRecord:

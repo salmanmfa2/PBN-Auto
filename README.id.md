@@ -2,6 +2,12 @@
 
 Aplikasi web full-stack untuk pembersihan dataset PBN dan analitik.
 
+## Catatan Rilis
+
+Pembaruan web saat ini adalah **1.2**: [Catatan pembaruan Web](./Update%20Notes/Update%20Notes%201.2%20Web.md). Persyaratan desktop terkait didokumentasikan terpisah di [Catatan pembaruan Desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); catatan desktop tersebut tidak menyatakan build atau rilis desktop telah dibuat.
+
+Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub**, tanpa sistem login. Menu placeholder tambahan pada catatan web hanya berlaku untuk web. Versi **2.0** direncanakan sebagai milestone setelah menu placeholder tersebut berfungsi.
+
 ## Fitur
 
 | Fitur | Status | Deskripsi |
@@ -12,13 +18,18 @@ Aplikasi web full-stack untuk pembersihan dataset PBN dan analitik.
 | **Ekspor** | ✅ Aktif | Mengunduh data dalam format `.csv` atau `.xlsx` |
 | **Insight Hub** | ✅ Aktif | Dashboard PBN Open + Edu + HB dengan jumlah pegawai dan distribusi data |
 | **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, dan mengekspor data |
-| **Toolbar Aplikasi** | ✅ Aktif | Menjalankan pemeriksaan API/menu tanpa mengubah data dan memainkan Snake melalui popup |
+| **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, dan Super Admin; sesi pengguna berlaku satu jam |
+| **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin dan administrasi monitoring Plt./Plh. |
+| **Menu web tambahan** | 🛠️ Placeholder | Generate ND Undangan Pelantikan dan Analisis Kinerja DJPb hanya menampilkan “On development”; tidak tersedia di desktop |
+| **Tampilan** | ✅ Aktif | Tema Default, Dark, dan Light; pilihan pengguna yang login tersimpan pada akunnya |
+| **Toolbar Aplikasi** | ✅ Aktif | Jam WIB, posisi dapat digeser, utilitas dapat disembunyikan, diagnostik API, dan Snake |
+| **Chat AI** | ✅ Aktif | Chat web untuk pengguna login dengan Markdown dan tombol hapus percakapan; memakai Groq dari backend |
 
 ## Teknologi
 
 **Frontend:** React 19 · Vite · TypeScript · Tailwind CSS v3 · React Router v7 · TanStack Table · Axios
 
-**Backend:** Python 3.11+ · FastAPI · Pandas · openpyxl · Uvicorn
+**Backend:** Python 3.11+ · FastAPI · Pandas · openpyxl · Groq Python SDK · Uvicorn
 
 **Deployment:** Skrip batch Windows · PowerShell · Hosting lokal atau intranet
 
@@ -31,7 +42,9 @@ Project PBNCleaner/
 │   │   ├── api/
 │   │   │   ├── upload.py          # POST /upload
 │   │   │   ├── cleaning.py        # POST /clean/*
-│   │   │   └── dataset.py         # GET /dataset/:id, GET /export/*
+│   │   │   ├── dataset.py         # GET /dataset/:id, GET /export/*
+│   │   │   ├── auth.py            # Login, preferensi, dan endpoint akun web
+│   │   │   └── chat.py            # Endpoint Groq chat terautentikasi
 │   │   ├── cleaners/
 │   │   │   ├── pbn.py             # PBN Open mode
 │   │   │   ├── pbn_edu.py         # PBN Open + Edu mode
@@ -41,9 +54,9 @@ Project PBNCleaner/
 │   │   ├── services/
 │   │   │   └── dataset_service.py # DataFrame logic & mode routing
 │   │   ├── schemas/
-│   │   │   └── dataset.py         # Pydantic models
+│   │   │   └── dataset.py         # Skema Pydantic
 │   │   └── storage/
-│   │       └── dataset_store.py   # In-memory store
+│   │       └── dataset_store.py   # Penyimpanan dalam memori
 │   ├── main.py                    # FastAPI app entry
 │   ├── run_server.py              # Uvicorn launcher with port detection
 │   └── requirements.txt
@@ -54,7 +67,16 @@ Project PBNCleaner/
 │       │   ├── LandingPage.tsx    # / route (feature selector)
 │       │   ├── AnalyticsPage.tsx  # /pbn-analytics route
 │       │   ├── InsightHubPage.tsx  # /insights route
-│       │   └── PltPlhManagementPage.tsx # /manajemen-plt-plh route
+│       │   ├── PltPlhManagementPage.tsx # Monitoring khusus web
+│       │   ├── LoginPage.tsx      # Login/registrasi/Guest web
+│       │   └── AdminPage.tsx      # Administrasi akun web
+│       ├── components/
+│       │   ├── AppToolbar.tsx      # Jam, tema, dan toolbar utilitas
+│       │   ├── ChatWidget.tsx      # Groq chat pengguna login
+│       │   ├── ErrorBanner.tsx
+│       │   └── Spinner.tsx
+│       ├── contexts/
+│       │   └── AuthContext.tsx    # Status sesi dan Guest
 │       ├── features/
 │       │   ├── upload/
 │       │   │   └── UploadZone.tsx
@@ -68,9 +90,6 @@ Project PBNCleaner/
 │       │   └── api.ts             # Axios API layer
 │       ├── types/
 │       │   └── index.ts           # TypeScript interfaces
-│       ├── components/
-│       │   ├── ErrorBanner.tsx
-│       │   └── Spinner.tsx
 │       ├── App.tsx                # React Router setup
 │       └── main.tsx               # BrowserRouter wrapper
 │
@@ -173,15 +192,36 @@ VITE_API_URL=http://localhost:8000
 | `GET` | `/export/csv/{id}` | Mengunduh data sebagai CSV |
 | `GET` | `/export/excel/{id}` | Mengunduh data sebagai Excel |
 | `GET` | `/plt-plh/records` | Menampilkan semua record monitoring Plt./Plh. |
-| `POST` / `PUT` / `PATCH` / `DELETE` | `/plt-plh/records` | Membuat, mengubah, mengaktifkan/menonaktifkan, atau menghapus record (memerlukan password edit bersama) |
+| `POST` / `PUT` / `PATCH` / `DELETE` | `/plt-plh/records` | Membuat, mengubah, mengaktifkan/menonaktifkan, atau menghapus record (memerlukan login Admin atau Super Admin) |
 | `GET` | `/plt-plh/notifications` | Menampilkan record aktif yang mencapai ambang notifikasi enam bulan |
 | `GET` | `/plt-plh/records/export` | Mengunduh seluruh record sebagai `.xlsx` |
+| `POST` | `/auth/register` | Mendaftarkan akun User level 1 |
+| `POST` | `/auth/login` | Masuk dan menerima bearer token |
+| `GET` | `/auth/me` | Mengambil akun yang sedang masuk |
+| `POST` | `/auth/logout` | Mencabut sesi saat ini |
+| `GET` / `PUT` | `/auth/preferences/theme` | Membaca atau memperbarui tema akun yang sedang masuk |
+| `GET` / `POST` / `PUT` / `DELETE` | `/admin/users` | Mengelola akun (khusus Super Admin) |
+| `POST` | `/chat` | Membuat jawaban chat Groq untuk pengguna yang sudah masuk |
+
+### Akun dan peran
+
+Aplikasi web mendukung Guest, User (level 1), Admin (level 2), dan Super Admin (level 3). Pendaftaran publik langsung membuat akun level 1. Guest dan User dapat melihat data monitoring Plt./Plh.; hanya Admin dan Super Admin yang dapat mengubahnya. Workspace Admin hanya dapat diakses akun Admin dan Super Admin yang sudah masuk; pengelolaan akun hanya dapat dilakukan Super Admin. Fitur pembersihan dataset tetap tersedia untuk Guest dan User.
+
+Toolbar menyediakan tema Default (tampilan gelap bawaan), Dark, dan Light. Pilihan terakhir pengguna yang sudah masuk disimpan di `user_preferences` dan mengikuti akunnya; pilihan Guest hanya disimpan di browser tersebut. Tombol Patch Notes, catatan yang belum diperbaiki, Snake, API Test, dan Admin dikelompokkan di balik tombol tampil/sembunyikan toolbar; tombol masuk/keluar tetap terlihat.
+
+Super Admin pertama **tidak dibuat otomatis**. Setelah tabel akun dibuat, masukkan Super Admin pertama secara manual menggunakan contoh SQL berkomentar dalam `backend/sql/003_create_users_and_sessions.sql`, lalu masuk dan gunakan workspace Super Admin. Sesuai kebutuhan proyek saat ini, password akun disimpan sebagai teks biasa di MySQL. Ini tidak sesuai untuk produksi atau penerapan yang sensitif; jangan membuka akses database dan jangan menggunakan password nyata/yang dipakai ulang.
 
 ### Sitasi Es.III (Lite)
 
 `Sitasi Es.III (Lite)` menggunakan aturan pembersihan dan tata letak profil PowerPoint yang sama dengan `Sitasi Es.III`, tetapi mempertahankan baris yang kolom keduanya kosong. Saat dataset Lite yang sudah dibersihkan diekspor ke Excel, baris judul bagian (teks pada `No` dan kolom lainnya kosong) akan digabung melintang. Ekspor CSV dan pratinjau aplikasi tetap menampilkan teks judul di `No` dengan sel lainnya kosong; CSV tidak mendukung format sel gabungan. Mode `Sitasi Es.III` standar tidak berubah.
 
 Pembersihan Sitasi Es.III mengubah `Keterangan` menjadi proper case setelah enam karakter pertamanya dihapus. Pembersihan Sitasi Es.IV mengubah `Pertimbangan` menjadi proper case. Proper case menjadikan huruf pertama setiap kata sebagai huruf kapital; nilai yang kosong tetap kosong.
+
+Untuk **PBN Open + Edu + HB**, Auto Clean menghapus karakter apostrof lurus dan backtick dari nilai sel teks, lalu mengubah nilai tanggal pada `TMT JF Keterampilan`, `TMT JF Keahlian`, `TMT JF Ahli Muda`, `TMT JF Ahli Madya`, `TMT Es4`, `TMT Es3`, `TMT Es2`, dan `TMT Jabatan` menjadi tanggal. Nilai tanggal berisi teks yang tidak dapat diuraikan tetap dipertahankan setelah dibersihkan dan ditampilkan dalam peringatan.
+
+### Chat AI
+
+Pengguna yang sudah masuk dapat membuka tombol chat kecil di pojok kanan bawah. Jawaban asisten dirender dengan Markdown dan tombol Clear menghapus percakapan sementara yang terlihat. Asisten diarahkan untuk tidak mengarang fitur aplikasi yang belum dikonfirmasi, tetapi jawaban tetap dapat keliru. Permintaan chat dikirim oleh backend ke Groq; API key Groq harus diatur melalui `GROQ_API_KEY` di `backend/.env`, dan `GROQ_MODEL` dapat digunakan untuk mengganti model bawaan `openai/gpt-oss-120b`. Jangan letakkan key di kode frontend atau variabel environment frontend. Pesan dan konteks percakapan yang dikirim akan diteruskan ke Groq untuk membuat jawaban; jangan masukkan password atau data pribadi sensitif.
 
 ### Rekomendasi metode pembersihan
 
@@ -209,7 +249,13 @@ Jalankan juga inisialisasi skemanya satu kali:
 mysql -u <user> -p < backend/sql/002_create_plt_plh_monitoring.sql
 ```
 
-4. Jalankan backend seperti biasa. Saat startup, tabel akan dibuat jika belum tersedia.
+Buat juga tabel akun dan sesi:
+
+```bash
+mysql -u <user> -p < backend/sql/003_create_users_and_sessions.sql
+```
+
+Selanjutnya, masukkan Super Admin pertama dengan mengedit dan menjalankan contoh SQL berkomentar di dalam skrip tersebut. Tidak ada akun yang dibuat otomatis. Jalankan backend seperti biasa; tabel mapped yang belum tersedia, termasuk preferensi tema pengguna, juga dibuat saat startup.
 
 ### Contoh: Unggah
 

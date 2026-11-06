@@ -23,21 +23,8 @@ CREATE TABLE IF NOT EXISTS plt_plh_monitoring_records (
   INDEX idx_plt_plh_records_active_tmt (is_active, tmt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- This module currently uses one shared edit password, as requested.
--- The password is stored as plain text in this table and is not an account password.
-CREATE TABLE IF NOT EXISTS plt_plh_edit_password (
-  id TINYINT UNSIGNED NOT NULL,
-  edit_password VARCHAR(255) NOT NULL,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  CONSTRAINT chk_plt_plh_edit_password_singleton CHECK (id = 1)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Seed the initial password only when the singleton setting does not exist.
--- Re-running this script will not overwrite a password changed directly in MySQL.
-INSERT INTO plt_plh_edit_password (id, edit_password)
-VALUES (1, '3154')
-ON DUPLICATE KEY UPDATE id = VALUES(id);
+-- Older installations may still have the unused plt_plh_edit_password table.
+-- Current write access is controlled by auth_level 2 or 3 in the users table.
 
 -- Tenure and status are derived from TMT at query time so they stay current.
 -- Boundaries: under 5 completed months = Aktif; 5 to under 6 = Mendekati 6 Bulan;

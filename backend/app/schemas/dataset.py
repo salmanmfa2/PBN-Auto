@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SheetPreview(BaseModel):
@@ -18,6 +18,7 @@ class DatasetPreview(BaseModel):
     rows: List[Dict[str, Any]]
     row_count: int
     column_count: int
+    cleaning_warnings: List[str] = Field(default_factory=list)
 
 
 class RemoveColumnsRequest(BaseModel):

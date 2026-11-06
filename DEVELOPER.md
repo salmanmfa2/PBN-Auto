@@ -2,6 +2,11 @@ Developer Guide
 
 This file helps new contributors (especially juniors) understand where to make changes, how the project is organized, and common development tasks.
 
+**Release scope**
+- The current web release is **1.2**. See [web update notes](./Update%20Notes/Update%20Notes%201.2%20Web.md) and [desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
+- Desktop main navigation is limited to PBN Analytics and Insight Hub and has no login system. The additional web menus and account workflow are web-only.
+- Generate ND Undangan Pelantikan and Analisis Kinerja DJPb are web placeholders; version **2.0** is the planned milestone for making them functional.
+
 **Overview**
 - **Purpose**: A data management platform for PBN dataset cleaning and analytics. Backend is FastAPI (Python), frontend is React 19 + Vite with React Router (TypeScript).
 - **Architecture**: Modular page-based routing using React Router v7. Each major feature lives in its own route under `frontend/src/pages/` with shared hooks and services.
@@ -29,12 +34,16 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/services/cleaning_recommendation_service.py` — compares an uploaded sheet with the verification workbooks and returns a recommendation without modifying the dataset.
   - `templates/verification/` — source-format workbooks used by cleaning-method recommendation.
   - `app/api/insights.py` — PBN dashboard endpoint; filter requests return recalculated full-dataset aggregates.
+  - `app/api/auth.py` — login, public registration, session, user-preference, and admin-account endpoints.
+  - `app/api/chat.py` — authenticated chat endpoint; provider credentials remain backend-only.
   - `app/services/dataset_service.py` — core DataFrame logic. Routes to programmatic cleaners or parses legacy text rule files.
   - `app/services/pbn_dashboard_service.py` — validates cleaned dashboard columns, applies filters, calculates employee totals and chart distributions.
+  - `app/services/auth_service.py` — account/session lifecycle, role invariants, and persisted appearance preferences.
   - `app/cleaners/` — programmatic cleaner modules:
     - `pbn.py`, `pbn_edu.py`, `pbn_edu_hb.py`, `sitasi_esiii.py`, `sitasi_esiv.py` — each returns a cleaning config dict.
   - `app/storage/dataset_store.py` — in-memory dataset store (UUID -> sheets). Note: data is ephemeral (restarts clear data).
   - `app/history_db.py` — SQLAlchemy MySQL connection/session for cleaning history.
+  - `app/models/auth.py` — account, session, and per-user preference models.
   - `app/models/cleaning_history.py` — SQLAlchemy model for cleaning history table.
   - `app/schemas/pbn_dashboard.py` — dashboard filter request schema.
   - `app/services/history_service.py` — logging and retrieval helpers for cleaning history.
@@ -46,7 +55,12 @@ This file helps new contributors (especially juniors) understand where to make c
     - `LandingPage.tsx` — landing page with feature selector cards (`/` route).
     - `AnalyticsPage.tsx` — PBN dataset cleaning interface (`/pbn-analytics` route).
     - `InsightHubPage.tsx` — PBN Open + Edu + HB interactive dashboard (`/insights` route).
-  - `src/App.tsx` — React Router Routes definition (no UI in App itself; just routing).
+    - `LoginPage.tsx` / `AdminPage.tsx` — web authentication entry and Super Admin account workspace.
+    - `PltPlhManagementPage.tsx` — web-only monitoring UI.
+  - `src/App.tsx` — React Router routes, session gate, role gate, and shared toolbar/chat mounting.
+  - `src/contexts/AuthContext.tsx` — authentication, Guest mode, and session state.
+  - `src/components/AppToolbar.tsx` — draggable clock, collapsible tools, theme menu, and toolbar dialogs.
+  - `src/components/ChatWidget.tsx` — authenticated Groq chat UI and Markdown rendering.
   - `src/main.tsx` — app entry point wrapping App with `<BrowserRouter>`.
   - `src/hooks/useDataset.ts` — high-level dataset actions and API calls used across UI.
   - `src/services/api.ts` — HTTP wrapper functions to backend endpoints.
@@ -120,7 +134,7 @@ This file helps new contributors (especially juniors) understand where to make c
 - `POST /insights/pbn/dashboard/{dataset_id}/people?sheet_name=...` applies the same filters and returns only the matched people for the dashboard's **View table** popup.
 - The dashboard service aggregates the full in-memory DataFrame (not the 500-row preview) after every filter change. Empty Eselon or education lists mean “all”.
 - Required output columns are `Sex`, `Usia (th.)`, `TMT Jabatan`, `Eselon`, `Pendidikan Terakhir (Short)`, `Rumpun Pdd Terakhir`, `Region Homebase`, `Unit Eselon II`, and `Agama`. Header matching ignores case and punctuation.
-- The cleaner preserves `TMT Jabatan` as-is. The dashboard parses values (including date strings with a leading apostrophe) for tenure calculations without changing the cleaned data. Tenure is completed calendar years from that date to the current date. Rows with missing age/TMT are retained for the full-range view and excluded if that range is narrowed.
+- PBN Open + Edu + HB cleaning removes apostrophe and backtick characters from string cell values, then converts the eight TMT fields (`TMT JF Keterampilan`, `TMT JF Keahlian`, `TMT JF Ahli Muda`, `TMT JF Ahli Madya`, `TMT Es4`, `TMT Es3`, `TMT Es2`, and `TMT Jabatan`) to datetime values. Unparseable non-empty date values are preserved and reported in the cleaning response/UI. The dashboard calculates tenure from `TMT Jabatan`; rows with missing age/TMT are retained for the full-range view and excluded if that range is narrowed.
 - The popup displays `index`, `Nama`, `Eselon`, `Jabatan`, `Pendidikan Terakhir (Th.)`, `Jurusan`, and `Universitas/Sekolah Tinggi`; `Pendidikan Terakhir (Short)` is used if the requested education label is not present.
 
 **Frontend architecture for junior devs**
@@ -212,20 +226,10 @@ npm run build              # TypeScript check + Vite build to dist/
 
 ---
 
-## Next Steps & Future Modules
+## Current Product Scope and Next Milestone
 
-**Current phase (1):** PBN Analytics ✅ Live
-
-**Current analytics module:** Insights Hub
-- Route: `/insights`
-- Live PBN Open + Edu + HB dashboard with filtered employee totals and distributions.
-- Future work can add additional analytics and visualization modules.
-
-**Planned improvements:**
-- Replace in-memory `DatasetStore` with PostgreSQL for persistence
-- Add user authentication & authorization
-- Role-based access control (RBAC) for modules
-
-If you'd like, I can also:
-- Add unit tests around `dataset_service._load_auto_clean_rules` to lock parser behavior.
-- Create a CONTRIBUTING guide with Git workflows for team members.
+- **Web 1.2:** PBN Analytics, Insight Hub, web accounts and role-based access, the Admin workspace, Plt./Plh. monitoring, user-persisted appearance preferences, the compact utility toolbar, and the authenticated Groq assistant.
+- **Web-only placeholders:** Generate ND Undangan Pelantikan and Analisis Kinerja DJPb currently show an “On development” message and do not implement their named workflows.
+- **Version 2.0 milestone:** Make those placeholder workflows functional after requirements are defined. Do not treat 2.0 as already implemented.
+- **Desktop:** Only PBN Analytics and Insight Hub are main navigation menus; there is no desktop login, Admin workflow, or web-only placeholder menu.
+- DatasetStore remains in-memory and is cleared by a backend restart. Database persistence for datasets should be designed separately if/when requested.

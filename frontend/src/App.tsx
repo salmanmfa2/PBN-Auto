@@ -1,23 +1,65 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import AdminPage from './pages/AdminPage';
 import LandingPage from './pages/LandingPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import InsightHubPage from './pages/InsightHubPage';
+import LoginPage from './pages/LoginPage';
 import PltPlhManagementPage from './pages/PltPlhManagementPage';
 import { AppToolbar } from './components/AppToolbar';
+import { ChatWidget } from './components/ChatWidget';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+
+function RequireSession() {
+  const { mode, isLoading } = useAuth();
+  if (isLoading) return null;
+  return mode ? <Outlet /> : <Navigate to="/login" replace />;
+}
+
+function RequireAdmin() {
+  const { user } = useAuth();
+  return user && user.auth_level >= 2 ? <Outlet /> : <Navigate to="/" replace />;
+}
+
+function AppRoutes() {
+  const { mode, user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <main className="flex min-h-screen items-center justify-center bg-surface-950 text-sm text-slate-400">Memuat aplikasi…</main>;
+  }
+
+  return (
+    <>
+      {mode && (
+        <>
+          <AppToolbar />
+          {user && <ChatWidget />}
+        </>
+      )}
+      <Routes>
+        <Route
+          path="/login"
+          element={mode ? <Navigate to="/" replace /> : <LoginPage />}
+        />
+        <Route element={<RequireSession />}>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/pbn-analytics" element={<AnalyticsPage />} />
+          <Route path="/insights" element={<InsightHubPage />} />
+          <Route path="/manajemen-plt-plh" element={<PltPlhManagementPage />} />
+          <Route element={<RequireAdmin />}>
+            <Route path="/admin" element={<AdminPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+        {!user && <Route path="*" element={<Navigate to="/login" replace />} />}
+      </Routes>
+    </>
+  );
+}
 
 export default function App() {
   return (
-    <>
-      <div className="fixed right-3 top-3 z-50">
-        <AppToolbar />
-      </div>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/pbn-analytics" element={<AnalyticsPage />} />
-        <Route path="/insights" element={<InsightHubPage />} />
-        <Route path="/manajemen-plt-plh" element={<PltPlhManagementPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </>
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 }

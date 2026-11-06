@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.api.auth import get_admin_user
 from app.history_db import get_history_db
+from app.models.auth import User
 from app.models.plt_plh import PltPlhMonitoringRecord
 from app.schemas.plt_plh import (
     PltPlhRecordActiveUpdate,
     PltPlhRecordCreate,
-    PltPlhRecordDelete,
     PltPlhRecordFields,
     PltPlhRecordRead,
     PltPlhRecordUpdate,
@@ -47,11 +48,10 @@ def export_records(history_db: Session = Depends(get_history_db)):
 @router.post("/records", response_model=PltPlhRecordRead, status_code=201)
 def create_record(
     request: PltPlhRecordCreate,
+    _: User = Depends(get_admin_user),
     history_db: Session = Depends(get_history_db),
 ):
-    plt_plh_service.verify_edit_password(history_db, request.edit_password)
-    fields = request.model_dump(exclude={"edit_password"})
-    record = plt_plh_service.create_record(history_db, PltPlhRecordFields(**fields))
+    record = plt_plh_service.create_record(history_db, PltPlhRecordFields(**request.model_dump()))
     return _read_record(record)
 
 
@@ -59,15 +59,14 @@ def create_record(
 def update_record(
     record_id: int,
     request: PltPlhRecordUpdate,
+    _: User = Depends(get_admin_user),
     history_db: Session = Depends(get_history_db),
 ):
-    plt_plh_service.verify_edit_password(history_db, request.edit_password)
     record = plt_plh_service.get_record(history_db, record_id)
-    fields = request.model_dump(exclude={"edit_password"})
     updated = plt_plh_service.update_record(
         history_db,
         record,
-        PltPlhRecordFields(**fields),
+        PltPlhRecordFields(**request.model_dump()),
     )
     return _read_record(updated)
 
@@ -76,9 +75,9 @@ def update_record(
 def update_record_active(
     record_id: int,
     request: PltPlhRecordActiveUpdate,
+    _: User = Depends(get_admin_user),
     history_db: Session = Depends(get_history_db),
 ):
-    plt_plh_service.verify_edit_password(history_db, request.edit_password)
     record = plt_plh_service.get_record(history_db, record_id)
     updated = plt_plh_service.set_record_active(history_db, record, request.is_active)
     return _read_record(updated)
@@ -87,10 +86,9 @@ def update_record_active(
 @router.delete("/records/{record_id}", status_code=204)
 def delete_record(
     record_id: int,
-    request: PltPlhRecordDelete,
+    _: User = Depends(get_admin_user),
     history_db: Session = Depends(get_history_db),
 ):
-    plt_plh_service.verify_edit_password(history_db, request.edit_password)
     record = plt_plh_service.get_record(history_db, record_id)
     plt_plh_service.delete_record(history_db, record)
     return Response(status_code=204)

@@ -16,6 +16,7 @@ export interface DatasetPreview {
   rows: Record<string, unknown>[];
   row_count: number;
   column_count: number;
+  cleaning_warnings?: string[];
 }
 
 export interface StoredDatasetRun {
@@ -50,6 +51,49 @@ export interface PltPlhRecordFields {
   jabatan_definitif_pengganti: string;
   nomor_surat: string;
   tmt: string;
+}
+
+export type AuthLevel = 1 | 2 | 3;
+
+export interface AuthUser {
+  user: string;
+  name: string;
+  auth_level: AuthLevel;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AuthSessionResponse {
+  token: string;
+  user: AuthUser;
+}
+
+export type ThemeName = 'default' | 'dark' | 'light';
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatResponse {
+  message: string;
+}
+
+export interface AuthRegistrationPayload {
+  user: string;
+  name: string;
+  password: string;
+}
+
+export interface AdminUserPayload extends AuthRegistrationPayload {
+  auth_level: AuthLevel;
+}
+
+export interface AdminUserUpdatePayload {
+  name: string;
+  auth_level: AuthLevel;
+  password?: string;
+  is_active: boolean;
 }
 
 export interface CleaningMethodRecommendation {

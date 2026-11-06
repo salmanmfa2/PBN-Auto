@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.history_db import Base
@@ -27,10 +27,3 @@ class PltPlhMonitoringRecord(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
-
-
-class PltPlhEditPassword(Base):
-    __tablename__ = "plt_plh_edit_password"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    edit_password: Mapped[str] = mapped_column(String(255), nullable=False)

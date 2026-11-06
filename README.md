@@ -2,6 +2,12 @@
 
 A full-stack web application for PBN dataset cleaning and analytics.
 
+## Release notes
+
+The current web update is **1.2**: [Web update notes](./Update%20Notes/Update%20Notes%201.2%20Web.md). The corresponding desktop requirements are documented separately in [Desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); those notes do not claim a desktop build or release has been produced.
+
+The desktop application's main navigation is limited to **PBN Analytics** and **Insight Hub**, with no login system. The additional placeholder menus described in the web notes are web-only. Version **2.0** is a future milestone for when those placeholder menus become functional.
+
 ## Features
 
 | Feature | Status | Description |
@@ -12,13 +18,18 @@ A full-stack web application for PBN dataset cleaning and analytics.
 | **Export** | ✅ Live | Download as `.csv` or `.xlsx` |
 | **Insight Hub** | ✅ Live | PBN Open + Edu + HB dashboard with employee totals and distributions |
 | **Manajemen Plt./Plh.** | ✅ Live | Monitor acting assignments, calculate tenure/status, receive dashboard notices, and export records |
-| **App Toolbar** | ✅ Live | Run read-only API/section checks and play Snake in a popup |
+| **Web accounts and roles** | ✅ Live | Guest, User, Admin, and Super Admin access; one-hour authenticated sessions |
+| **Admin workspace** | ✅ Live | Super Admin account management and shared Plt./Plh. administration |
+| **Additional web menus** | 🛠️ Placeholder | Generate ND Undangan Pelantikan and Analisis Kinerja DJPb currently show “On development”; desktop does not include them |
+| **Appearance** | ✅ Live | Default, Dark, and Light themes; signed-in users' preferences follow their accounts |
+| **App Toolbar** | ✅ Live | WIB clock, draggable position, collapsible utility actions, API diagnostics, and Snake |
+| **AI chat assistant** | ✅ Live | Authenticated web chat with Markdown rendering and clear-chat control; uses backend-configured Groq |
 
 ## Tech Stack
 
 **Frontend:** React 19 · Vite · TypeScript · Tailwind CSS v3 · React Router v7 · TanStack Table · Axios
 
-**Backend:** Python 3.11+ · FastAPI · Pandas · openpyxl · Uvicorn
+**Backend:** Python 3.11+ · FastAPI · Pandas · openpyxl · Groq Python SDK · Uvicorn
 
 **Deployment:** Windows batch scripts · PowerShell · Local or intranet hosting
 
@@ -31,7 +42,9 @@ Project PBNCleaner/
 │   │   ├── api/
 │   │   │   ├── upload.py          # POST /upload
 │   │   │   ├── cleaning.py        # POST /clean/*
-│   │   │   └── dataset.py         # GET /dataset/:id, GET /export/*
+│   │   │   ├── dataset.py         # GET /dataset/:id, GET /export/*
+│   │   │   ├── auth.py            # Web login, preferences, and account endpoints
+│   │   │   └── chat.py            # Authenticated Groq chat endpoint
 │   │   ├── cleaners/
 │   │   │   ├── pbn.py             # PBN Open mode
 │   │   │   ├── pbn_edu.py         # PBN Open + Edu mode
@@ -54,7 +67,16 @@ Project PBNCleaner/
 │       │   ├── LandingPage.tsx    # / route (feature selector)
 │       │   ├── AnalyticsPage.tsx  # /pbn-analytics route
 │       │   ├── InsightHubPage.tsx # /insights route
-│       │   └── PltPlhManagementPage.tsx # /manajemen-plt-plh route
+│       │   ├── PltPlhManagementPage.tsx # Web-only monitoring
+│       │   ├── LoginPage.tsx      # Web login/registration/Guest
+│       │   └── AdminPage.tsx      # Web account administration
+│       ├── components/
+│       │   ├── AppToolbar.tsx      # Clock, theme, utility toolbar
+│       │   ├── ChatWidget.tsx      # Authenticated Groq chat
+│       │   ├── ErrorBanner.tsx
+│       │   └── Spinner.tsx
+│       ├── contexts/
+│       │   └── AuthContext.tsx    # Session and Guest state
 │       ├── features/
 │       │   ├── upload/
 │       │   │   └── UploadZone.tsx
@@ -68,9 +90,6 @@ Project PBNCleaner/
 │       │   └── api.ts             # Axios API layer
 │       ├── types/
 │       │   └── index.ts           # TypeScript interfaces
-│       ├── components/
-│       │   ├── ErrorBanner.tsx
-│       │   └── Spinner.tsx
 │       ├── App.tsx                # React Router setup
 │       └── main.tsx               # BrowserRouter wrapper
 │
@@ -148,6 +167,8 @@ The app uses **React Router v7** for URL-based navigation:
 | `/pbn-analytics` | AnalyticsPage | PBN dataset cleaning (active) |
 | `/insights` | InsightHubPage | PBN Open + Edu + HB analytics dashboard |
 | `/manajemen-plt-plh` | PltPlhManagementPage | Plt./Plh. assignment register, notifications, and export |
+| `/admin` | AdminPage | Admin workspace; account management is Super Admin-only |
+| `/login` | LoginPage | Sign in, register, or continue as Guest |
 
 Users can bookmark routes or share URLs directly to jump into any feature.
 
@@ -173,15 +194,36 @@ VITE_API_URL=http://localhost:8000
 | `GET` | `/export/csv/{id}` | Download as CSV |
 | `GET` | `/export/excel/{id}` | Download as Excel |
 | `GET` | `/plt-plh/records` | List Plt./Plh. monitoring records |
-| `POST` / `PUT` / `PATCH` / `DELETE` | `/plt-plh/records` | Create, edit, activate/deactivate, or delete a record (shared edit password required) |
+| `POST` / `PUT` / `PATCH` / `DELETE` | `/plt-plh/records` | Create, edit, activate/deactivate, or delete a record (Admin or Super Admin login required) |
 | `GET` | `/plt-plh/notifications` | List active records at or past the six-month notification threshold |
 | `GET` | `/plt-plh/records/export` | Download all records as `.xlsx` |
+| `POST` | `/auth/register` | Register a level-1 User account |
+| `POST` | `/auth/login` | Sign in and receive a bearer token |
+| `GET` | `/auth/me` | Get the current account |
+| `POST` | `/auth/logout` | Revoke the current session |
+| `GET` / `PUT` | `/auth/preferences/theme` | Read or update the signed-in user's theme preference |
+| `GET` / `POST` / `PUT` / `DELETE` | `/admin/users` | Manage accounts (Super Admin only) |
+| `POST` | `/chat` | Generate an authenticated Groq chat response |
+
+### Accounts and roles
+
+The web app supports Guest, User (level 1), Admin (level 2), and Super Admin (level 3). Public registration creates a level-1 account immediately. Guest and User accounts can view Plt./Plh. monitoring records; only Admin and Super Admin can change them. The Admin workspace is limited to authenticated Admin and Super Admin accounts; user-account management is Super Admin-only. Dataset cleaning remains available to Guest and User accounts.
+
+The toolbar offers Default (the original dark appearance), Dark, and Light themes. Authenticated users' last-selected theme is stored in `user_preferences` and follows their account; Guest preferences are stored in that browser only. Patch Notes, unresolved notes, Snake, API Test, and Admin tools are grouped behind the toolbar's show/hide control; sign-in/sign-out remains visible.
+
+The first Super Admin is **not seeded automatically**. After creating the account tables, insert the first Super Admin manually using the commented example in `backend/sql/003_create_users_and_sessions.sql`, then sign in and use the Super Admin workspace. User passwords are intentionally stored as plain text in MySQL at this stage, per the current project requirement. This is not suitable for production or sensitive deployments; do not expose the database or use real/reused passwords.
 
 ### Sitasi Es.III (Lite)
 
 `Sitasi Es.III (Lite)` uses the same cleaning rules and PowerPoint profile layout as `Sitasi Es.III`, but keeps rows whose second column is empty instead of deleting them. When exporting a cleaned Lite dataset to Excel, section-heading rows (text in `No` and empty values in the remaining columns) are merged across the row. CSV exports and the in-app preview keep the heading text in `No` with other cells blank; CSV has no merged-cell formatting. The standard `Sitasi Es.III` mode is unchanged.
 
 Sitasi Es.III cleaning sets `Keterangan` to proper case after removing its first six characters. Sitasi Es.IV cleaning sets `Pertimbangan` to proper case. Proper case capitalizes the first letter of each word; missing values remain missing.
+
+For **PBN Open + Edu + HB**, Auto Clean removes straight apostrophe and backtick characters from string cell values, then converts `TMT JF Keterampilan`, `TMT JF Keahlian`, `TMT JF Ahli Muda`, `TMT JF Ahli Madya`, `TMT Es4`, `TMT Es3`, `TMT Es2`, and `TMT Jabatan` values to dates. Unparseable non-empty date values are kept as cleaned text and shown in a warning.
+
+### AI chat assistant
+
+Authenticated users can open the small chat button in the lower-right corner. Assistant replies render Markdown, and the Clear action removes the visible, in-memory conversation. The assistant is instructed not to invent unconfirmed app features, but generated replies can still be incorrect. Chat requests are sent by the backend to Groq; the Groq API key must be configured as `GROQ_API_KEY` in `backend/.env`, and `GROQ_MODEL` can override the default `openai/gpt-oss-120b` model. Never place the key in frontend code or frontend environment variables. Messages and supplied conversation context are transmitted to Groq to generate replies; users should not include passwords or sensitive personal data.
 
 ### Cleaning method recommendation
 
@@ -209,7 +251,13 @@ Run its initial schema once as well:
 mysql -u <user> -p < backend/sql/002_create_plt_plh_monitoring.sql
 ```
 
-4. Start backend normally. On startup, tables are created if missing.
+Create the account and session tables as well:
+
+```bash
+mysql -u <user> -p < backend/sql/003_create_users_and_sessions.sql
+```
+
+Then insert the first Super Admin by editing and running the commented SQL example in that script. No account is created automatically. Start the backend normally; missing mapped tables are also created on startup.
 
 ### Example: Upload
 
@@ -277,11 +325,9 @@ For persistence, swap `DatasetStore` (`app/storage/dataset_store.py`) with a Red
 
 ### Future Expansion
 
-The architecture is ready for the planned v2 features:
-
-- `features/dashboard/` directory is reserved for chart and KPI generation
-- The service layer can be extended with `profiling_service.py`, `chart_service.py`
-- TanStack Table supports column pinning, grouping, and virtual scrolling for larger datasets
+- The web-only **Generate ND Undangan Pelantikan** and **Analisis Kinerja DJPb** menus are placeholders. Making these workflows functional is the planned product milestone for version 2.0.
+- Desktop remains a separate product surface with only PBN Analytics and Insight Hub in its main navigation and no account/login system.
+- The service layer and TanStack Table can be extended for future analytics, profiling, and larger datasets as requirements are defined.
 
 ## Production Build
 

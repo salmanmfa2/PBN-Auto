@@ -11,8 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
-from app.api import auth, cleaning, dataset, insights, plt_plh, stored_datasets, upload
-from app.db import init_db
+from app.api import auth, chat, cleaning, dataset, insights, plt_plh, stored_datasets, upload
 from app.history_db import init_history_db
 
 
@@ -61,12 +60,12 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup() -> None:
-    init_db()
     init_history_db()
 
 
 app.include_router(auth.router)
 app.include_router(auth.admin_router)
+app.include_router(chat.router)
 app.include_router(upload.router, tags=["upload"])
 app.include_router(cleaning.router)
 app.include_router(dataset.router)
