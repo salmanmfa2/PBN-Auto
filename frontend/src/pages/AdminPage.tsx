@@ -1,8 +1,13 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import * as apiClient from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import type { AdminUserUpdatePayload, AuthLevel, AuthUser } from '../types';
+import type {
+  AdminUserUpdatePayload,
+  AuthLevel,
+  AuthUser,
+  PbnOpenCsvValidation,
+} from '../types';
 import { Spinner } from '../components/Spinner';
 
 type UserForm = {
@@ -36,6 +41,14 @@ export default function AdminPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [form, setForm] = useState<UserForm>(emptyForm);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [sourceValidation, setSourceValidation] = useState<PbnOpenCsvValidation | null>(null);
+  const [isValidatingSource, setIsValidatingSource] = useState(false);
+  const [isReplacingSource, setIsReplacingSource] = useState(false);
+  const [showSourceDialog, setShowSourceDialog] = useState(false);
+  const [sourceDialogError, setSourceDialogError] = useState<string | null>(null);
+  const [sourceReplaceFailed, setSourceReplaceFailed] = useState(false);
+  const sourceFileInput = useRef<HTMLInputElement>(null);
 
   const refreshUsers = async () => {
     if (currentUser?.auth_level !== 3) return;
@@ -49,9 +62,23 @@ export default function AdminPage() {
     }
   };
 
+  const closeSourceDialog = useCallback(() => {
+    if (sourceDialogError) setError(sourceDialogError);
+    setShowSourceDialog(false);
+  }, [sourceDialogError]);
+
   useEffect(() => {
     void refreshUsers();
   }, [currentUser?.auth_level]);
+
+  useEffect(() => {
+    if (!showSourceDialog || isValidatingSource || isReplacingSource) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeSourceDialog();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showSourceDialog, isValidatingSource, isReplacingSource, closeSourceDialog]);
 
   const resetForm = () => {
     setForm(emptyForm);
@@ -117,6 +144,42 @@ export default function AdminPage() {
     }
   };
 
+  const validateSourceFile = async () => {
+    if (!sourceFile) return;
+    setSourceDialogError(null);
+    setNotice(null);
+    setIsValidatingSource(true);
+    try {
+      const result = await apiClient.validatePbnOpenCsv(sourceFile);
+      setSourceValidation(result);
+    } catch (validationError) {
+      setSourceValidation(null);
+      setSourceDialogError(validationError instanceof Error ? validationError.message : String(validationError));
+    } finally {
+      setIsValidatingSource(false);
+    }
+  };
+
+  const confirmSourceReplacement = async () => {
+    if (!sourceFile || !sourceValidation) return;
+    setSourceDialogError(null);
+    setNotice(null);
+    setIsReplacingSource(true);
+    try {
+      const result = await apiClient.replacePbnOpenCsv(sourceFile);
+      setNotice(`Sumber data Insight Hub Beta berhasil diganti dengan ${result.row_count} baris.`);
+      setShowSourceDialog(false);
+      setSourceValidation(null);
+      setSourceFile(null);
+      if (sourceFileInput.current) sourceFileInput.current.value = '';
+    } catch (replaceError) {
+      setSourceReplaceFailed(true);
+      setSourceDialogError(replaceError instanceof Error ? replaceError.message : String(replaceError));
+    } finally {
+      setIsReplacingSource(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-surface-950 px-4 pb-10 pt-24 text-slate-100 md:px-8">
       <div className="mx-auto max-w-5xl space-y-6">
@@ -147,8 +210,7 @@ export default function AdminPage() {
         <section className="card p-5">
           <h2 className="font-semibold">Pengelolaan Data</h2>
           <p className="mt-2 text-sm text-slate-400">
-            Admin dapat mengelola record Manajemen Plt./Plh. Data pegawai besar dari Excel/CSV ditujukan untuk Insight Hub,
-            bukan monitoring Plt./Plh.; integrasi sumber tersebut belum diaktifkan.
+            Admin dapat mengelola record Manajemen Plt./Plh. Penggantian sumber data Insight Hub Beta hanya tersedia untuk Super Admin.
           </p>
           <Link to="/manajemen-plt-plh" className="btn-secondary mt-4 inline-flex">
             Buka Manajemen Plt./Plh.
@@ -156,13 +218,36 @@ export default function AdminPage() {
         </section>
 
         {currentUser?.auth_level === 3 ? (
-          <section className="card overflow-hidden">
-            <div className="border-b border-slate-700 px-5 py-4">
-              <h2 className="font-semibold">Manajemen Akun</h2>
-              <p className="mt-1 text-xs text-slate-400">
-                Level 1 User · Level 2 Admin · Level 3 Super Admin. Password saat ini disimpan sebagai teks biasa sesuai keputusan sementara.
+          <>
+            <section className="card p-5">
+              <h2 className="font-semibold">Sumber Data Insight Hub Beta</h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Unggah CSV untuk mengganti seluruh isi <code>pbncleaner.fetch_pbnopen</code>. Kolom harus cocok dengan tabel saat ini.
+                Data lama baru dihapus setelah validasi berhasil dan Anda menyetujui konfirmasi berikutnya.
               </p>
-            </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSourceFile(null);
+                  setSourceValidation(null);
+                  setSourceDialogError(null);
+                  setSourceReplaceFailed(false);
+                  setError(null);
+                  setShowSourceDialog(true);
+                }}
+                className="btn-primary mt-4"
+              >
+                Unggah CSV Sumber Data
+              </button>
+            </section>
+
+            <section className="card overflow-hidden">
+              <div className="border-b border-slate-700 px-5 py-4">
+                <h2 className="font-semibold">Manajemen Akun</h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  Level 1 User · Level 2 Admin · Level 3 Super Admin. Password saat ini disimpan sebagai teks biasa sesuai keputusan sementara.
+                </p>
+              </div>
             <form onSubmit={(event) => void submitUser(event)} className="grid gap-4 p-5 md:grid-cols-2">
               {!editingUser && (
                 <label className="block text-sm text-slate-300">
@@ -284,7 +369,8 @@ export default function AdminPage() {
                 </table>
               )}
             </div>
-          </section>
+            </section>
+          </>
         ) : (
           <section className="card p-5">
             <h2 className="font-semibold">Manajemen Akun</h2>
@@ -294,6 +380,106 @@ export default function AdminPage() {
           </section>
         )}
       </div>
+      {showSourceDialog && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isReplacingSource) {
+              closeSourceDialog();
+            }
+          }}
+        >
+          <section
+            className="w-full max-w-lg rounded-xl border border-amber-500/40 bg-slate-900 p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pbnopen-source-title"
+          >
+            <h2 id="pbnopen-source-title" className="text-lg font-semibold text-amber-200">
+              {sourceValidation ? 'Kolom CSV cocok' : 'Unggah CSV Sumber Data'}
+            </h2>
+            {sourceValidation ? (
+              <>
+                <p className="mt-3 text-sm text-slate-300">
+                  File <strong>{sourceValidation.filename}</strong> berisi {sourceValidation.row_count.toLocaleString()} baris dan{' '}
+                  {sourceValidation.columns.length} kolom yang cocok dengan sumber data.
+                </p>
+                <p className="mt-3 rounded-lg border border-rose-700/50 bg-rose-900/20 p-3 text-sm text-rose-200">
+                  Apakah Anda yakin ingin mengganti seluruh isi <code>pbncleaner.fetch_pbnopen</code>? Data yang ada akan dihapus.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-sm text-slate-400">
+                  Pilih CSV UTF-8 (maksimal 50 MB). Tidak ada perubahan data sebelum Anda mengonfirmasi penggantian.
+                </p>
+                <input
+                  ref={sourceFileInput}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="sr-only"
+                  aria-label="Pilih CSV sumber data Insight Hub Beta"
+                  onChange={(event) => {
+                    setSourceFile(event.currentTarget.files?.[0] ?? null);
+                    setSourceValidation(null);
+                    setSourceDialogError(null);
+                    setSourceReplaceFailed(false);
+                    event.currentTarget.value = '';
+                  }}
+                />
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => sourceFileInput.current?.click()}
+                    disabled={isValidatingSource}
+                    className="btn-secondary"
+                  >
+                    Pilih CSV
+                  </button>
+                  <span className="text-sm text-slate-300">
+                    {sourceFile?.name ?? 'Belum ada file dipilih'}
+                  </span>
+                </div>
+              </>
+            )}
+            {sourceDialogError && (
+              <p role="alert" className="mt-4 rounded-lg border border-rose-700/50 bg-rose-900/20 px-3 py-2 text-sm text-rose-200">
+                {sourceDialogError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeSourceDialog}
+                disabled={isValidatingSource || isReplacingSource}
+                className="btn-secondary"
+              >
+                Batal
+              </button>
+              {sourceValidation ? (
+                <button
+                  type="button"
+                  onClick={() => void confirmSourceReplacement()}
+                  disabled={isReplacingSource || sourceReplaceFailed}
+                  className="btn-danger disabled:opacity-50"
+                >
+                  {isReplacingSource ? <Spinner size="sm" label="Mengganti data…" /> : 'Ya, Ganti Seluruh Data'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void validateSourceFile()}
+                  disabled={!sourceFile || isValidatingSource}
+                  className="btn-primary disabled:opacity-50"
+                >
+                  {isValidatingSource ? <Spinner size="sm" label="Memeriksa kolom…" /> : 'Periksa Kolom CSV'}
+                </button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

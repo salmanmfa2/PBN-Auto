@@ -11,7 +11,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
-from app.api import auth, chat, cleaning, dataset, insights, plt_plh, stored_datasets, upload
+from app.api import (
+    auth,
+    chat,
+    cleaning,
+    dataset,
+    insights,
+    insights_beta,
+    plt_plh,
+    stored_datasets,
+    upload,
+)
 from app.history_db import init_history_db
 
 
@@ -70,6 +80,7 @@ app.include_router(upload.router, tags=["upload"])
 app.include_router(cleaning.router)
 app.include_router(dataset.router)
 app.include_router(insights.router)
+app.include_router(insights_beta.router)
 app.include_router(plt_plh.router)
 app.include_router(stored_datasets.router)
 

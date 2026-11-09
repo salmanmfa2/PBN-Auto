@@ -5,7 +5,9 @@ from numbers import Real
 from typing import Any
 
 import pandas as pd
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.history_db import engine
 from app.storage.dataset_store import DatasetStore
 
 
@@ -143,6 +145,25 @@ def _get_filtered_dashboard_data(
         raise KeyError(f"Sheet '{sheet_name}' not found.")
 
     source = sheets[sheet_name]
+    return _filter_dashboard_data(source, filters, sheet_name, today)
+
+
+def _load_pbnopen_source() -> pd.DataFrame:
+    try:
+        return pd.read_sql_table("fetch_pbnopen", engine, schema="pbncleaner")
+    except (SQLAlchemyError, ValueError) as exc:
+        raise RuntimeError(
+            "Could not read database table 'pbncleaner.fetch_pbnopen'. "
+            "Check database connectivity and table availability."
+        ) from exc
+
+
+def _filter_dashboard_data(
+    source: pd.DataFrame,
+    filters: Any,
+    sheet_name: str,
+    today: date | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any], pd.Series, dict[str, int], dict[str, int], str]:
     columns = _resolve_columns(source)
     current_date = today or date.today()
     ages = pd.to_numeric(source[columns["age"]], errors="coerce")
@@ -211,7 +232,51 @@ def build_pbn_dashboard(
     if stored_sheets is None:
         raise KeyError(f"Dataset '{dataset_id}' not found. Please upload a file first.")
     original_source = stored_sheets[sheet_name]
+    return _build_dashboard_result(
+        source,
+        original_source,
+        columns,
+        ages,
+        age_range,
+        tenure_range,
+        dataset_id,
+        sheet_name,
+    )
 
+
+def build_pbnopen_dashboard(
+    filters: Any,
+    today: date | None = None,
+) -> dict[str, Any]:
+    original_source = _load_pbnopen_source()
+    source, columns, ages, age_range, tenure_range, sheet_name = _filter_dashboard_data(
+        original_source,
+        filters,
+        "fetch_pbnopen",
+        today,
+    )
+    return _build_dashboard_result(
+        source,
+        original_source,
+        columns,
+        ages,
+        age_range,
+        tenure_range,
+        "pbncleaner.fetch_pbnopen",
+        sheet_name,
+    )
+
+
+def _build_dashboard_result(
+    source: pd.DataFrame,
+    original_source: pd.DataFrame,
+    columns: dict[str, Any],
+    ages: pd.Series,
+    age_range: dict[str, int],
+    tenure_range: dict[str, int],
+    dataset_id: str,
+    sheet_name: str,
+) -> dict[str, Any]:
     total = len(source)
     age_counts = Counter(_age_group(value) for value in ages.tolist())
     age_distribution = [
@@ -303,6 +368,28 @@ def get_pbn_dashboard_people(
     source, _, _, _, _, sheet_name = _get_filtered_dashboard_data(
         dataset_id, sheet_name, filters, today
     )
+    return _build_dashboard_people_result(source, dataset_id, sheet_name)
+
+
+def get_pbnopen_dashboard_people(
+    filters: Any,
+    today: date | None = None,
+) -> dict[str, Any]:
+    original_source = _load_pbnopen_source()
+    source, _, _, _, _, sheet_name = _filter_dashboard_data(
+        original_source,
+        filters,
+        "fetch_pbnopen",
+        today,
+    )
+    return _build_dashboard_people_result(source, "pbncleaner.fetch_pbnopen", sheet_name)
+
+
+def _build_dashboard_people_result(
+    source: pd.DataFrame,
+    dataset_id: str,
+    sheet_name: str,
+) -> dict[str, Any]:
     columns = _resolve_people_columns(source)
     people = []
     for row_number, (_, row) in enumerate(source.iterrows(), start=1):

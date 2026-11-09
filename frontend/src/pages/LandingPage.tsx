@@ -13,6 +13,7 @@ import logoMutasi from '../assets/mutasi.png';
 const features = [
   { key: 'analytics', title: 'PBN Analytics', image: logoAnalysis, subtitle: 'Upload, clean, export, dan generation Bahan Mutasi', path: '/pbn-analytics', color: 'text-emerald-300' },
   { key: 'insights', title: 'Insight Hub (On Development)', image: logoBrain, subtitle: 'PBN Open + Edu + HB dashboard', path: '/insights', color: 'text-sky-300' },
+  { key: 'insights-beta', title: 'Insight Hub Beta', image: logoBrain, subtitle: 'Employee dashboard from the PBN database', path: '/insights-beta', color: 'text-cyan-300' },
   { key: 'plt-plh', title: 'Manajemen Plt./Plh.', subtitle: 'Monitoring penugasan Plt. pejabat', path: '/manajemen-plt-plh', color: 'text-violet-300' },
   { key: 'nd-undangan', title: 'Generate ND Undangan Pelantikan', image: logoPelantikan, subtitle: 'Generate nota dinas undangan pelantikan', color: 'text-amber-300', placeholder: true },
   { key: 'analisis-kinerja', title: 'Analisis Kinerja DJPb', image: logoPerformance, subtitle: 'Analisis kinerja DJPb', color: 'text-cyan-300', placeholder: true },

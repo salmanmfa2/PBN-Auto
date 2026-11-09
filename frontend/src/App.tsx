@@ -44,6 +44,7 @@ function AppRoutes() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/pbn-analytics" element={<AnalyticsPage />} />
           <Route path="/insights" element={<InsightHubPage />} />
+          <Route path="/insights-beta" element={<InsightHubPage source="database" />} />
           <Route path="/manajemen-plt-plh" element={<PltPlhManagementPage />} />
           <Route element={<RequireAdmin />}>
             <Route path="/admin" element={<AdminPage />} />

@@ -1,6 +1,7 @@
 import unittest
 from datetime import date, datetime
 from io import BytesIO
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 import pandas as pd
@@ -8,7 +9,12 @@ import pandas as pd
 from app.schemas.dataset import DatasetPreview
 from app.schemas.pbn_dashboard import PbnDashboardFilters
 from app.services.dataset_service import apply_auto_clean, export_excel
-from app.services.pbn_dashboard_service import build_pbn_dashboard, get_pbn_dashboard_people
+from app.services.pbn_dashboard_service import (
+    build_pbn_dashboard,
+    build_pbnopen_dashboard,
+    get_pbn_dashboard_people,
+    get_pbnopen_dashboard_people,
+)
 from app.storage.dataset_store import DatasetStore
 
 
@@ -24,6 +30,10 @@ class PbnDashboardRouteTests(unittest.TestCase):
 
         self.assertIn(("/insights/pbn/dashboard/{dataset_id}", "POST"), registered_routes)
         self.assertIn(("/insights/pbn/dashboard/{dataset_id}/people", "POST"), registered_routes)
+        self.assertIn(("/insights-beta/pbn/dashboard", "POST"), registered_routes)
+        self.assertIn(("/insights-beta/pbn/dashboard/people", "POST"), registered_routes)
+        self.assertIn(("/admin/pbnopen-data-source/validate", "POST"), registered_routes)
+        self.assertIn(("/admin/pbnopen-data-source/replace", "POST"), registered_routes)
 
 
 class PbnDashboardTests(unittest.TestCase):
@@ -50,6 +60,31 @@ class PbnDashboardTests(unittest.TestCase):
                 "Agama": ["Islam", "Kristen", "Islam", "Hindu"],
             })
         })
+
+    def test_database_dashboard_uses_same_aggregations_and_filters(self) -> None:
+        source = DatasetStore.get(self.dataset_id)["Sheet1"]
+        with patch("app.services.pbn_dashboard_service._load_pbnopen_source", return_value=source):
+            result = build_pbnopen_dashboard(
+                PbnDashboardFilters(region=["West"]),
+                today=date(2026, 10, 19),
+            )
+
+        self.assertEqual(result["dataset_id"], "pbncleaner.fetch_pbnopen")
+        self.assertEqual(result["total_employees"], 2)
+        self.assertEqual(result["region_distribution"][0]["label"], "West")
+        self.assertEqual(result["available_filters"]["region"], ["East", "North", "West"])
+
+    def test_database_people_uses_same_filters_and_shape(self) -> None:
+        source = DatasetStore.get(self.dataset_id)["Sheet1"]
+        with patch("app.services.pbn_dashboard_service._load_pbnopen_source", return_value=source):
+            result = get_pbnopen_dashboard_people(
+                PbnDashboardFilters(region=["East"]),
+                today=date(2026, 10, 19),
+            )
+
+        self.assertEqual(result["dataset_id"], "pbncleaner.fetch_pbnopen")
+        self.assertEqual(len(result["people"]), 1)
+        self.assertEqual(result["people"][0]["Nama"], "Bob")
 
     def test_dashboard_aggregates_all_rows_and_uses_51_plus_age_group(self) -> None:
         result = build_pbn_dashboard(

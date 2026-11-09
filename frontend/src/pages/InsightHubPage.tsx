@@ -145,11 +145,16 @@ function DistributionChart({ title, items }: DistributionChartProps) {
   );
 }
 
-export default function InsightHubPage() {
+interface InsightHubPageProps {
+  source?: 'dataset' | 'database';
+}
+
+export default function InsightHubPage({ source = 'dataset' }: InsightHubPageProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const datasetId = searchParams.get('dataset_id');
-  const sheetName = searchParams.get('sheet_name') ?? 'Sheet1';
+  const isDatabaseSource = source === 'database';
+  const datasetId = isDatabaseSource ? 'pbncleaner.fetch_pbnopen' : searchParams.get('dataset_id');
+  const sheetName = isDatabaseSource ? 'fetch_pbnopen' : searchParams.get('sheet_name') ?? 'Sheet1';
   const [dashboard, setDashboard] = useState<PbnDashboardResponse | null>(null);
   const [ageRange, setAgeRange] = useState<NumericRange | null>(null);
   const [tenureRange, setTenureRange] = useState<NumericRange | null>(null);
@@ -206,7 +211,10 @@ export default function InsightHubPage() {
 
       setIsLoading(true);
       setError(null);
-      void apiClient.getPbnDashboard(datasetId, sheetName, filters)
+      const request = isDatabaseSource
+        ? apiClient.getPbnOpenDatabaseDashboard(filters)
+        : apiClient.getPbnDashboard(datasetId, sheetName, filters);
+      void request
         .then((result) => {
           if (active) setDashboard(result);
         })
@@ -225,6 +233,7 @@ export default function InsightHubPage() {
   }, [
     datasetId,
     sheetName,
+    isDatabaseSource,
     ageRange,
     tenureRange,
     selectedEselon,
@@ -256,7 +265,10 @@ export default function InsightHubPage() {
 
     setIsPeopleLoading(true);
     setPeopleError(null);
-    void apiClient.getPbnDashboardPeople(datasetId, sheetName, filters)
+    const request = isDatabaseSource
+      ? apiClient.getPbnOpenDatabaseDashboardPeople(filters)
+      : apiClient.getPbnDashboardPeople(datasetId, sheetName, filters);
+    void request
       .then((result) => {
         if (active) setPeople(result.people);
       })
@@ -273,6 +285,7 @@ export default function InsightHubPage() {
   }, [
     datasetId,
     sheetName,
+    isDatabaseSource,
     showPeople,
     ageRange,
     tenureRange,
@@ -294,13 +307,15 @@ export default function InsightHubPage() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => navigate('/pbn-analytics')}
+            onClick={() => navigate(isDatabaseSource ? '/' : '/pbn-analytics')}
             className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
           >
-            Back to PBN Analytics
+            {isDatabaseSource ? 'Back to menu' : 'Back to PBN Analytics'}
           </button>
           <div>
-            <h1 className="text-lg font-semibold">PBN Open + Edu + HB Dashboard</h1>
+            <h1 className="text-lg font-semibold">
+              {isDatabaseSource ? 'Insight Hub Beta' : 'PBN Open + Edu + HB Dashboard'}
+            </h1>
             {dashboard && <p className="text-xs text-slate-500">{dashboard.sheet_name}</p>}
           </div>
         </div>
@@ -308,7 +323,7 @@ export default function InsightHubPage() {
       </header>
 
       <main className="mx-auto max-w-screen-2xl space-y-5 p-4 md:p-6">
-        {!datasetId && (
+        {!isDatabaseSource && !datasetId && (
           <section className="card mx-auto max-w-xl p-6 text-center">
             <h2 className="text-lg font-semibold">No cleaned dataset selected</h2>
             <p className="mt-2 text-sm text-slate-400">
@@ -429,7 +444,9 @@ export default function InsightHubPage() {
               </div>
             </div>
             <p className="text-right text-[11px] text-slate-600">
-              Dashboard aggregates the full cleaned dataset. Dataset ID: {dashboard.dataset_id.slice(0, 8)}…
+              {isDatabaseSource
+                ? `Dashboard source: ${dashboard.dataset_id}`
+                : `Dashboard aggregates the full cleaned dataset. Dataset ID: ${dashboard.dataset_id.slice(0, 8)}…`}
             </p>
           </>
         )}

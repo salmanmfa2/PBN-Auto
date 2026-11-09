@@ -20,6 +20,7 @@ import type {
   AuthRegistrationPayload,
   AuthSessionResponse,
   AuthUser,
+  PbnOpenCsvValidation,
   ThemeName,
   ChatMessage,
   ChatResponse,
@@ -98,6 +99,26 @@ export async function deleteAdminUser(username: string): Promise<void> {
   await api.delete(`/admin/users/${encodeURIComponent(username)}`);
 }
 
+export async function validatePbnOpenCsv(file: File): Promise<PbnOpenCsvValidation> {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post<PbnOpenCsvValidation>('/admin/pbnopen-data-source/validate', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function replacePbnOpenCsv(file: File): Promise<{ message: string; row_count: number }> {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post<{ message: string; row_count: number }>(
+    '/admin/pbnopen-data-source/replace',
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data;
+}
+
 export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatResponse> {
   try {
     const { data } = await api.post<ChatResponse>('/chat', { messages });
@@ -172,6 +193,7 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
       diagnostic('cleaning', 'PBN Analytics · Cleaning', false, error),
       diagnostic('dataset', 'PBN Analytics · Dataset & Export', false, error),
       diagnostic('insights', 'Insight Hub', false, error),
+      diagnostic('insights-beta', 'Insight Hub Beta', false, error),
       diagnostic('plt-plh', 'Manajemen Plt./Plh.', false, error),
     );
     return diagnostics;
@@ -215,6 +237,16 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
       routes: [
         { path: '/insights/pbn/dashboard/{dataset_id}', method: 'post' },
         { path: '/insights/pbn/dashboard/{dataset_id}/people', method: 'post' },
+      ],
+    },
+    {
+      id: 'insights-beta',
+      label: 'Insight Hub Beta',
+      routes: [
+        { path: '/insights-beta/pbn/dashboard', method: 'post' },
+        { path: '/insights-beta/pbn/dashboard/people', method: 'post' },
+        { path: '/admin/pbnopen-data-source/validate', method: 'post' },
+        { path: '/admin/pbnopen-data-source/replace', method: 'post' },
       ],
     },
     {
@@ -406,6 +438,26 @@ export async function getPbnDashboardPeople(
     `/insights/pbn/dashboard/${datasetId}/people`,
     filters,
     { params: { sheet_name: sheetName } }
+  );
+  return data;
+}
+
+export async function getPbnOpenDatabaseDashboard(
+  filters: PbnDashboardFilters
+): Promise<PbnDashboardResponse> {
+  const { data } = await api.post<PbnDashboardResponse>(
+    '/insights-beta/pbn/dashboard',
+    filters
+  );
+  return data;
+}
+
+export async function getPbnOpenDatabaseDashboardPeople(
+  filters: PbnDashboardFilters
+): Promise<PbnDashboardPeopleResponse> {
+  const { data } = await api.post<PbnDashboardPeopleResponse>(
+    '/insights-beta/pbn/dashboard/people',
+    filters
   );
   return data;
 }

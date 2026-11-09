@@ -11,15 +11,6 @@ type PendingAction = {
   nextActive?: boolean;
 } | null;
 
-const veryEmpyFields: PltPlhRecordFields = {
-  jabatan_kosong: '',
-  pejabat_pengganti: '',
-  jabatan_definitif_pengganti: '',
-  nomor_surat: '',
-  tmt: ''
-}
-
-
 const emptyFields: PltPlhRecordFields = {
   jabatan_kosong: '',
   pejabat_pengganti: '',

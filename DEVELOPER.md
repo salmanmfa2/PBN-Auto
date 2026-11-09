@@ -34,10 +34,15 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/services/cleaning_recommendation_service.py` — compares an uploaded sheet with the verification workbooks and returns a recommendation without modifying the dataset.
   - `templates/verification/` — source-format workbooks used by cleaning-method recommendation.
   - `app/api/insights.py` — PBN dashboard endpoint; filter requests return recalculated full-dataset aggregates.
+  - `app/api/insights_beta.py` — database-backed Insight Hub Beta endpoints for `pbncleaner.fetch_pbnopen`.
   - `app/api/auth.py` — login, public registration, session, user-preference, and admin-account endpoints.
+  - The `auth.py` Admin router exposes Super Admin-only CSV validation and replacement endpoints for `pbncleaner.fetch_pbnopen`.
   - `app/api/chat.py` — authenticated chat endpoint; provider credentials remain backend-only.
+  - `app/services/chat_service.py` — sends a concise, code-maintained capability summary to Groq on each request; it does not reread README or developer documentation at runtime. Keep that summary aligned with verified app behavior when features change.
   - `app/services/dataset_service.py` — core DataFrame logic. Routes to programmatic cleaners or parses legacy text rule files.
   - `app/services/pbn_dashboard_service.py` — validates cleaned dashboard columns, applies filters, calculates employee totals and chart distributions.
+  - Insight Hub Beta reuses the same dashboard service calculations and response schemas; it reads `pbncleaner.fetch_pbnopen` from the configured SQLAlchemy engine.
+  - `app/services/pbnopen_import_service.py` validates exact CSV column names and replaces table rows in a database transaction.
   - `app/services/auth_service.py` — account/session lifecycle, role invariants, and persisted appearance preferences.
   - `app/cleaners/` — programmatic cleaner modules:
     - `pbn.py`, `pbn_edu.py`, `pbn_edu_hb.py`, `sitasi_esiii.py`, `sitasi_esiv.py` — each returns a cleaning config dict.

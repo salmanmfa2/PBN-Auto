@@ -67,7 +67,7 @@ Provide one action that generates a combined Sitasi Es.III PowerPoint for the Ba
 The API Test button opens a modal and runs the following read-only/contract checks:
 
 1. `GET /health` must return JSON with `status: "ok"`.
-2. Read `GET /openapi.json` and confirm that the expected method/path pairs for Cleaning, Dataset & Export, Insight Hub, Manajemen Plt./Plh., and Snake are registered.
+2. Read `GET /openapi.json` and confirm that the expected method/path pairs for Cleaning, Dataset & Export, Insight Hub, Insight Hub Beta, Manajemen Plt./Plh., and Snake are registered.
 3. Call `GET /stored-datasets` and report how many stored dataset runs were returned.
 4. Call `GET /plt-plh/records` and `GET /plt-plh/notifications` to verify those read endpoints and their database access.
 
@@ -203,7 +203,9 @@ The database has a generated primary key used internally by API mutations and ta
 
 ## 6. Web home menu and web-only navigation
 
-- The web home menu includes **PBN Analytics**, **Insight Hub**, **Manajemen Plt./Plh.**, **Generate ND Undangan Pelantikan**, and **Analisis Kinerja DJPb**.
+- The web home menu includes **PBN Analytics**, **Insight Hub**, **Insight Hub Beta**, **Manajemen Plt./Plh.**, **Generate ND Undangan Pelantikan**, and **Analisis Kinerja DJPb**.
+- **Insight Hub Beta** is a web-only database-backed dashboard using `pbncleaner.fetch_pbnopen`. It shares Insight Hub's filters, charts, and employee table; no new database table or schema change is required.
+- Only a **Super Admin** can replace the Insight Hub Beta source from the Admin page. The CSV must have exactly the table's column names (column order may differ); successful validation opens a separate confirmation popup. The server validates again and replaces the table rows transactionally only after confirmation. Empty files and mismatched or duplicate columns are rejected.
 - Place **Generate ND Undangan Pelantikan** and **Analisis Kinerja DJPb** below Manajemen Plt./Plh. Use `src/assets/pelantikan.png` for Generate ND Undangan Pelantikan and `src/assets/performance.png` for Analisis Kinerja DJPb.
 - Both new entries are placeholders: selecting either opens a simple “On development” message; neither performs document generation or performance analysis yet.
 - Show the **Admin** menu at the bottom of the menu list for users with Admin or Super Admin access.

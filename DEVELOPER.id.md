@@ -38,10 +38,15 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `app/services/cleaning_recommendation_service.py` — membandingkan sheet yang diunggah dengan workbook verifikasi dan memberikan rekomendasi tanpa mengubah dataset.
   - `templates/verification/` — workbook format sumber yang digunakan untuk rekomendasi metode pembersihan.
   - `app/api/insights.py` — endpoint dashboard PBN; permintaan filter menghitung ulang agregat dari seluruh dataset.
+  - `app/api/insights_beta.py` — endpoint Insight Hub Beta berbasis database untuk `pbncleaner.fetch_pbnopen`.
   - `app/api/auth.py` — endpoint login, pendaftaran, sesi, preferensi pengguna, dan administrasi akun.
+  - Router Admin di `auth.py` menyediakan endpoint validasi dan penggantian CSV `pbncleaner.fetch_pbnopen` khusus Super Admin.
   - `app/api/chat.py` — endpoint chat pengguna terautentikasi; kredensial penyedia tetap di backend.
+  - `app/services/chat_service.py` — mengirim ringkasan kemampuan aplikasi yang ringkas dan dikelola di kode ke Groq pada setiap permintaan; README dan dokumentasi developer tidak dibaca ulang saat runtime. Selaraskan ringkasan tersebut dengan perilaku aplikasi yang telah diverifikasi ketika fitur berubah.
   - `app/services/dataset_service.py` — logika DataFrame utama. Mengarahkan proses ke cleaner programatis atau membaca file aturan teks lama.
   - `app/services/pbn_dashboard_service.py` — memvalidasi kolom dashboard yang sudah dibersihkan, menerapkan filter, dan menghitung jumlah pegawai serta distribusi grafik.
+  - Insight Hub Beta menggunakan ulang perhitungan dan skema respons dashboard yang sama; data dibaca dari `pbncleaner.fetch_pbnopen` melalui engine SQLAlchemy yang dikonfigurasi.
+  - `app/services/pbnopen_import_service.py` memvalidasi nama kolom CSV secara tepat dan mengganti seluruh baris tabel dalam transaksi database.
   - `app/services/auth_service.py` — siklus akun/sesi, aturan peran, dan preferensi tampilan tersimpan.
   - `app/cleaners/` — modul cleaner programatis:
     - `pbn.py`, `pbn_edu.py`, `pbn_edu_hb.py`, `sitasi_esiii.py`, `sitasi_esiv.py` — masing-masing mengembalikan konfigurasi pembersihan.

@@ -47,6 +47,9 @@ class ChatServiceTests(unittest.TestCase):
         system_prompt = request["messages"][0]["content"]
         self.assertIn("Do not invent menu names, routes, permissions", system_prompt)
         self.assertIn("do not claim the app performs OCR", system_prompt)
+        self.assertIn("Insight Hub Beta is a web dashboard backed by pbncleaner.fetch_pbnopen", system_prompt)
+        self.assertIn("only Super Admins can replace that source", system_prompt)
+        self.assertIn("Desktop navigation has only PBN Analytics and Insight Hub", system_prompt)
         self.assertEqual(request["messages"][-1], {"role": "user", "content": "Hello"})
 
     @patch.dict(os.environ, {"GROQ_API_KEY": "test-key-not-real"}, clear=True)

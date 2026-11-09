@@ -96,6 +96,12 @@ export interface AdminUserUpdatePayload {
   is_active: boolean;
 }
 
+export interface PbnOpenCsvValidation {
+  filename: string;
+  columns: string[];
+  row_count: number;
+}
+
 export interface CleaningMethodRecommendation {
   dataset_id: string;
   sheet_name: string;

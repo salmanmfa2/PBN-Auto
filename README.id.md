@@ -17,13 +17,14 @@ Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub
 | **Pengelolaan Kolom** | ✅ Aktif | Menyembunyikan atau menghapus kolom serta mengganti nama kolom secara langsung dengan pratinjau tabel |
 | **Ekspor** | ✅ Aktif | Mengunduh data dalam format `.csv` atau `.xlsx` |
 | **Insight Hub** | ✅ Aktif | Dashboard PBN Open + Edu + HB dengan jumlah pegawai dan distribusi data |
+| **Insight Hub Beta (web)** | ✅ Beta | Filter, grafik, dan tabel pegawai yang sama dari `pbncleaner.fetch_pbnopen`; Super Admin dapat mengganti sumber melalui CSV yang divalidasi kolomnya |
 | **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, dan mengekspor data |
 | **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, dan Super Admin; sesi pengguna berlaku satu jam |
 | **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin dan administrasi monitoring Plt./Plh. |
 | **Menu web tambahan** | 🛠️ Placeholder | Generate ND Undangan Pelantikan dan Analisis Kinerja DJPb hanya menampilkan “On development”; tidak tersedia di desktop |
 | **Tampilan** | ✅ Aktif | Tema Default, Dark, dan Light; pilihan pengguna yang login tersimpan pada akunnya |
 | **Toolbar Aplikasi** | ✅ Aktif | Jam WIB, posisi dapat digeser, utilitas dapat disembunyikan, diagnostik API, dan Snake |
-| **Chat AI** | ✅ Aktif | Chat web untuk pengguna login dengan Markdown dan tombol hapus percakapan; memakai Groq dari backend |
+| **Chat AI** | ✅ Aktif | Chat web untuk pengguna login dengan Markdown, tombol hapus percakapan, dan panduan kemampuan aplikasi ringkas; memakai Groq dari backend tanpa membaca ulang dokumentasi setiap permintaan |
 
 ## Teknologi
 

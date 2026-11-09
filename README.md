@@ -17,13 +17,14 @@ The desktop application's main navigation is limited to **PBN Analytics** and **
 | **Column Management** | ✅ Live | Hide/remove columns; inline rename with preview table |
 | **Export** | ✅ Live | Download as `.csv` or `.xlsx` |
 | **Insight Hub** | ✅ Live | PBN Open + Edu + HB dashboard with employee totals and distributions |
+| **Insight Hub Beta (web)** | ✅ Beta | Same filters, charts, and employee table sourced from `pbncleaner.fetch_pbnopen`; Super Admin can replace the source using a column-checked CSV workflow |
 | **Manajemen Plt./Plh.** | ✅ Live | Monitor acting assignments, calculate tenure/status, receive dashboard notices, and export records |
 | **Web accounts and roles** | ✅ Live | Guest, User, Admin, and Super Admin access; one-hour authenticated sessions |
 | **Admin workspace** | ✅ Live | Super Admin account management and shared Plt./Plh. administration |
 | **Additional web menus** | 🛠️ Placeholder | Generate ND Undangan Pelantikan and Analisis Kinerja DJPb currently show “On development”; desktop does not include them |
 | **Appearance** | ✅ Live | Default, Dark, and Light themes; signed-in users' preferences follow their accounts |
 | **App Toolbar** | ✅ Live | WIB clock, draggable position, collapsible utility actions, API diagnostics, and Snake |
-| **AI chat assistant** | ✅ Live | Authenticated web chat with Markdown rendering and clear-chat control; uses backend-configured Groq |
+| **AI chat assistant** | ✅ Live | Authenticated web chat with Markdown rendering, clear-chat control, and concise app-capability guidance; uses backend-configured Groq without reloading documentation per request |
 
 ## Tech Stack
 

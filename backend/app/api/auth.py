@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.history_db import get_history_db
@@ -17,10 +17,12 @@ from app.schemas.auth import (
     UserRead,
 )
 from app.services import auth_service
+from app.services import pbnopen_import_service
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
+MAX_PBNOPEN_CSV_SIZE = 50 * 1024 * 1024
 
 
 def _extract_token(authorization: str | None) -> str:
@@ -53,6 +55,54 @@ def get_super_admin(user: User = Depends(get_current_user)) -> User:
     if user.auth_level != 3:
         raise HTTPException(status_code=403, detail="Super Admin privileges are required.")
     return user
+
+
+async def _read_pbnopen_csv(file: UploadFile) -> bytes:
+    filename = file.filename or ""
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+    content = await file.read(MAX_PBNOPEN_CSV_SIZE + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded CSV is empty.")
+    if len(content) > MAX_PBNOPEN_CSV_SIZE:
+        raise HTTPException(status_code=413, detail="CSV exceeds the 50 MB limit.")
+    return content
+
+
+@admin_router.post("/pbnopen-data-source/validate")
+async def validate_pbnopen_data_source(
+    file: UploadFile = File(...),
+    _: User = Depends(get_super_admin),
+):
+    content = await _read_pbnopen_csv(file)
+    try:
+        result = pbnopen_import_service.validate_pbnopen_csv(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not validate against 'pbncleaner.fetch_pbnopen'. Check database connectivity and table availability.",
+        ) from exc
+    return {"filename": file.filename, **result}
+
+
+@admin_router.post("/pbnopen-data-source/replace")
+async def replace_pbnopen_data_source(
+    file: UploadFile = File(...),
+    _: User = Depends(get_super_admin),
+):
+    content = await _read_pbnopen_csv(file)
+    try:
+        row_count = pbnopen_import_service.replace_pbnopen_data(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not replace 'pbncleaner.fetch_pbnopen'. Verify the table state before retrying; check database connectivity and schema.",
+        ) from exc
+    return {"message": "PBN Open data source replaced successfully.", "row_count": row_count}
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
