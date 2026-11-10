@@ -45,6 +45,7 @@ export function AppToolbar() {
   const [themeSaving, setThemeSaving] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
   const [showExtraTools, setShowExtraTools] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const toolbarRef = useRef<HTMLElement>(null);
   const themeRequestId = useRef(0);
@@ -64,6 +65,23 @@ export function AppToolbar() {
     };
   };
 
+  const snapToNearestEdge = (left: number, top: number) => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return { left, top };
+    const position = clampPosition(left, top);
+    const right = window.innerWidth - toolbar.offsetWidth - 8;
+    const bottom = window.innerHeight - toolbar.offsetHeight - 8;
+    const candidates = [
+      { distance: position.left - 8, left: 8, top: position.top },
+      { distance: right - position.left, left: right, top: position.top },
+      { distance: position.top - 8, left: position.left, top: 8 },
+      { distance: bottom - position.top, left: position.left, top: bottom },
+    ];
+    const nearest = candidates.reduce((closest, candidate) =>
+      candidate.distance < closest.distance ? candidate : closest);
+    return clampPosition(nearest.left, nearest.top);
+  };
+
   const handleDragStart = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -76,6 +94,7 @@ export function AppToolbar() {
       left: bounds.left,
       top: bounds.top,
     };
+    setIsDragging(true);
   };
 
   const handleDragMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -88,10 +107,22 @@ export function AppToolbar() {
   };
 
   const handleDragEnd = (event: PointerEvent<HTMLDivElement>) => {
+    const origin = dragOrigin.current;
+    if (origin) {
+      const bounds = toolbarRef.current?.getBoundingClientRect();
+      const position = event.type === 'pointerup'
+        ? clampPosition(
+          origin.left + event.clientX - origin.pointerX,
+          origin.top + event.clientY - origin.pointerY,
+        )
+        : bounds ? clampPosition(bounds.left, bounds.top) : null;
+      if (position) setToolbarPosition(snapToNearestEdge(position.left, position.top));
+    }
     dragOrigin.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    setIsDragging(false);
   };
 
   const handlePositionKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -114,7 +145,7 @@ export function AppToolbar() {
     const keepToolbarInView = () => {
       const bounds = toolbarRef.current?.getBoundingClientRect();
       if (bounds && toolbarPosition.left !== null) {
-        setToolbarPosition(clampPosition(bounds.left, bounds.top));
+        setToolbarPosition(snapToNearestEdge(bounds.left, bounds.top));
       }
     };
     window.addEventListener('resize', keepToolbarInView);
@@ -244,7 +275,9 @@ export function AppToolbar() {
     <>
       <aside
         ref={toolbarRef}
-        className="fixed z-50 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-2 rounded-xl border border-surface-700 bg-surface-800/95 px-2.5 py-2 shadow-lg backdrop-blur"
+        className={`fixed z-50 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-2 rounded-xl border border-surface-700 bg-surface-800/95 px-2.5 py-2 shadow-lg backdrop-blur motion-reduce:transition-none ${
+          isDragging ? '' : 'transition-[left,top] duration-200 ease-out'
+        }`}
         style={{
           left: toolbarPosition.left ?? undefined,
           right: toolbarPosition.left === null ? 12 : undefined,

@@ -14,6 +14,7 @@ import type {
   PbnDashboardPeopleResponse,
   PbnDashboardResponse,
   PltPlhMonitoringRecord,
+  PltPlhEmployeeOption,
   PltPlhRecordFields,
   AdminUserPayload,
   AdminUserUpdatePayload,
@@ -315,6 +316,13 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
 
 export async function getPltPlhRecords(): Promise<PltPlhMonitoringRecord[]> {
   const { data } = await api.get<PltPlhMonitoringRecord[]>('/plt-plh/records');
+  return data;
+}
+
+export async function searchPltPlhEmployees(query: string): Promise<PltPlhEmployeeOption[]> {
+  const { data } = await api.get<PltPlhEmployeeOption[]>('/plt-plh/employees', {
+    params: { q: query },
+  });
   return data;
 }
 

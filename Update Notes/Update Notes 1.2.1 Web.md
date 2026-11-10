@@ -10,6 +10,8 @@ Version 1.2.1 adds the web-only **Generate ND Undangan Pelantikan** workflow. It
 
 - The menu opens on the signed-in user's agenda history. Agenda creation is available from a popup; each user can manage only agendas they created.
 - An agenda stores the pelantikan date, ND number and date, pelantikan time, dress code, and `level_jabatan`. The weekday is inferred from the pelantikan date.
+- `Level jabatan` is selected from Administrator or Tinggi Pratama. `Dresscode` offers Wastra Nusantara, PSL Lengkap, or Lainnya with a custom text value.
+- Agenda cards show the number of days until pelantikan; dates before the current Jakarta date are tagged Berakhir.
 - Any signed-in User, Admin, or Super Admin can use the feature. Guest access is not allowed.
 - The history list is wide and left-aligned. Each agenda card has a compact delete icon with confirmation.
 

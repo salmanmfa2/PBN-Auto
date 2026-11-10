@@ -2,7 +2,11 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as apiClient from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import type { PltPlhMonitoringRecord, PltPlhRecordFields } from '../types';
+import type {
+  PltPlhEmployeeOption,
+  PltPlhMonitoringRecord,
+  PltPlhRecordFields,
+} from '../types';
 import { Spinner } from '../components/Spinner';
 
 type PendingAction = {
@@ -14,6 +18,7 @@ type PendingAction = {
 const emptyFields: PltPlhRecordFields = {
   jabatan_kosong: '',
   pejabat_pengganti: '',
+  pejabat_pengganti_nip: null,
   jabatan_definitif_pengganti: '',
   nomor_surat: '',
   tmt: '',
@@ -59,6 +64,12 @@ export default function PltPlhManagementPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [fields, setFields] = useState<PltPlhRecordFields>(emptyFields);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
+  const [employeeOptions, setEmployeeOptions] = useState<PltPlhEmployeeOption[]>([]);
+  const [isEmployeeSearchActive, setIsEmployeeSearchActive] = useState(false);
+  const [isSearchingEmployees, setIsSearchingEmployees] = useState(false);
+  const [employeeSearchError, setEmployeeSearchError] = useState<string | null>(null);
+  const [activeEmployeeIndex, setActiveEmployeeIndex] = useState(-1);
   const [editingRecordId, setEditingRecordId] = useState<number | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isNdMenuOpen, setIsNdMenuOpen] = useState(false);
@@ -80,6 +91,42 @@ export default function PltPlhManagementPage() {
   useEffect(() => {
     void refreshRecords();
   }, []);
+
+  useEffect(() => {
+    const query = employeeSearchQuery.trim();
+    if (!isFormOpen || !isEmployeeSearchActive || query.length < 2) {
+      setEmployeeOptions([]);
+      setIsSearchingEmployees(false);
+      setEmployeeSearchError(null);
+      setActiveEmployeeIndex(-1);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSearchingEmployees(true);
+    setEmployeeSearchError(null);
+    const timeoutId = window.setTimeout(() => {
+      void apiClient.searchPltPlhEmployees(query)
+        .then((options) => {
+          if (cancelled) return;
+          setEmployeeOptions(options);
+          setActiveEmployeeIndex(-1);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setEmployeeOptions([]);
+          setEmployeeSearchError(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearchingEmployees(false);
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [employeeSearchQuery, isEmployeeSearchActive, isFormOpen]);
 
   useEffect(() => {
     if (!isFormOpen || isSaving) return;
@@ -124,6 +171,11 @@ export default function PltPlhManagementPage() {
 
   const resetForm = () => {
     setFields(emptyFields);
+    setEmployeeSearchQuery('');
+    setEmployeeOptions([]);
+    setIsEmployeeSearchActive(false);
+    setEmployeeSearchError(null);
+    setActiveEmployeeIndex(-1);
     setEditingRecordId(null);
     setIsFormOpen(false);
   };
@@ -132,13 +184,33 @@ export default function PltPlhManagementPage() {
     setFields({
       jabatan_kosong: record.jabatan_kosong,
       pejabat_pengganti: record.pejabat_pengganti,
+      pejabat_pengganti_nip: record.pejabat_pengganti_nip,
       jabatan_definitif_pengganti: record.jabatan_definitif_pengganti,
       nomor_surat: record.nomor_surat,
       tmt: record.tmt.slice(0, 10),
     });
+    setEmployeeSearchQuery(record.pejabat_pengganti);
+    setEmployeeOptions([]);
+    setIsEmployeeSearchActive(false);
+    setEmployeeSearchError(null);
+    setActiveEmployeeIndex(-1);
     setEditingRecordId(record.id);
     setActionError(null);
     setIsFormOpen(true);
+  };
+
+  const selectEmployee = (employee: PltPlhEmployeeOption) => {
+    setFields((current) => ({
+      ...current,
+      pejabat_pengganti: employee.nama,
+      pejabat_pengganti_nip: employee.nip,
+      jabatan_definitif_pengganti: employee.jabatan_definitif_pengganti,
+    }));
+    setEmployeeSearchQuery(employee.nama);
+    setEmployeeOptions([]);
+    setIsEmployeeSearchActive(false);
+    setEmployeeSearchError(null);
+    setActiveEmployeeIndex(-1);
   };
 
   const submitRecord = async (event: FormEvent<HTMLFormElement>) => {
@@ -473,18 +545,110 @@ export default function PltPlhManagementPage() {
                 className="input mt-1.5"
               />
             </label>
-            <label className="text-sm text-slate-300">
-              Pejabat Pengganti
-              <input
-                required
-                maxLength={2000}
-                value={fields.pejabat_pengganti}
-                onChange={(event) => setFields({ ...fields, pejabat_pengganti: event.target.value })}
-                className="input mt-1.5"
-              />
-            </label>
+            <div
+              className="relative"
+              onBlur={(event) => {
+                if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
+                  setIsEmployeeSearchActive(false);
+                }
+              }}
+            >
+              <label className="text-sm text-slate-300">
+                Pejabat Pengganti
+                <input
+                  required
+                  maxLength={2000}
+                  placeholder="Cari nama atau NIP"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-haspopup="listbox"
+                  aria-expanded={isEmployeeSearchActive && employeeSearchQuery.trim().length >= 2}
+                  aria-controls="plt-plh-employee-options"
+                  aria-activedescendant={activeEmployeeIndex >= 0
+                    ? `plt-plh-employee-option-${activeEmployeeIndex}`
+                    : undefined}
+                  autoComplete="off"
+                  value={employeeSearchQuery}
+                  onFocus={() => setIsEmployeeSearchActive(true)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setEmployeeSearchQuery(value);
+                    setIsEmployeeSearchActive(true);
+                    setActiveEmployeeIndex(-1);
+                    setFields((current) => ({
+                      ...current,
+                      pejabat_pengganti: value,
+                      pejabat_pengganti_nip: null,
+                      jabatan_definitif_pengganti: '',
+                    }));
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown' && employeeOptions.length > 0) {
+                      event.preventDefault();
+                      setActiveEmployeeIndex((current) => (current + 1) % employeeOptions.length);
+                    } else if (event.key === 'ArrowUp' && employeeOptions.length > 0) {
+                      event.preventDefault();
+                      setActiveEmployeeIndex((current) => (
+                        current <= 0 ? employeeOptions.length - 1 : current - 1
+                      ));
+                    } else if (event.key === 'Enter' && activeEmployeeIndex >= 0) {
+                      event.preventDefault();
+                      const employee = employeeOptions[activeEmployeeIndex];
+                      if (employee) selectEmployee(employee);
+                    } else if (event.key === 'Escape') {
+                      setIsEmployeeSearchActive(false);
+                    }
+                  }}
+                  className="input mt-1.5"
+                />
+              </label>
+              {fields.pejabat_pengganti_nip && (
+                <p className="mt-1 text-xs text-slate-500">NIP terpilih: {fields.pejabat_pengganti_nip}</p>
+              )}
+              {isEmployeeSearchActive && employeeSearchQuery.trim().length >= 2 && (
+                <ul
+                  id="plt-plh-employee-options"
+                  role="listbox"
+                  aria-label="Hasil pencarian Pejabat Pengganti"
+                  className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 p-1 shadow-xl"
+                >
+                  {isSearchingEmployees ? (
+                    <li className="px-3 py-2 text-sm text-slate-400">Mencari pegawai…</li>
+                  ) : employeeSearchError ? (
+                    <li role="alert" className="px-3 py-2 text-sm text-rose-300">{employeeSearchError}</li>
+                  ) : employeeOptions.length > 0 ? (
+                    employeeOptions.map((employee, index) => (
+                      <li key={employee.nip}>
+                        <button
+                          id={`plt-plh-employee-option-${index}`}
+                          type="button"
+                          role="option"
+                          aria-selected={activeEmployeeIndex === index}
+                          onClick={() => selectEmployee(employee)}
+                          className={`w-full rounded-md px-3 py-2 text-left transition ${
+                            activeEmployeeIndex === index
+                              ? 'bg-slate-800'
+                              : 'hover:bg-slate-800'
+                          }`}
+                        >
+                          <span className="block text-sm text-slate-100">{employee.nama} · {employee.nip}</span>
+                          <span className="mt-0.5 block text-xs text-slate-400">
+                            {employee.jabatan_definitif_pengganti || 'Jabatan/unit belum tersedia'}
+                          </span>
+                        </button>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="px-3 py-2 text-sm text-slate-400">Pegawai tidak ditemukan.</li>
+                  )}
+                </ul>
+              )}
+            </div>
             <label className="text-sm text-slate-300">
               Jabatan Definitif Pengganti
+              <span className="mt-1 block text-xs text-slate-500">
+                Terisi dari database saat pejabat dipilih; masih dapat disesuaikan.
+              </span>
               <input
                 required
                 maxLength={2000}

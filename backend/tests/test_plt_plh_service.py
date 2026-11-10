@@ -2,10 +2,12 @@ import unittest
 from datetime import date, datetime
 from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from openpyxl import load_workbook
 
+from app.schemas.plt_plh import PltPlhRecordFields
+from app.services import plt_plh_service
 from app.services.plt_plh_service import _completed_months, export_records, record_to_read
 
 
@@ -19,6 +21,7 @@ class PltPlhServiceTests(unittest.TestCase):
             "id": 1,
             "jabatan_kosong": "Jabatan",
             "pejabat_pengganti": "Nama",
+            "pejabat_pengganti_nip": None,
             "jabatan_definitif_pengganti": "Jabatan definitif",
             "nomor_surat": "Nomor surat",
             "tmt": date(2026, 1, 4),
@@ -39,6 +42,7 @@ class PltPlhServiceTests(unittest.TestCase):
             id=1,
             jabatan_kosong="Jabatan",
             pejabat_pengganti="Nama",
+            pejabat_pengganti_nip=None,
             jabatan_definitif_pengganti="Jabatan definitif",
             nomor_surat="Nomor surat",
             tmt=date(2025, 1, 4),
@@ -58,6 +62,7 @@ class PltPlhServiceTests(unittest.TestCase):
                 id=7,
                 jabatan_kosong="Jabatan 1",
                 pejabat_pengganti="Nama 1",
+                pejabat_pengganti_nip="197906262000121001",
                 jabatan_definitif_pengganti="Jabatan definitif 1",
                 nomor_surat="Surat 1",
                 tmt=date(2026, 1, 1),
@@ -68,6 +73,7 @@ class PltPlhServiceTests(unittest.TestCase):
                 id=11,
                 jabatan_kosong="Jabatan 2",
                 pejabat_pengganti="Nama 2",
+                pejabat_pengganti_nip="197906262000121002",
                 jabatan_definitif_pengganti="Jabatan definitif 2",
                 nomor_surat="Surat 2",
                 tmt=date(2026, 2, 1),
@@ -84,7 +90,58 @@ class PltPlhServiceTests(unittest.TestCase):
         rows = list(worksheet.iter_rows(values_only=True))
 
         self.assertEqual(rows[0][0], "No.")
+        self.assertEqual(rows[0][3], "NIP Pejabat Pengganti")
         self.assertEqual([row[0] for row in rows[1:]], [1, 2])
+
+    def test_search_pbn_open_employees_formats_job_and_unit_for_selection(self):
+        connection = MagicMock()
+        connection.execute.return_value.mappings.return_value.all.return_value = [
+            {
+                "nip": "197906262000121002",
+                "nama": "Teddy Imam Saputro",
+                "jabatan": "Kepala Bagian Umum",
+                "unit_eselon_ii": "Kanwil DJPb Prov. Banteng",
+                "eselon": "III",
+            },
+            {
+                "nip": "197906262000121003",
+                "nama": "Sari Wulandari",
+                "jabatan": "Kepala Kantor Wilayah",
+                "unit_eselon_ii": "Kanwil DJPb Prov. Banteng",
+                "eselon": "II",
+            },
+        ]
+
+        with patch.object(plt_plh_service.engine, "connect") as connect:
+            connect.return_value.__enter__.return_value = connection
+            employees = plt_plh_service.search_pbn_open_employees("Teddy")
+
+        self.assertEqual(
+            [employee.jabatan_definitif_pengganti for employee in employees],
+            [
+                "Kepala Bagian Umum Kantor Wilayah Direktorat Jenderal "
+                "Perbendaharaan Provinsi Banteng",
+                "Kepala Kantor Wilayah",
+            ],
+        )
+        self.assertEqual(employees[0].nip, "197906262000121002")
+
+    def test_search_pbn_open_employees_skips_database_for_short_query(self):
+        with patch.object(plt_plh_service.engine, "connect") as connect:
+            self.assertEqual(plt_plh_service.search_pbn_open_employees("A"), [])
+        connect.assert_not_called()
+
+    def test_plt_plh_fields_normalize_selected_employee_nip(self):
+        fields = PltPlhRecordFields(
+            jabatan_kosong="Jabatan kosong",
+            pejabat_pengganti="Nama",
+            pejabat_pengganti_nip="1979 0626 2000 1210 02",
+            jabatan_definitif_pengganti="Jabatan definitif",
+            nomor_surat="Surat",
+            tmt=date(2026, 1, 1),
+        )
+
+        self.assertEqual(fields.pejabat_pengganti_nip, "197906262000121002")
 
 
 if __name__ == "__main__":

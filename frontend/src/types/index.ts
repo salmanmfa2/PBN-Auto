@@ -33,6 +33,7 @@ export interface PltPlhMonitoringRecord {
   id: number;
   jabatan_kosong: string;
   pejabat_pengganti: string;
+  pejabat_pengganti_nip: string | null;
   jabatan_definitif_pengganti: string;
   nomor_surat: string;
   tmt: string;
@@ -48,9 +49,16 @@ export interface PltPlhMonitoringRecord {
 export interface PltPlhRecordFields {
   jabatan_kosong: string;
   pejabat_pengganti: string;
+  pejabat_pengganti_nip: string | null;
   jabatan_definitif_pengganti: string;
   nomor_surat: string;
   tmt: string;
+}
+
+export interface PltPlhEmployeeOption {
+  nip: string;
+  nama: string;
+  jabatan_definitif_pengganti: string;
 }
 
 export type AuthLevel = 1 | 2 | 3;

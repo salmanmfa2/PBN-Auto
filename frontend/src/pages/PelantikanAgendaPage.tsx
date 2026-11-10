@@ -68,6 +68,29 @@ function formatDate(value: string): string {
   }).format(new Date(`${value.slice(0, 10)}T00:00:00+07:00`));
 }
 
+function daysUntilPelantikan(value: string): number {
+  let todayYear = 0;
+  let todayMonth = 0;
+  let todayDay = 0;
+  const todayParts = new Intl.DateTimeFormat('en', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+  }).formatToParts(new Date());
+
+  for (const part of todayParts) {
+    if (part.type === 'year') todayYear = Number(part.value);
+    if (part.type === 'month') todayMonth = Number(part.value);
+    if (part.type === 'day') todayDay = Number(part.value);
+  }
+
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  const targetDate = Date.UTC(year, month - 1, day);
+  const jakartaToday = Date.UTC(todayYear, todayMonth - 1, todayDay);
+  return Math.round((targetDate - jakartaToday) / 86_400_000);
+}
+
 function lookupLabel(status: string): string {
   switch (status) {
     case 'matched': return 'Cocok';
@@ -660,54 +683,66 @@ export default function PelantikanAgendaPage() {
               </p>
             ) : (
               <ul className="mt-4 grid gap-3 md:grid-cols-2">
-                {agendas.map((item) => (
-                  <li key={item.id}>
-                    <div className="group overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60 transition hover:border-brand-500/50">
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/undangan-pelantikan/${item.id}`)}
-                        className="w-full p-4 text-left transition group-hover:bg-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-                      >
-                        <span className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium text-slate-100">{formatDate(item.tanggal_pelantikan)}</span>
-                          <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300">
-                            {item.status === 'generated' ? 'Sudah dibuat' : item.status === 'ready' ? 'Siap diproses' : 'Draft'}
-                          </span>
-                        </span>
-                        <span className="mt-2 block text-sm text-slate-300">{item.nd_undangan_pelantikan}</span>
-                        <span className="mt-1 block text-xs text-slate-500">
-                          {item.people_count} pegawai · {item.selected_count} dipilih
-                        </span>
-                      </button>
-                      <div className="flex justify-end border-t border-slate-800 px-3 py-1.5">
+                {agendas.map((item) => {
+                  const daysUntil = daysUntilPelantikan(item.tanggal_pelantikan);
+                  return (
+                    <li key={item.id}>
+                      <div className="group overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60 transition hover:border-brand-500/50">
                         <button
                           type="button"
-                          disabled={deletingHistoryAgendaId !== null}
-                          onClick={() => void deleteHistoryAgenda(item)}
-                          aria-label={`Hapus agenda ${item.nd_undangan_pelantikan}`}
-                          title="Hapus agenda"
-                          className="rounded-md p-1.5 text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => navigate(`/undangan-pelantikan/${item.id}`)}
+                          className="w-full p-4 text-left transition group-hover:bg-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                         >
-                          <svg
-                            aria-hidden="true"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="size-4"
-                          >
-                            <path d="M3 6h18" />
-                            <path d="M8 6V4h8v2" />
-                            <path d="m19 6-1 14H6L5 6" />
-                            <path d="M10 11v5M14 11v5" />
-                          </svg>
+                          <span className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium text-slate-100">{formatDate(item.tanggal_pelantikan)}</span>
+                            <span className="flex flex-wrap items-center justify-end gap-2">
+                              <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300">
+                                {item.status === 'generated' ? 'Sudah dibuat' : item.status === 'ready' ? 'Siap diproses' : 'Draft'}
+                              </span>
+                              <span className={`rounded-full border px-2 py-0.5 text-xs ${
+                                daysUntil < 0
+                                  ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                              }`}>
+                                {daysUntil < 0 ? 'Berakhir' : `${daysUntil} Hari menuju pelantikan`}
+                              </span>
+                            </span>
+                          </span>
+                          <span className="mt-2 block text-sm text-slate-300">{item.nd_undangan_pelantikan}</span>
+                          <span className="mt-1 block text-xs text-slate-500">
+                            {item.people_count} pegawai · {item.selected_count} dipilih
+                          </span>
                         </button>
+                        <div className="flex justify-end border-t border-slate-800 px-3 py-1.5">
+                          <button
+                            type="button"
+                            disabled={deletingHistoryAgendaId !== null}
+                            onClick={() => void deleteHistoryAgenda(item)}
+                            aria-label={`Hapus agenda ${item.nd_undangan_pelantikan}`}
+                            title="Hapus agenda"
+                            className="rounded-md p-1.5 text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <svg
+                              aria-hidden="true"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="size-4"
+                            >
+                              <path d="M3 6h18" />
+                              <path d="M8 6V4h8v2" />
+                              <path d="m19 6-1 14H6L5 6" />
+                              <path d="M10 11v5M14 11v5" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
@@ -895,6 +930,11 @@ function AgendaFields({
   autoFocus?: boolean;
 }) {
   const inputClass = 'input mt-1.5';
+  const levelOptions = ['Administrator', 'Tinggi Pratama'];
+  const presetDresscodes = ['Wastra Nusantara', 'PSL Lengkap'];
+  const [isOtherDresscode, setIsOtherDresscode] = useState(
+    Boolean(fields.dresscode) && !presetDresscodes.includes(fields.dresscode),
+  );
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <label className="block text-sm text-slate-300">
@@ -940,24 +980,55 @@ function AgendaFields({
       </label>
       <label className="block text-sm text-slate-300">
         Level jabatan
-        <input
+        <select
           required
-          maxLength={255}
           value={fields.level_jabatan}
           onChange={(event) => onChange('level_jabatan', event.target.value)}
           className={inputClass}
-        />
+        >
+          <option value="" disabled>Pilih level jabatan</option>
+          {fields.level_jabatan && !levelOptions.includes(fields.level_jabatan) && (
+            <option value={fields.level_jabatan}>{fields.level_jabatan} (saat ini)</option>
+          )}
+          <option value="Administrator">Administrator</option>
+          <option value="Tinggi Pratama">Tinggi Pratama</option>
+        </select>
       </label>
       <label className="block text-sm text-slate-300 sm:col-span-2">
         Dresscode
-        <input
+        <select
           required
-          maxLength={1000}
-          value={fields.dresscode}
-          onChange={(event) => onChange('dresscode', event.target.value)}
+          value={isOtherDresscode ? 'other' : fields.dresscode}
+          onChange={(event) => {
+            if (event.target.value === 'other') {
+              setIsOtherDresscode(true);
+              if (presetDresscodes.includes(fields.dresscode)) onChange('dresscode', '');
+              return;
+            }
+            setIsOtherDresscode(false);
+            onChange('dresscode', event.target.value);
+          }}
           className={inputClass}
-        />
+        >
+          <option value="" disabled>Pilih dresscode</option>
+          <option value="Wastra Nusantara">Wastra Nusantara</option>
+          <option value="PSL Lengkap">PSL Lengkap</option>
+          <option value="other">Lainnya (isi sendiri)</option>
+        </select>
       </label>
+      {isOtherDresscode && (
+        <label className="block text-sm text-slate-300 sm:col-span-2">
+          Dresscode lainnya
+          <input
+            required
+            maxLength={1000}
+            value={fields.dresscode}
+            onChange={(event) => onChange('dresscode', event.target.value)}
+            className={inputClass}
+            placeholder="Masukkan dresscode"
+          />
+        </label>
+      )}
     </div>
   );
 }

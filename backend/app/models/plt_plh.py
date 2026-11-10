@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Text, func
+from sqlalchemy import Boolean, Date, DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.history_db import Base
@@ -12,6 +12,7 @@ class PltPlhMonitoringRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     jabatan_kosong: Mapped[str] = mapped_column(Text, nullable=False)
     pejabat_pengganti: Mapped[str] = mapped_column(Text, nullable=False)
+    pejabat_pengganti_nip: Mapped[str | None] = mapped_column(String(32), nullable=True)
     jabatan_definitif_pengganti: Mapped[str] = mapped_column(Text, nullable=False)
     nomor_surat: Mapped[str] = mapped_column(Text, nullable=False)
     tmt: Mapped[date] = mapped_column(Date, nullable=False)

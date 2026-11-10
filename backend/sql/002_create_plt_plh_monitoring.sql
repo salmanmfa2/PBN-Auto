@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS plt_plh_monitoring_records (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   jabatan_kosong TEXT NOT NULL,
   pejabat_pengganti TEXT NOT NULL,
+  pejabat_pengganti_nip VARCHAR(32) NULL,
   jabatan_definitif_pengganti TEXT NOT NULL,
   nomor_surat TEXT NOT NULL,
   tmt DATE NOT NULL,

@@ -27,6 +27,7 @@ from app.schemas.pelantikan_agenda import (
 )
 from app.services import dataset_service
 from app.storage.dataset_store import DatasetStore
+from app.utils.employee_formatting import format_job_with_unit
 
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024
@@ -488,33 +489,12 @@ def _format_formal_recipient(unit_name: str) -> str:
     return normalized
 
 
-def _format_formal_unit_name(unit_name: str) -> str:
-    normalized = re.sub(r"\s+", " ", unit_name).strip()
-    province = _kanwil_province(normalized)
-    if province:
-        return (
-            "Kantor Wilayah Direktorat Jenderal Perbendaharaan "
-            f"Provinsi {province}"
-        )
-    return normalized
-
-
-def _needs_unit_suffix(eselon: object) -> bool:
-    value = _display_text(eselon)
-    if not value:
-        return False
-    if re.fullmatch(r"\d+\.0+", value):
-        value = value[: value.index(".")]
-    normalized = _normalize_column_name(value)
-    return normalized not in {"2", "ii", "eselon2", "eselonii"}
-
-
 def _format_job_with_unit(person: PelantikanAgendaPerson) -> str:
-    job = _display_text(person.jabatan)
-    unit = _display_text(person.unit_eselon_ii)
-    if not job or not unit or not _needs_unit_suffix(getattr(person, "eselon", None)):
-        return job
-    return f"{job} {_format_formal_unit_name(unit)}"
+    return format_job_with_unit(
+        _display_text(person.jabatan),
+        _display_text(person.unit_eselon_ii),
+        _display_text(getattr(person, "eselon", None)),
+    )
 
 
 def _replace_token(paragraph: etree._Element, token: str, replacement: str) -> None:

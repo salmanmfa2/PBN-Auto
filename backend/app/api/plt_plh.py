@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,7 @@ from app.schemas.plt_plh import (
     PltPlhRecordFields,
     PltPlhRecordRead,
     PltPlhRecordUpdate,
+    PltPlhEmployeeOption,
 )
 from app.services import plt_plh_service
 
@@ -33,6 +34,17 @@ def get_records(history_db: Session = Depends(get_history_db)):
 @router.get("/notifications", response_model=list[PltPlhRecordRead])
 def get_notifications(history_db: Session = Depends(get_history_db)):
     return plt_plh_service.list_notifications(history_db)
+
+
+@router.get("/employees", response_model=list[PltPlhEmployeeOption])
+def search_employees(
+    q: str = Query(min_length=2, max_length=100),
+    _: User = Depends(get_admin_user),
+):
+    try:
+        return plt_plh_service.search_pbn_open_employees(q)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/records/export")

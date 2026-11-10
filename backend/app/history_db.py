@@ -84,3 +84,16 @@ def init_history_db() -> None:
                         f"ADD COLUMN {name} {column_type}"
                     )
                 )
+
+    plt_plh_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("plt_plh_monitoring_records")
+    }
+    if "pejabat_pengganti_nip" not in plt_plh_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE plt_plh_monitoring_records "
+                    "ADD COLUMN pejabat_pengganti_nip VARCHAR(32) NULL"
+                )
+            )

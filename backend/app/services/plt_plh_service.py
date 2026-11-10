@@ -1,14 +1,22 @@
 from datetime import date
 from io import BytesIO
+import re
 
 from fastapi import HTTPException
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.history_db import engine
 from app.models.plt_plh import PltPlhMonitoringRecord
-from app.schemas.plt_plh import PltPlhRecordFields, PltPlhRecordRead
+from app.schemas.plt_plh import (
+    PltPlhEmployeeOption,
+    PltPlhRecordFields,
+    PltPlhRecordRead,
+)
+from app.utils.employee_formatting import format_job_with_unit
 
 
 NOTIFICATION_STATUSES = {"Mendekati 6 Bulan", "Lebih dari 6 Bulan"}
@@ -16,6 +24,7 @@ EXPORT_HEADERS = [
     "No.",
     "Jabatan Kosong",
     "Pejabat Pengganti",
+    "NIP Pejabat Pengganti",
     "Jabatan Definitif Pengganti",
     "Nomor Surat",
     "TMT",
@@ -48,6 +57,7 @@ def record_to_read(record: PltPlhMonitoringRecord, today: date | None = None) ->
         id=record.id,
         jabatan_kosong=record.jabatan_kosong,
         pejabat_pengganti=record.pejabat_pengganti,
+        pejabat_pengganti_nip=getattr(record, "pejabat_pengganti_nip", None),
         jabatan_definitif_pengganti=record.jabatan_definitif_pengganti,
         nomor_surat=record.nomor_surat,
         tmt=record.tmt,
@@ -75,6 +85,74 @@ def list_records(db: Session) -> list[PltPlhRecordRead]:
 
 def list_notifications(db: Session) -> list[PltPlhRecordRead]:
     return [record for record in list_records(db) if record.status in NOTIFICATION_STATUSES]
+
+
+def search_pbn_open_employees(query: str, limit: int = 20) -> list[PltPlhEmployeeOption]:
+    normalized_query = query.strip()
+    if len(normalized_query) < 2:
+        return []
+
+    filters = ["`Nama Gelar` LIKE :name_pattern"]
+    params: dict[str, str | int] = {
+        "name_pattern": f"%{normalized_query}%",
+        "limit": limit,
+    }
+    nip_query = re.sub(r"\D", "", normalized_query)
+    if nip_query:
+        filters.append("CAST(`NIP` AS CHAR) LIKE :nip_pattern")
+        params["nip_pattern"] = f"%{nip_query}%"
+
+    statement = text(
+        f"""
+        SELECT
+            CAST(`NIP` AS CHAR) AS nip,
+            `Nama Gelar` AS nama,
+            `Jabatan` AS jabatan,
+            `Unit Eselon II` AS unit_eselon_ii,
+            `eselon` AS eselon
+        FROM pbncleaner.fetch_pbnopen
+        WHERE {" OR ".join(filters)}
+        ORDER BY `Nama Gelar`
+        LIMIT :limit
+        """
+    )
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(statement, params).mappings().all()
+    except SQLAlchemyError as exc:
+        raise RuntimeError(
+            "Could not search employees in 'pbncleaner.fetch_pbnopen'. "
+            "Check database connectivity and the employee table."
+        ) from exc
+
+    employees: list[PltPlhEmployeeOption] = []
+    seen_nips: set[str] = set()
+    for row in rows:
+        nip = re.sub(r"\D", "", str(row["nip"] or ""))
+        nama = str(row["nama"] or "").strip()
+        if len(nip) != 18 or not nama:
+            continue
+        if nip in seen_nips:
+            raise RuntimeError(
+                "The PBN Open source contains duplicate NIP values. "
+                "Resolve the duplicates before selecting an employee."
+            )
+        seen_nips.add(nip)
+        jabatan = str(row["jabatan"] or "").strip()
+        unit_eselon_ii = str(row["unit_eselon_ii"] or "").strip()
+        eselon = str(row["eselon"] or "").strip() or None
+        employees.append(
+            PltPlhEmployeeOption(
+                nip=nip,
+                nama=nama,
+                jabatan_definitif_pengganti=format_job_with_unit(
+                    jabatan,
+                    unit_eselon_ii,
+                    eselon,
+                ),
+            )
+        )
+    return employees
 
 
 def create_record(db: Session, fields: PltPlhRecordFields) -> PltPlhMonitoringRecord:
@@ -137,6 +215,7 @@ def export_records(db: Session) -> BytesIO:
                 row_number,
                 record.jabatan_kosong,
                 record.pejabat_pengganti,
+                record.pejabat_pengganti_nip,
                 record.jabatan_definitif_pengganti,
                 record.nomor_surat,
                 record.tmt,
@@ -147,12 +226,13 @@ def export_records(db: Session) -> BytesIO:
 
     worksheet.freeze_panes = "A2"
     worksheet.column_dimensions["A"].width = 10
-    for column in "BCDE":
+    for column in "BCEF":
         worksheet.column_dimensions[column].width = 28
-    worksheet.column_dimensions["F"].width = 16
-    worksheet.column_dimensions["G"].width = 18
-    worksheet.column_dimensions["H"].width = 24
-    for cell in worksheet["F"][1:]:
+    worksheet.column_dimensions["D"].width = 20
+    worksheet.column_dimensions["G"].width = 16
+    worksheet.column_dimensions["H"].width = 18
+    worksheet.column_dimensions["I"].width = 24
+    for cell in worksheet["G"][1:]:
         cell.number_format = "yyyy-mm-dd"
 
     output = BytesIO()

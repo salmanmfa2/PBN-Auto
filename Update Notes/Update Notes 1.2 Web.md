@@ -108,6 +108,7 @@ Each monitoring record contains:
 
 - `Jabatan Kosong`
 - `Pejabat Pengganti`
+- `NIP Pejabat Pengganti` (snapshot reference; nullable for older/manual records)
 - `Jabatan Definitif Pengganti`
 - `Nomor Surat`
 - `TMT` (Terhitung Mulai Tanggal)
@@ -129,6 +130,8 @@ The database has a generated primary key used internally by API mutations and ta
 - Guest and authenticated User accounts can view monitoring records. Add, edit, activate/deactivate, and delete actions require an authenticated Admin (level 2) or Super Admin (level 3).
 - The former shared edit password is no longer used for this module. Existing installations may retain the old password table; do not read, seed, or modify it.
 - Add/edit fields are entered in a popup opened by **Tambah Monitoring** or the row's edit icon. The popup closes from its close/cancel controls, Escape, or backdrop click when a save is not in progress.
+- Admin and Super Admin can search `pbncleaner.fetch_pbnopen` by employee name or NIP when entering `Pejabat Pengganti`. Selecting a result snapshots its NIP and fills `Jabatan Definitif Pengganti` from `Jabatan` plus the formatted Unit Eselon II according to the shared Eselon rule; the title remains editable. Other fields remain manual.
+- The employee search uses the existing PBN Open table. No new table is required; application startup adds the nullable NIP column to existing monitoring tables, and the Excel export includes it.
 - Deactivate/reactivate and delete actions use confirmation dialogs. Use accessible names/titles for icon-only row actions.
 - Surface API/validation errors to the user. Do not silently treat failed mutations as successful.
 
