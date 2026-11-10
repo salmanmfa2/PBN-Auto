@@ -27,6 +27,7 @@ type Feature = {
   path?: string;
   placeholder?: boolean;
   adminOnly?: boolean;
+  userOnly?: boolean;
 };
 
 const features: Feature[] = [
@@ -80,9 +81,10 @@ const features: Feature[] = [
     title: 'Generate ND Undangan Pelantikan',
     subtitle: 'Buat nota dinas undangan pelantikan',
     group: 'Operasional',
-    status: 'dev',
+    status: 'ready',
     icon: 'document',
-    placeholder: true,
+    path: '/undangan-pelantikan',
+    userOnly: true,
   },
   {
     key: 'progress-bahan',
@@ -230,13 +232,16 @@ function FeatureIcon({ name, className }: { name: FeatureIconName; className?: s
 
 function StatusBadge({ feature }: { feature: Feature }) {
   if (feature.adminOnly) {
-    return <span className="badge shrink-0 border border-surface-700 bg-surface-800 text-slate-300">Admin only</span>;
+    return <span className="badge shrink-0 border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">Admin only</span>;
   }
   if (feature.status === 'beta') {
     return <span className="badge shrink-0 border border-brand-500/30 bg-brand-500/10 text-slate-300">Beta</span>;
   }
   if (feature.status === 'dev') {
     return <span className="badge shrink-0 border border-surface-700 bg-surface-800 text-slate-400">On development</span>;
+  }
+  if (feature.status === 'ready') {
+    return <span className="badge shrink-0 border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">Operational</span>;
   }
   return null;
 }
@@ -394,7 +399,8 @@ export default function LandingPage() {
   }, [developmentMenu, searchQuery]);
 
   const availableFeatures = features.filter(
-    (feature) => !feature.adminOnly || (user?.auth_level ?? 0) >= 2,
+    (feature) => (!feature.adminOnly || (user?.auth_level ?? 0) >= 2)
+      && (!feature.userOnly || Boolean(user)),
   );
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase('id-ID');
   const visibleFeatures = availableFeatures.filter((feature) => (

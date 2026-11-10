@@ -226,3 +226,65 @@ export interface ColumnRenameEntry {
   current: string;
   renamed: string;
 }
+
+export type PelantikanStatus = 'draft' | 'ready' | 'generated';
+export type PelantikanLookupStatus = 'matched' | 'not_found' | 'missing_nip' | 'duplicate';
+export type PelantikanModality = 'daring' | 'luring';
+
+export interface PelantikanAgendaFields {
+  tanggal_pelantikan: string;
+  nd_undangan_pelantikan: string;
+  tanggal_nd_undangan_pelantikan: string;
+  jam_pelantikan: string;
+  dresscode: string;
+  level_jabatan: string;
+}
+
+export interface PelantikanAgenda extends PelantikanAgendaFields {
+  id: string;
+  hari_pelantikan: string;
+  status: PelantikanStatus;
+  uploaded_filename: string | null;
+  uploaded_sheet: string | null;
+  last_generated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PelantikanAgendaPerson {
+  id: number;
+  row_number: number;
+  source_no: string | null;
+  source_nama_nip: string | null;
+  source_jabatan_saat_ini: string | null;
+  source_usul_jabatan_baru: string | null;
+  nip: string | null;
+  nama: string;
+  jabatan: string;
+  unit_eselon_ii: string;
+  eselon: string | null;
+  lookup_status: PelantikanLookupStatus;
+  selected: boolean;
+  modality: PelantikanModality | null;
+}
+
+export interface PelantikanAgendaDetail extends PelantikanAgenda {
+  people: PelantikanAgendaPerson[];
+}
+
+export interface PelantikanAgendaSummary extends PelantikanAgenda {
+  people_count: number;
+  selected_count: number;
+}
+
+export interface PelantikanAgendaUploadResult {
+  selected_sheet: string;
+  row_count: number;
+  people: PelantikanAgendaPerson[];
+}
+
+export interface PelantikanPersonChoice {
+  id: number;
+  selected: boolean;
+  modality: PelantikanModality | null;
+}

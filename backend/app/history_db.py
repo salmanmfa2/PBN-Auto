@@ -45,6 +45,10 @@ def init_history_db() -> None:
     from app.models.cleaning_history import CleaningHistory  # noqa: F401
     from app.models.dataset_file import DatasetFile  # noqa: F401
     from app.models.dataset_run import DatasetRun  # noqa: F401
+    from app.models.pelantikan_agenda import (  # noqa: F401
+        PelantikanAgenda,
+        PelantikanAgendaPerson,
+    )
     from app.models.plt_plh import PltPlhMonitoringRecord  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
@@ -55,3 +59,28 @@ def init_history_db() -> None:
             connection.execute(
                 text("ALTER TABLE dataset_files MODIFY google_drive_file_id VARCHAR(255) NULL")
             )
+
+    people_columns = {
+        column["name"] for column in inspect(engine).get_columns("pelantikan_agenda_people")
+    }
+    people_columns_to_add = {
+        "source_no": "TEXT NULL",
+        "source_nama_nip": "TEXT NULL",
+        "source_jabatan_saat_ini": "TEXT NULL",
+        "source_usul_jabatan_baru": "TEXT NULL",
+        "eselon": "VARCHAR(32) NULL",
+    }
+    missing_people_columns = {
+        name: column_type
+        for name, column_type in people_columns_to_add.items()
+        if name not in people_columns
+    }
+    if missing_people_columns:
+        with engine.begin() as connection:
+            for name, column_type in missing_people_columns.items():
+                connection.execute(
+                    text(
+                        f"ALTER TABLE pelantikan_agenda_people "
+                        f"ADD COLUMN {name} {column_type}"
+                    )
+                )

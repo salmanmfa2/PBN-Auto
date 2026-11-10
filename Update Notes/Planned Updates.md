@@ -1,13 +1,14 @@
 # Planned Updates
 
-**Status:** Web 1.2 account/admin and user-preference workflows implemented; placeholder-menu workflows and data-source import remain deferred
+**Status:** Web 1.2 account/admin and user-preference workflows and web-only Undangan Pelantikan 1.2.1 are implemented; remaining deferred work is listed below
 **Last discussed:** 5 November 2026
 
 ## Release scope
 
 - Current web release notes: [Update Notes 1.2 Web](./Update%20Notes%201.2%20Web.md).
+- Web-only Undangan Pelantikan 1.2.1: [Update Notes 1.2.1 Web](./Update%20Notes%201.2.1%20Web.md).
 - Desktop requirements are tracked separately in [Update Notes 1.2 Desktop](./Update%20Notes%201.2%20Desktop.md). Desktop main navigation remains limited to PBN Analytics and Insight Hub and has no login system.
-- The Generate ND Undangan Pelantikan and Analisis Kinerja DJPb menus remain web-only placeholders. Making these workflows functional is the planned version 2.0 product milestone.
+- Generate ND Undangan Pelantikan is implemented as a web-only workflow in version 1.2.1. Analisis Kinerja DJPb remains a web-only placeholder; making that workflow functional is a planned version 2.0 product milestone.
 
 ## Manajemen Plt./Plh.
 

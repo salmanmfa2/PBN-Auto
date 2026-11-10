@@ -18,6 +18,7 @@ from app.api import (
     dataset,
     insights,
     insights_beta,
+    pelantikan_agenda,
     plt_plh,
     stored_datasets,
     upload,
@@ -81,6 +82,7 @@ app.include_router(cleaning.router)
 app.include_router(dataset.router)
 app.include_router(insights.router)
 app.include_router(insights_beta.router)
+app.include_router(pelantikan_agenda.router)
 app.include_router(plt_plh.router)
 app.include_router(stored_datasets.router)
 

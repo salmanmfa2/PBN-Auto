@@ -2,7 +2,7 @@
 
 ## Scope and compatibility
 
-This document records the web implementation and behavior of update **1.2**, following version **1.1.0**, dated **2 November 2026**. It covers the web account/admin workflow, Insight Hub, web-only menus, monitoring, toolbar preferences, and chat assistant; treat it as the behavioral and implementation reference for future maintenance.
+This document records the web implementation and behavior of update **1.2**, following version **1.1.0**, dated **2 November 2026**. The follow-up **1.2.1** release summary is in [Update Notes 1.2.1 Web](./Update%20Notes%201.2.1%20Web.md). This remains the behavioral and implementation reference for the web account/admin workflow, Insight Hub, web-only menus, monitoring, toolbar preferences, chat assistant, and Undangan Pelantikan.
 
 - The behavior described here is implemented in the React/FastAPI web application. The corresponding desktop requirements for shared features are in [Update Notes 1.2 Desktop](./Update%20Notes%201.2%20Desktop.md); desktop code must follow its own UI, API, storage, and packaging architecture.
 - The desktop application's main navigation is limited to **PBN Analytics** and **Insight Hub** and has no login system. Additional menus and account workflows in this document are web-only.
@@ -67,7 +67,7 @@ Provide one action that generates a combined Sitasi Es.III PowerPoint for the Ba
 The API Test button opens a modal and runs the following read-only/contract checks:
 
 1. `GET /health` must return JSON with `status: "ok"`.
-2. Read `GET /openapi.json` and confirm that the expected method/path pairs for Cleaning, Dataset & Export, Insight Hub, Insight Hub Beta, Manajemen Plt./Plh., and Snake are registered.
+2. Read `GET /openapi.json` and confirm that the expected method/path pairs for Cleaning, Dataset & Export, Insight Hub, Insight Hub Beta, Manajemen Plt./Plh., Undangan Pelantikan, and Snake are registered.
 3. Call `GET /stored-datasets` and report how many stored dataset runs were returned.
 4. Call `GET /plt-plh/records` and `GET /plt-plh/notifications` to verify those read endpoints and their database access.
 
@@ -206,10 +206,23 @@ The database has a generated primary key used internally by API mutations and ta
 - The web home menu includes **PBN Analytics**, **Insight Hub**, **Insight Hub Beta**, **Manajemen Plt./Plh.**, **Generate ND Undangan Pelantikan**, and **Analisis Kinerja DJPb**.
 - **Insight Hub Beta** is a web-only database-backed dashboard using `pbncleaner.fetch_pbnopen`. It shares Insight Hub's filters, charts, and employee table; no new database table or schema change is required.
 - Only a **Super Admin** can replace the Insight Hub Beta source from the Admin page. The CSV must have exactly the table's column names (column order may differ); successful validation opens a separate confirmation popup. The server validates again and replaces the table rows transactionally only after confirmation. Empty files and mismatched or duplicate columns are rejected.
-- Place **Generate ND Undangan Pelantikan** and **Analisis Kinerja DJPb** below Manajemen Plt./Plh. Use `src/assets/pelantikan.png` for Generate ND Undangan Pelantikan and `src/assets/performance.png` for Analisis Kinerja DJPb.
-- Both new entries are placeholders: selecting either opens a simple “On development” message; neither performs document generation or performance analysis yet.
+- **Generate ND Undangan Pelantikan** is available to signed-in Users, Admins, and Super Admins; Guest mode cannot access it. Each user sees and manages only agendas they created.
+- **Analisis Kinerja DJPb** remains a placeholder that opens the “On development” message.
 - Show the **Admin** menu at the bottom of the menu list for users with Admin or Super Admin access.
 - These additional menus and their ordering are web-only. They must not be added to the desktop app, whose main menu contains only PBN Analytics and Insight Hub.
+
+### Update 1.2.1: Generate ND Undangan Pelantikan
+
+- The agenda menu shows the signed-in user's history first; create an agenda from a popup before uploading a workbook. The agenda contains the pelantikan date, ND number and date, one shared pelantikan time, dress code, and shared `level_jabatan`. Infer the weekday from the pelantikan date.
+- Accept one `.xlsx` or `.xls` workbook per agenda. Skip the first two rows and use the third row as headers. Remove rows with a blank `Nama/NIP`; extract the 18-digit NIP from the last non-empty line in that cell and look it up in `pbncleaner.fetch_pbnopen`. Keep only `No`, `Nama/NIP`, `Jabatan Saat ini/Grade`, and `Usul Jabatan Baru/Grade` from the workbook for display; these source fields do not replace the database lookup values.
+- Keep the workbook and generated documents out of persistent storage. Persist the agenda and participant lookup snapshot, including the four displayed source fields, NIP, lookup result, selection, and Daring/Luring choice, so the owner can resume later. Reuploading replaces that agenda's participant snapshot.
+- Users can include only a matched employee with a Unit Eselon II. Rows marked `Pendamping` in the `No` column are always excluded. The **Pilih Semua** action selects eligible matched employees only. For duplicate workbook NIPs, the first occurrence may be selected and later occurrences are excluded. Excel NIP cells should be stored as text to avoid numeric precision loss.
+- Generate one ND per **Unit Eselon II and modality**. A unit containing both Daring and Luring participants receives two separate documents. Download all generated DOCX files in one ZIP.
+- Before generating the ZIP, preview each Unit Eselon II/modality document group; expand a group to review its employee list. Format known recipients as formal titles (Kanwil DJPb → Kepala Kantor Wilayah Direktorat Jenderal Perbendaharaan, Direktorat → Direktur, Badan → Kepala Badan); preserve unrecognized unit names.
+- In the generated roster, append the formal Unit Eselon II name to `Jabatan` only when the employee has a known `eselon` value other than 2. Keep the title alone for Eselon II and when `eselon` is unavailable.
+- Replace only the app-owned parenthesized placeholders in the templates. Preserve square-bracket placeholders such as `[@NomorND]` and `[@TanggalND]` for the official internal app.
+- The source templates are `backend/templates/undangan_pelantikan/template_pelantikan_daring.docx` and `backend/templates/undangan_pelantikan/template_pelantikan_luring.docx`.
+- Implementation map: `frontend/src/pages/PelantikanAgendaPage.tsx`, `frontend/src/services/api.ts`, `frontend/src/types/index.ts`, `backend/app/api/pelantikan_agenda.py`, `backend/app/services/pelantikan_agenda_service.py`, `backend/app/models/pelantikan_agenda.py`, `backend/app/schemas/pelantikan_agenda.py`, and `backend/sql/005_create_pelantikan_agendas.sql`. Application startup adds any missing source columns to an existing `pelantikan_agenda_people` table.
 
 ## 7. Groq chat assistant (web-only)
 

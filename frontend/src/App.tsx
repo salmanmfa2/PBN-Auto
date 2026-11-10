@@ -4,6 +4,7 @@ import LandingPage from './pages/LandingPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import InsightHubPage from './pages/InsightHubPage';
 import LoginPage from './pages/LoginPage';
+import PelantikanAgendaPage from './pages/PelantikanAgendaPage';
 import PltPlhManagementPage from './pages/PltPlhManagementPage';
 import { AppToolbar } from './components/AppToolbar';
 import { ChatWidget } from './components/ChatWidget';
@@ -46,6 +47,8 @@ function AppRoutes() {
           <Route path="/insights" element={<InsightHubPage />} />
           <Route path="/insights-beta" element={<InsightHubPage source="database" />} />
           <Route path="/manajemen-plt-plh" element={<PltPlhManagementPage />} />
+          <Route path="/undangan-pelantikan" element={<PelantikanAgendaPage />} />
+          <Route path="/undangan-pelantikan/:agendaId" element={<PelantikanAgendaPage />} />
           <Route element={<RequireAdmin />}>
             <Route path="/admin" element={<AdminPage />} />
           </Route>

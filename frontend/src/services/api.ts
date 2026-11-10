@@ -24,6 +24,12 @@ import type {
   ThemeName,
   ChatMessage,
   ChatResponse,
+  PelantikanAgenda,
+  PelantikanAgendaDetail,
+  PelantikanAgendaFields,
+  PelantikanAgendaSummary,
+  PelantikanAgendaUploadResult,
+  PelantikanPersonChoice,
 } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
@@ -195,6 +201,7 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
       diagnostic('insights', 'Insight Hub', false, error),
       diagnostic('insights-beta', 'Insight Hub Beta', false, error),
       diagnostic('plt-plh', 'Manajemen Plt./Plh.', false, error),
+      diagnostic('pelantikan', 'Undangan Pelantikan', false, error),
     );
     return diagnostics;
   }
@@ -261,6 +268,20 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
         { path: '/plt-plh/records/{record_id}', method: 'put' },
         { path: '/plt-plh/records/{record_id}/active', method: 'patch' },
         { path: '/plt-plh/records/{record_id}', method: 'delete' },
+      ],
+    },
+    {
+      id: 'pelantikan',
+      label: 'Undangan Pelantikan',
+      routes: [
+        { path: '/undangan-pelantikan/agendas', method: 'get' },
+        { path: '/undangan-pelantikan/agendas', method: 'post' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}', method: 'get' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}', method: 'put' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}', method: 'delete' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}/upload', method: 'post' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}/people', method: 'put' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}/generate', method: 'post' },
       ],
     },
     {
@@ -379,6 +400,78 @@ export async function uploadFile(
     },
   });
   return data;
+}
+
+export async function listPelantikanAgendas(): Promise<PelantikanAgendaSummary[]> {
+  const { data } = await api.get<PelantikanAgendaSummary[]>('/undangan-pelantikan/agendas');
+  return data;
+}
+
+export async function createPelantikanAgenda(
+  payload: PelantikanAgendaFields,
+): Promise<PelantikanAgenda> {
+  const { data } = await api.post<PelantikanAgenda>('/undangan-pelantikan/agendas', payload);
+  return data;
+}
+
+export async function getPelantikanAgenda(agendaId: string): Promise<PelantikanAgendaDetail> {
+  const { data } = await api.get<PelantikanAgendaDetail>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}`,
+  );
+  return data;
+}
+
+export async function updatePelantikanAgenda(
+  agendaId: string,
+  payload: PelantikanAgendaFields,
+): Promise<PelantikanAgenda> {
+  const { data } = await api.put<PelantikanAgenda>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}`,
+    payload,
+  );
+  return data;
+}
+
+export async function uploadPelantikanExcel(
+  agendaId: string,
+  file: File,
+): Promise<PelantikanAgendaUploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post<PelantikanAgendaUploadResult>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/upload`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data;
+}
+
+export async function savePelantikanPeople(
+  agendaId: string,
+  people: PelantikanPersonChoice[],
+): Promise<PelantikanAgendaDetail> {
+  const { data } = await api.put<PelantikanAgendaDetail>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/people`,
+    { people },
+  );
+  return data;
+}
+
+export async function generatePelantikanDocuments(agendaId: string): Promise<Blob> {
+  const { data } = await api.post<Blob>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/generate`,
+    undefined,
+    { responseType: 'blob' },
+  );
+  return data;
+}
+
+export async function deletePelantikanAgenda(agendaId: string): Promise<void> {
+  await api.delete(`/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}`);
+}
+
+export function downloadPelantikanDocuments(blob: Blob, filename: string): void {
+  downloadBlob(blob, filename);
 }
 
 // ─── Dataset ────────────────────────────────────────────────────────────────
