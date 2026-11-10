@@ -87,6 +87,34 @@ export interface ChatResponse {
   message: string;
 }
 
+export const FEEDBACK_MENU_OPTIONS = [
+  'Overall',
+  'PBN Analytics',
+  'Insight Hub',
+  'Insight Hub Beta',
+  'Analisis Kinerja DJPb',
+  'Manajemen Plt./Plh.',
+  'Generate ND Undangan Pelantikan',
+  'Bahan Pendukung MPK',
+  'Simulasi Mutasi',
+  'Admin',
+] as const;
+
+export type FeedbackMenu = typeof FEEDBACK_MENU_OPTIONS[number];
+
+export interface FeedbackSubmitPayload {
+  menu: FeedbackMenu;
+  feedback: string;
+}
+
+export interface UserFeedback {
+  id: number;
+  submitted_by: string | null;
+  menu: FeedbackMenu;
+  feedback: string;
+  created_at: string;
+}
+
 export interface AuthRegistrationPayload {
   user: string;
   name: string;

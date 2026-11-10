@@ -124,6 +124,9 @@ export default function PelantikanAgendaPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingHistoryAgendaId, setDeletingHistoryAgendaId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [availableSheets, setAvailableSheets] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState('');
+  const [isLoadingSheets, setIsLoadingSheets] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -245,12 +248,15 @@ export default function PelantikanAgendaPage() {
     setIsUploading(true);
     try {
       await apiClient.updatePelantikanAgenda(agendaId, fields);
-      const result = await apiClient.uploadPelantikanExcel(agendaId, selectedFile);
+      const result = await apiClient.uploadPelantikanExcel(
+        agendaId,
+        selectedFile,
+        selectedSheet || undefined,
+      );
       const refreshed = await apiClient.getPelantikanAgenda(agendaId);
       setAgenda(refreshed);
       setChoices(choicesFromAgenda(refreshed));
       setChoicesDirty(false);
-      setSelectedFile(null);
       setNotice(
         `${result.row_count} baris diproses dari sheet “${result.selected_sheet}”.`,
       );
@@ -258,6 +264,31 @@ export default function PelantikanAgendaPage() {
       setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const chooseWorkbookSheet = async (fileToInspect = selectedFile) => {
+    if (!agendaId || !fileToInspect) return;
+    setError(null);
+    setNotice(null);
+    setAvailableSheets([]);
+    setSelectedSheet('');
+    setIsLoadingSheets(true);
+    try {
+      const sheets = await apiClient.listPelantikanWorkbookSheets(agendaId, fileToInspect);
+      setAvailableSheets(sheets);
+      setSelectedSheet(sheets.length === 1 ? sheets[0] : '');
+      setNotice(
+        sheets.length === 1
+          ? `Workbook memiliki satu sheet: “${sheets[0]}”.`
+          : `Ditemukan ${sheets.length} sheet. Pilih sheet yang akan diproses.`,
+      );
+    } catch (sheetError) {
+      setAvailableSheets([]);
+      setSelectedSheet('');
+      setError(sheetError instanceof Error ? sheetError.message : String(sheetError));
+    } finally {
+      setIsLoadingSheets(false);
     }
   };
 
@@ -490,18 +521,67 @@ export default function PelantikanAgendaPage() {
                   type="file"
                   accept=".xlsx,.xls"
                   aria-label="Pilih workbook Excel"
-                  onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                  disabled={isLoadingSheets || isUploading}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    event.currentTarget.value = '';
+                    setSelectedFile(file);
+                    setAvailableSheets([]);
+                    setSelectedSheet('');
+                    setError(null);
+                    setNotice(null);
+                    if (file) void chooseWorkbookSheet(file);
+                  }}
                   className="block min-w-0 flex-1 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-200 hover:file:bg-slate-700"
                 />
                 <button
                   type="button"
-                  disabled={!selectedFile || isUploading || isSaving}
+                  disabled={!selectedFile || isLoadingSheets || isUploading || isSaving}
+                  onClick={() => void chooseWorkbookSheet()}
+                  className="btn-secondary shrink-0"
+                >
+                  {isLoadingSheets ? 'Membaca sheet…' : 'Pilih sheet'}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !selectedFile
+                    || !availableSheets.length
+                    || (availableSheets.length > 1 && !selectedSheet)
+                    || isLoadingSheets
+                    || isUploading
+                    || isSaving
+                  }
                   onClick={() => void uploadWorkbook()}
                   className="btn-primary shrink-0"
                 >
                   {isUploading ? 'Memproses…' : 'Unggah dan cocokkan'}
                 </button>
               </div>
+              {selectedFile && (
+                <p className="mt-3 text-xs text-slate-400">
+                  Workbook dipilih: <span className="text-slate-300">{selectedFile.name}</span>
+                </p>
+              )}
+              {availableSheets.length > 0 && (
+                <div className="mt-4 max-w-xl">
+                  <label htmlFor="pelantikan-sheet" className="mb-1 block text-sm font-medium text-slate-300">
+                    Sheet workbook
+                  </label>
+                  <select
+                    id="pelantikan-sheet"
+                    value={selectedSheet}
+                    onChange={(event) => setSelectedSheet(event.target.value)}
+                    disabled={isUploading || isLoadingSheets}
+                    className="input-field w-full"
+                  >
+                    {availableSheets.length > 1 && <option value="">Pilih sheet yang akan diproses</option>}
+                    {availableSheets.map((sheet) => (
+                      <option key={sheet} value={sheet}>{sheet}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {agenda?.uploaded_filename && (
                 <p className="mt-3 text-xs text-slate-400">
                   File terakhir: <span className="text-slate-300">{agenda.uploaded_filename}</span>

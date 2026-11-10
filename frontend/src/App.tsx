@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import AdminPage from './pages/AdminPage';
 import LandingPage from './pages/LandingPage';
@@ -8,6 +9,7 @@ import PelantikanAgendaPage from './pages/PelantikanAgendaPage';
 import PltPlhManagementPage from './pages/PltPlhManagementPage';
 import { AppToolbar } from './components/AppToolbar';
 import { ChatWidget } from './components/ChatWidget';
+import { FeedbackWidget } from './components/FeedbackWidget';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 function RequireSession() {
@@ -23,6 +25,7 @@ function RequireAdmin() {
 
 function AppRoutes() {
   const { mode, user, isLoading } = useAuth();
+  const [activeWidget, setActiveWidget] = useState<'chat' | 'feedback' | null>(null);
 
   if (isLoading) {
     return <main className="flex min-h-screen items-center justify-center bg-surface-950 text-sm text-slate-400">Memuat aplikasi…</main>;
@@ -33,7 +36,20 @@ function AppRoutes() {
       {mode && (
         <>
           <AppToolbar />
-          {user && <ChatWidget />}
+          {user && (
+            <>
+              <ChatWidget
+                isOpen={activeWidget === 'chat'}
+                onOpen={() => setActiveWidget('chat')}
+                onClose={() => setActiveWidget(null)}
+              />
+              <FeedbackWidget
+                isOpen={activeWidget === 'feedback'}
+                onOpen={() => setActiveWidget('feedback')}
+                onClose={() => setActiveWidget(null)}
+              />
+            </>
+          )}
         </>
       )}
       <Routes>

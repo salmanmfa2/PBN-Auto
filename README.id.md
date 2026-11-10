@@ -21,9 +21,10 @@ Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub
 | **Insight Hub** | ✅ Aktif | Dashboard PBN Open + Edu + HB dengan jumlah pegawai dan distribusi data |
 | **Insight Hub Beta (web)** | ✅ Beta | Filter, grafik, dan tabel pegawai yang sama dari `pbncleaner.fetch_pbnopen`; Super Admin dapat mengganti sumber melalui CSV yang divalidasi kolomnya |
 | **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, memilih pejabat pengganti dari PBN Open, dan mengekspor data |
-| **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Mengelola agenda pribadi, mencocokkan workbook pegawai dengan PBN Open, meninjau peserta terpilih, dan membuat dokumen undangan dalam ZIP |
+| **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Mengelola agenda pribadi, memilih sheet dari workbook Excel, mencocokkan pegawai dengan PBN Open, meninjau peserta terpilih, dan membuat dokumen undangan dalam ZIP |
 | **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, dan Super Admin; sesi pengguna berlaku satu jam |
 | **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin dan administrasi monitoring Plt./Plh. |
+| **Feedback pengguna (web)** | ✅ Aktif | Mengirim masukan untuk menu tertentu atau keseluruhan aplikasi; Admin dan Super Admin dapat melihat, menghapus satu masukan, atau menghapus semuanya |
 | **Menu web lainnya** | 🛠️ Placeholder | Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi belum diimplementasikan; menu ini tidak tersedia di desktop |
 | **Tampilan** | ✅ Aktif | Tema Default, Dark, dan Light; pilihan pengguna yang login tersimpan pada akunnya |
 | **Toolbar Aplikasi** | ✅ Aktif | Jam WIB, posisi dapat digeser dan menempel ke tepi layar terdekat, utilitas dapat disembunyikan, diagnostik API, dan Snake |
@@ -221,8 +222,11 @@ VITE_API_URL=http://localhost:8000
 | `GET` / `PUT` | `/auth/preferences/theme` | Membaca atau memperbarui tema akun yang sedang masuk |
 | `GET` / `POST` / `PUT` / `DELETE` | `/admin/users` | Mengelola akun (khusus Super Admin) |
 | `POST` | `/chat` | Membuat jawaban chat Groq untuk pengguna yang sudah masuk |
+| `POST` / `GET` / `DELETE` | `/feedback` | Mengirim feedback (pengguna login), atau melihat/menghapus semua feedback (Admin dan Super Admin) |
+| `DELETE` | `/feedback/{feedback_id}` | Menghapus satu feedback (Admin dan Super Admin) |
 | `GET` / `POST` | `/undangan-pelantikan/agendas` | Menampilkan agenda pengguna yang masuk atau membuat agenda |
 | `GET` / `PUT` / `DELETE` | `/undangan-pelantikan/agendas/{agenda_id}` | Membaca, memperbarui, atau menghapus agenda milik pengguna |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/sheets` | Menampilkan nama sheet dari workbook Excel yang diunggah |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload` | Mengunggah roster Excel dan mencocokkan NIP dengan PBN Open |
 | `PUT` | `/undangan-pelantikan/agendas/{agenda_id}/people` | Menyimpan pilihan peserta dan moda |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate` | Membuat dokumen undangan berkelompok dalam ZIP |
@@ -235,10 +239,6 @@ Toolbar menyediakan tema Default (tampilan gelap bawaan), Dark, dan Light. Pilih
 
 Super Admin pertama **tidak dibuat otomatis**. Setelah tabel akun dibuat, masukkan Super Admin pertama secara manual menggunakan contoh SQL berkomentar dalam `backend/sql/003_create_users_and_sessions.sql`, lalu masuk dan gunakan workspace Super Admin. Sesuai kebutuhan proyek saat ini, password akun disimpan sebagai teks biasa di MySQL. Ini tidak sesuai untuk produksi atau penerapan yang sensitif; jangan membuka akses database dan jangan menggunakan password nyata/yang dipakai ulang.
 
-### Sitasi Es.III (Lite)
-
-`Sitasi Es.III (Lite)` menggunakan aturan pembersihan dan tata letak profil PowerPoint yang sama dengan `Sitasi Es.III`, tetapi mempertahankan baris yang kolom keduanya kosong. Saat dataset Lite yang sudah dibersihkan diekspor ke Excel, baris judul bagian (teks pada `No` dan kolom lainnya kosong) akan digabung melintang. Ekspor CSV dan pratinjau aplikasi tetap menampilkan teks judul di `No` dengan sel lainnya kosong; CSV tidak mendukung format sel gabungan. Mode `Sitasi Es.III` standar tidak berubah.
-
 Pembersihan Sitasi Es.III mengubah `Keterangan` menjadi proper case setelah enam karakter pertamanya dihapus. Pembersihan Sitasi Es.IV mengubah `Pertimbangan` menjadi proper case. Proper case menjadikan huruf pertama setiap kata sebagai huruf kapital; nilai yang kosong tetap kosong.
 
 Untuk **PBN Open + Edu + HB**, Auto Clean menghapus karakter apostrof lurus dan backtick dari nilai sel teks, lalu mengubah nilai tanggal pada `TMT JF Keterampilan`, `TMT JF Keahlian`, `TMT JF Ahli Muda`, `TMT JF Ahli Madya`, `TMT Es4`, `TMT Es3`, `TMT Es2`, dan `TMT Jabatan` menjadi tanggal. Nilai tanggal berisi teks yang tidak dapat diuraikan tetap dipertahankan setelah dibersihkan dan ditampilkan dalam peringatan.
@@ -249,7 +249,7 @@ Pengguna yang sudah masuk dapat membuka tombol chat kecil di pojok kanan bawah. 
 
 ### Rekomendasi metode pembersihan
 
-Setelah unggahan, aplikasi membandingkan sheet terpilih dengan workbook referensi di `backend/templates/verification/` dan menyorot metode yang direkomendasikan untuk template PBN Open, PBN Open + Edu + HB, Sitasi Es.III, dan Sitasi Es.IV yang tersedia. Rekomendasi tidak menjalankan pembersihan secara otomatis. PBN Open + Edu dan Sitasi Es.III (Lite) belum memiliki template verifikasi tersendiri sehingga tidak direkomendasikan secara otomatis.
+Setelah unggahan, aplikasi membandingkan sheet terpilih dengan workbook referensi di `backend/templates/verification/` dan menyorot metode yang direkomendasikan untuk template PBN Open, PBN Open + Edu + HB, Sitasi Es.III, dan Sitasi Es.IV yang tersedia. Rekomendasi tidak menjalankan pembersihan secara otomatis. PBN Open + Edu belum memiliki template verifikasi tersendiri sehingga tidak direkomendasikan secara otomatis.
 
 ## Pengaturan MySQL (Riwayat Pembersihan)
 

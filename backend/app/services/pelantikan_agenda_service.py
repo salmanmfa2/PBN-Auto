@@ -275,11 +275,38 @@ def update_agenda(
     return agenda
 
 
+def list_workbook_sheets(content: bytes, filename: str) -> list[str]:
+    extension = Path(filename).suffix.casefold()
+    if extension not in ALLOWED_EXTENSIONS:
+        raise ValueError("Unggah file Excel berformat .xlsx atau .xls.")
+    if not content:
+        raise ValueError("File Excel kosong.")
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise ValueError("Ukuran file Excel melebihi 50 MB.")
+
+    engine_name = "openpyxl" if extension == ".xlsx" else "xlrd"
+    try:
+        workbook = pd.ExcelFile(BytesIO(content), engine=engine_name)
+        try:
+            sheet_names = list(workbook.sheet_names)
+        finally:
+            workbook.close()
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"Could not read file: {exc}") from exc
+
+    if not sheet_names:
+        raise ValueError("Uploaded file contains no worksheets.")
+    return sheet_names
+
+
 def upload_and_match(
     db: Session,
     agenda: PelantikanAgenda,
     content: bytes,
     filename: str,
+    sheet_name: str | None = None,
 ) -> PelantikanAgenda:
     extension = Path(filename).suffix.casefold()
     if extension not in ALLOWED_EXTENSIONS:
@@ -293,12 +320,14 @@ def upload_and_match(
     try:
         preview = dataset_service.parse_upload(content, filename)
         dataset_id = preview["dataset_id"]
-        selected_sheet = preview["selected_sheet"]
+        selected_sheet = sheet_name if sheet_name is not None else preview["selected_sheet"]
         selected_preview = next(
             (sheet for sheet in preview["sheets"] if sheet["name"] == selected_sheet),
             None,
         )
-        if selected_preview is not None and selected_preview["row_count"] == 0:
+        if sheet_name is not None and selected_preview is None:
+            raise ValueError(f"Sheet '{sheet_name}' was not found in the uploaded workbook.")
+        if sheet_name is None and selected_preview is not None and selected_preview["row_count"] == 0:
             nonempty_sheet = next(
                 (sheet for sheet in preview["sheets"] if sheet["row_count"] > 0),
                 None,
@@ -406,6 +435,7 @@ def upload_and_match(
             )
 
         agenda.people.clear()
+        db.flush()
         agenda.people.extend(people)
         agenda.uploaded_filename = Path(filename).name[:255]
         agenda.uploaded_sheet = selected_sheet[:255]

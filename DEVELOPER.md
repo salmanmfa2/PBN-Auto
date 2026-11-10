@@ -39,6 +39,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/api/plt_plh.py` — Plt./Plh. monitoring API, including the Admin-only PBN Open employee search.
   - `app/api/pelantikan_agenda.py` — owner-scoped agenda, roster upload/matching, participant choices, and ZIP generation API.
   - `app/api/auth.py` — login, public registration, session, user-preference, and admin-account endpoints.
+  - `app/api/feedback.py` — authenticated feedback submission and Admin-only feedback management.
   - The `auth.py` Admin router exposes Super Admin-only CSV validation and replacement endpoints for `pbncleaner.fetch_pbnopen`.
   - `app/api/chat.py` — authenticated chat endpoint; provider credentials remain backend-only.
   - `app/services/chat_service.py` — sends a concise, code-maintained capability summary to Groq on each request; it does not reread README or developer documentation at runtime. Keep that summary aligned with verified app behavior when features change.
@@ -55,6 +56,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/models/cleaning_history.py` — SQLAlchemy model for cleaning history table.
   - `app/models/plt_plh.py` and `app/services/plt_plh_service.py` — monitoring records, derived tenure/status, Excel export, and replacement-employee lookup.
   - `app/models/pelantikan_agenda.py` and `app/services/pelantikan_agenda_service.py` — persistent agenda/participant snapshots and DOCX/ZIP generation.
+  - `app/models/user_feedback.py` and `app/services/feedback_service.py` — persisted user feedback and Admin inbox operations.
   - `app/utils/employee_formatting.py` — shared definitive job-title formatting for employee-backed workflows.
   - `app/schemas/pbn_dashboard.py` — dashboard filter request schema.
   - `app/services/history_service.py` — logging and retrieval helpers for cleaning history.
@@ -62,20 +64,22 @@ This file helps new contributors (especially juniors) understand where to make c
   - `sql/001_create_cleaning_history.sql` — MySQL bootstrap script for database and table.
   - `sql/002_create_plt_plh_monitoring.sql` — Plt./Plh. monitoring schema, including the optional NIP snapshot.
   - `sql/005_create_pelantikan_agendas.sql` — Pelantikan agenda and participant snapshot schema.
+  - `sql/006_create_user_feedback.sql` — persistent feedback submissions and submitter reference.
 
 - `frontend/` — React + Vite app with React Router
   - `src/pages/` — page components for each route:
     - `LandingPage.tsx` — landing page with feature selector cards (`/` route).
     - `AnalyticsPage.tsx` — PBN dataset cleaning interface (`/pbn-analytics` route).
     - `InsightHubPage.tsx` — PBN Open + Edu + HB interactive dashboard (`/insights` route).
-    - `LoginPage.tsx` / `AdminPage.tsx` — web authentication entry and Super Admin account workspace.
+    - `LoginPage.tsx` / `AdminPage.tsx` — web authentication entry, feedback inbox, and Super Admin account workspace.
     - `PltPlhManagementPage.tsx` — web-only monitoring UI.
     - `PelantikanAgendaPage.tsx` — web-only agenda, participant preview, and document-generation UI.
-  - `src/App.tsx` — React Router routes, session gate, role gate, and shared toolbar/chat mounting.
+  - `src/App.tsx` — React Router routes, session gate, role gate, and shared toolbar/chat/feedback widget mounting.
   - `frontend/index.html` — browser document title (`MPK Workspace`).
   - `src/contexts/AuthContext.tsx` — authentication, Guest mode, and session state.
   - `src/components/AppToolbar.tsx` — draggable clock that snaps to the nearest screen edge on release/resize, collapsible tools, theme menu, and toolbar dialogs.
   - `src/components/ChatWidget.tsx` — authenticated Groq chat UI and Markdown rendering.
+  - `src/components/FeedbackWidget.tsx` — compact menu-tagged feedback form beside Groq chat.
   - `src/main.tsx` — app entry point wrapping App with `<BrowserRouter>`.
   - `src/hooks/useDataset.ts` — high-level dataset actions and API calls used across UI.
   - `src/services/api.ts` — HTTP wrapper functions to backend endpoints.
@@ -101,14 +105,12 @@ This file helps new contributors (especially juniors) understand where to make c
   
   **Legacy text-file option:** If you prefer, add a rule file in `backend/Cleaning Logic/` and map it in `backend/app/services/dataset_service.py` via `_load_auto_clean_rules()`. Programmatic cleaners are preferred for clarity and performance.
 
-- `Sitasi Es.III (Lite)` reuses the standard Es.III cleaning rules and PowerPoint template, but sets `delete_rows_null_columns` to an empty list so rows with a null value in column 2 are retained. Keep its category detection and six-character `Keterangan` prefix removal aligned with the standard mode.
-- Excel export merges Lite rows where `No` contains a non-numeric section heading and every other value is blank. This is controlled by the `sitasi_esiii_lite` DataFrame attribute set during that mode's cleaning; CSV and in-app preview remain ordinary cell data, and standard Es.III exports are not merged.
-- Sitasi Es.III and Lite apply `_to_proper_case` to `Keterangan` after removing the first six characters. Sitasi Es.IV applies the same helper to `Pertimbangan` after resolving/renaming the source column. The helper leaves non-string and missing values unchanged.
+- Sitasi Es.III applies `_to_proper_case` to `Keterangan` after removing the first six characters. Sitasi Es.IV applies the same helper to `Pertimbangan` after resolving/renaming the source column. The helper leaves non-string and missing values unchanged.
 
 **Cleaning method recommendation**
 - `GET /clean/recommend-method/{dataset_id}?sheet_name=...` compares a sheet to the available workbooks under `backend/templates/verification/`.
 - PBN workbooks share the same headers, so the recommender also compares non-empty data patterns in the additional Homebase/Education columns. Sitasi templates are distinguished by the positions of their table headers.
-- The recommender only returns a suggested method; it does not apply cleaning. PBN Open + Edu and Sitasi Es.III (Lite) currently have no distinct verification workbook and are not automatically suggested.
+- The recommender only returns a suggested method; it does not apply cleaning. PBN Open + Edu currently has no distinct verification workbook and is not automatically suggested.
 
 **PowerPoint export templates**
 - PPT generation is handled in `backend/app/services/powerpoint_service.py`.
@@ -166,8 +168,8 @@ This file helps new contributors (especially juniors) understand where to make c
 - The web-only route is `/undangan-pelantikan`; `/undangan-pelantikan/:agendaId` resumes an agenda. Every agenda API call requires a signed-in user and checks ownership.
 - Agenda records and participant snapshots are persisted in `pelantikan_agendas` and `pelantikan_agenda_people`. Use `backend/sql/005_create_pelantikan_agendas.sql` for fresh installations; startup creates mapped tables and adds missing participant snapshot columns on existing installations.
 - The form's level choices are Administrator and Tinggi Pratama. Dress code choices are Wastra Nusantara, PSL Lengkap, or a user-entered value. The card countdown uses the Jakarta date and shows Berakhir for past dates.
-- Roster upload accepts `.xlsx` and `.xls` up to 50 MB. It matches extracted NIPs against `pbncleaner.fetch_pbnopen`; selected employees and their Daring/Luring modality can be reviewed before generation.
-- The source workbook and generated documents are not retained. The agenda and participant snapshot remain so the owner can resume the workflow; re-uploading replaces that agenda's participant snapshot.
+- Roster upload accepts `.xlsx` and `.xls` up to 50 MB. The `/sheets` endpoint lists worksheet names so the user can choose the exact sheet to process; a single-sheet workbook is selected automatically. Upload then matches extracted NIPs against `pbncleaner.fetch_pbnopen`; selected employees and their Daring/Luring modality can be reviewed before generation.
+- The source workbook and generated documents are not retained on the server. The agenda and participant snapshot remain so the owner can resume the workflow; re-uploading a workbook or switching sheets replaces that agenda's participant snapshot. The frontend keeps the current workbook and sheet selected after upload so the owner can replace the roster without creating another agenda.
 - Generated DOCX files are grouped by Unit Eselon II and modality, then downloaded together as a ZIP. Keep recipient wording and the shared job-title formatting rules in `pelantikan_agenda_service.py` and `employee_formatting.py` aligned.
 
 **Frontend architecture for junior devs**

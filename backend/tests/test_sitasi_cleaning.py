@@ -88,7 +88,7 @@ class SitasiCategoryTests(unittest.TestCase):
         self.assertEqual(result["rows"][0]["Jabatan Baru"], "Direktur")
         self.assertEqual(result["rows"][0]["Kategori"], "")
 
-    def test_esiii_lite_preserves_rows_with_null_name_and_applies_same_cleaning(self) -> None:
+    def test_esiii_removes_rows_with_null_name(self) -> None:
         columns = [f"Column {index}" for index in range(1, 20)]
         rows = [
             [f"header-{column}" for column in range(1, 20)]
@@ -100,32 +100,17 @@ class SitasiCategoryTests(unittest.TestCase):
         ])
         dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
 
-        result = apply_auto_clean(dataset_id, "Sitasi Es.III (Lite)", "Data")
+        result = apply_auto_clean(dataset_id, "Sitasi Es.III", "Data")
 
-        self.assertEqual(result["row_count"], 2)
-        self.assertEqual([row["Keterangan"] for row in result["rows"]], ["Mutasi", "Promosi"])
-        self.assertEqual([row["Kategori"] for row in result["rows"]], ["Mutasi", "Promosi"])
-        self.assertEqual([row["Nama/NIP"] for row in result["rows"]], ["Staff A", None])
+        self.assertEqual(result["row_count"], 1)
+        self.assertEqual([row["Keterangan"] for row in result["rows"]], ["Mutasi"])
+        self.assertEqual([row["Kategori"] for row in result["rows"]], ["Mutasi"])
+        self.assertEqual([row["Nama/NIP"] for row in result["rows"]], ["Staff A"])
 
-    def test_esiii_lite_excel_export_merges_section_heading_rows(self) -> None:
-        columns = [f"Column {index}" for index in range(1, 20)]
-        rows = [
-            [f"header-{column}" for column in range(1, 20)]
-            for _ in range(2)
-        ]
-        rows.extend([
-            ["A. Direktorat Pelaksanaan Anggaran"] + [None] * 18,
-            ["1", "Staff A", "age", "x", "x", "x", "x", "x", "Role A", "2", "3", "Area A", "Duty A", "Role B", "x", "123456Mutasi", "x", "x", "x"],
-        ])
-        dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
-
-        apply_auto_clean(dataset_id, "Sitasi Es.III (Lite)", "Data")
-        output = export_excel(dataset_id, "Data")
-        workbook = load_workbook(BytesIO(output))
-
-        self.assertIn("A2:M2", {str(cell_range) for cell_range in workbook["Data"].merged_cells.ranges})
-        self.assertEqual(workbook["Data"]["A2"].value, "A. Direktorat Pelaksanaan Anggaran")
-        self.assertEqual(workbook["Data"]["A3"].value, "1")
+    def test_esiii_lite_cleaning_mode_is_retired(self) -> None:
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame()})
+        with self.assertRaisesRegex(ValueError, "not implemented yet"):
+            apply_auto_clean(dataset_id, "Sitasi Es.III (Lite)", "Data")
 
     def test_standard_esiii_excel_export_does_not_merge_section_heading_rows(self) -> None:
         columns = [f"Column {index}" for index in range(1, 20)]
@@ -209,4 +194,3 @@ class SitasiCategoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

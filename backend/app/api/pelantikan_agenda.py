@@ -96,6 +96,7 @@ def update_agenda(
 async def upload_agenda_excel(
     agenda_id: str,
     file: UploadFile = File(...),
+    sheet_name: str | None = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_history_db),
 ):
@@ -112,6 +113,7 @@ async def upload_agenda_excel(
             agenda,
             content,
             filename,
+            sheet_name,
         )
     except HTTPException:
         raise
@@ -135,6 +137,35 @@ async def upload_agenda_excel(
         "row_count": len(updated.people),
         "people": updated.people,
     }
+
+
+@router.post(
+    "/agendas/{agenda_id}/sheets",
+    response_model=list[str],
+)
+async def list_agenda_excel_sheets(
+    agenda_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        filename = file.filename or ""
+        content = await file.read(pelantikan_agenda_service.MAX_UPLOAD_SIZE + 1)
+        if len(content) > pelantikan_agenda_service.MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail="Ukuran file Excel melebihi 50 MB.")
+        if not content:
+            raise HTTPException(status_code=400, detail="File Excel kosong.")
+        return pelantikan_agenda_service.list_workbook_sheets(content, filename)
+    except HTTPException:
+        raise
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
 
 
 @router.put(

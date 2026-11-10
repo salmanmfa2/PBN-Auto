@@ -17,25 +17,14 @@ class SitasiEsIIIAlphaRuleTests(unittest.TestCase):
         self.assertEqual(rules.get("delete_rows_null_columns", []), [2])
         self.assertNotIn("delete_rows_contains", rules)
 
-    def test_sitasi_esiii_lite_uses_same_rules_without_null_row_deletion(self) -> None:
-        standard_rules = get_rules_for_mode("Sitasi Es.III")
-        lite_rules = get_rules_for_mode("Sitasi Es.III (Lite)")
-
-        self.assertIsNotNone(lite_rules)
-        self.assertEqual(lite_rules["skiprows"], standard_rules["skiprows"])
-        self.assertEqual(lite_rules["delete_positions"], standard_rules["delete_positions"])
-        self.assertEqual(lite_rules["rename_columns"], standard_rules["rename_columns"])
-        self.assertEqual(lite_rules["delete_rows_null_columns"], [])
+    def test_sitasi_esiii_lite_is_not_registered(self) -> None:
+        self.assertIsNone(get_rules_for_mode("Sitasi Es.III (Lite)"))
 
 
-class SitasiEsIIILitePowerPointLayoutTests(unittest.TestCase):
-    def test_lite_mode_uses_esiii_template_and_layout(self) -> None:
-        layout = powerpoint_service.get_template_layout("Sitasi Es.III (Lite)")
-
-        self.assertEqual(layout["template_path"].name, "template.pptx")
-        self.assertEqual(layout["header_rows"], 3)
-        self.assertEqual(len(layout["column_aliases"]), 10)
-        self.assertEqual(layout["people_per_slide"], 0)
+class SitasiEsIIIPowerPointLayoutTests(unittest.TestCase):
+    def test_sitasi_esiii_lite_has_no_powerpoint_layout(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not available"):
+            powerpoint_service.get_template_layout("Sitasi Es.III (Lite)")
 
     def test_standard_esiii_can_choose_three_row_template(self) -> None:
         layout = powerpoint_service.get_template_layout(
@@ -48,7 +37,7 @@ class SitasiEsIIILitePowerPointLayoutTests(unittest.TestCase):
         self.assertEqual(len(layout["column_aliases"]), 10)
 
     def test_three_row_template_is_restricted_to_standard_esiii(self) -> None:
-        for mode in ("Sitasi Es.III (Lite)", "Sitasi Es.IV"):
+        for mode in ("Sitasi Es.IV",):
             with self.subTest(mode=mode), self.assertRaises(ValueError):
                 powerpoint_service.get_template_layout(mode, template_variant="three-row")
 
@@ -179,4 +168,3 @@ class SitasiEsIVPowerPointLayoutTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

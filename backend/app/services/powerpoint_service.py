@@ -22,7 +22,6 @@ TEMPLATE_PATHS = {
     "Sitasi Es.III": Path(__file__).resolve().parents[2] / "templates" / "template.pptx",
     "Sitasi Es.III (3-row)": Path(__file__).resolve().parents[2] / "templates" / "template_3 Row.pptx",
     "Baperjakat": Path(__file__).resolve().parents[2] / "templates" / "combined_tempalate.pptx",
-    "Sitasi Es.III (Lite)": Path(__file__).resolve().parents[2] / "templates" / "template.pptx",
     "Sitasi Es.IV": Path(__file__).resolve().parents[2] / "templates" / "template_es4.pptx",
 }
 
@@ -65,7 +64,7 @@ def get_template_layout(mode: str, template_variant: str = "standard") -> dict[s
             "centered_columns": (2, 3, 5),
             "people_per_slide": 6,
         }
-    if mode not in {"Sitasi Es.III", "Sitasi Es.III (Lite)"}:
+    if mode != "Sitasi Es.III":
         raise ValueError(f"PowerPoint profiles are not available for {mode}.")
 
     return {
@@ -88,8 +87,8 @@ def build_sitasi_profiles(
     filters: dict[str, Any] | None = None,
     template_variant: str = "standard",
 ) -> bytes:
-    if mode not in {"Sitasi Es.III", "Sitasi Es.III (Lite)", "Sitasi Es.IV"}:
-        raise ValueError("PowerPoint profiles are available only for Sitasi Es.III, Sitasi Es.III (Lite), and Sitasi Es.IV.")
+    if mode not in {"Sitasi Es.III", "Sitasi Es.IV"}:
+        raise ValueError("PowerPoint profiles are available only for Sitasi Es.III and Sitasi Es.IV.")
 
     template_layout = get_template_layout(mode, template_variant)
     template_path = template_layout["template_path"]

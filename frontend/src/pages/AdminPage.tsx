@@ -6,6 +6,7 @@ import type {
   AdminUserUpdatePayload,
   AuthLevel,
   AuthUser,
+  UserFeedback,
   PbnOpenCsvValidation,
 } from '../types';
 import { Spinner } from '../components/Spinner';
@@ -32,11 +33,23 @@ function authLevelLabel(level: AuthLevel): string {
   return 'User';
 }
 
+function formatFeedbackDate(value: string): string {
+  return new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Jakarta',
+  }).format(new Date(value));
+}
+
 export default function AdminPage() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<AuthUser[]>([]);
+  const [feedbackItems, setFeedbackItems] = useState<UserFeedback[]>([]);
   const [isLoading, setIsLoading] = useState(currentUser?.auth_level === 3);
+  const [isLoadingFeedback, setIsLoadingFeedback] = useState((currentUser?.auth_level ?? 1) >= 2);
   const [isSaving, setIsSaving] = useState(false);
+  const [isClearingFeedback, setIsClearingFeedback] = useState(false);
+  const [deletingFeedbackId, setDeletingFeedbackId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<string | null>(null);
@@ -62,6 +75,23 @@ export default function AdminPage() {
     }
   };
 
+  const refreshFeedback = useCallback(async () => {
+    if ((currentUser?.auth_level ?? 0) < 2) {
+      setFeedbackItems([]);
+      setIsLoadingFeedback(false);
+      return;
+    }
+
+    setIsLoadingFeedback(true);
+    try {
+      setFeedbackItems(await apiClient.listAdminFeedback());
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setIsLoadingFeedback(false);
+    }
+  }, [currentUser?.auth_level]);
+
   const closeSourceDialog = useCallback(() => {
     if (sourceDialogError) setError(sourceDialogError);
     setShowSourceDialog(false);
@@ -70,6 +100,10 @@ export default function AdminPage() {
   useEffect(() => {
     void refreshUsers();
   }, [currentUser?.auth_level]);
+
+  useEffect(() => {
+    void refreshFeedback();
+  }, [refreshFeedback]);
 
   useEffect(() => {
     if (!showSourceDialog || isValidatingSource || isReplacingSource) return;
@@ -144,6 +178,41 @@ export default function AdminPage() {
     }
   };
 
+  const removeFeedback = async (item: UserFeedback) => {
+    if (!window.confirm(`Hapus feedback untuk menu "${item.menu}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    setError(null);
+    setNotice(null);
+    setDeletingFeedbackId(item.id);
+    try {
+      await apiClient.deleteAdminFeedback(item.id);
+      setFeedbackItems((current) => current.filter((feedback) => feedback.id !== item.id));
+      setNotice('Feedback berhasil dihapus.');
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+    } finally {
+      setDeletingFeedbackId(null);
+    }
+  };
+
+  const clearFeedback = async () => {
+    if (
+      feedbackItems.length === 0
+      || !window.confirm(`Hapus semua ${feedbackItems.length} feedback? Tindakan ini tidak dapat dibatalkan.`)
+    ) return;
+    setError(null);
+    setNotice(null);
+    setIsClearingFeedback(true);
+    try {
+      const result = await apiClient.clearAdminFeedback();
+      setFeedbackItems([]);
+      setNotice(`${result.deleted_count} feedback berhasil dihapus.`);
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : String(clearError));
+    } finally {
+      setIsClearingFeedback(false);
+    }
+  };
+
   const validateSourceFile = async () => {
     if (!sourceFile) return;
     setSourceDialogError(null);
@@ -215,6 +284,73 @@ export default function AdminPage() {
           <Link to="/manajemen-plt-plh" className="btn-secondary mt-4 inline-flex">
             Buka Manajemen Plt./Plh.
           </Link>
+        </section>
+
+        <section className="card overflow-hidden">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-700 px-5 py-4">
+            <div>
+              <h2 className="font-semibold">Feedback Pengguna</h2>
+              <p className="mt-1 text-xs text-slate-400">
+                Masukan terbaru dari pengguna untuk menu dan aplikasi.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void clearFeedback()}
+              disabled={!feedbackItems.length || isLoadingFeedback || isClearingFeedback || deletingFeedbackId !== null}
+              className="btn-danger disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isClearingFeedback ? <Spinner size="sm" label="Menghapus…" /> : 'Hapus Semua Feedback'}
+            </button>
+          </div>
+          {isLoadingFeedback ? (
+            <div className="flex justify-center p-8"><Spinner label="Memuat feedback…" /></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-slate-900/70 text-xs uppercase tracking-wide text-slate-400">
+                  <tr>
+                    <th className="px-5 py-3">Dikirim</th>
+                    <th className="px-5 py-3">Pengguna</th>
+                    <th className="px-5 py-3">Menu</th>
+                    <th className="px-5 py-3">Feedback</th>
+                    <th className="px-5 py-3">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {feedbackItems.map((item) => (
+                    <tr key={item.id}>
+                      <td className="whitespace-nowrap px-5 py-3 text-xs text-slate-400">
+                        {formatFeedbackDate(item.created_at)}
+                      </td>
+                      <td className="px-5 py-3 text-slate-300">{item.submitted_by ?? 'Akun dihapus'}</td>
+                      <td className="px-5 py-3 text-slate-300">{item.menu}</td>
+                      <td className="max-w-md whitespace-pre-wrap break-words px-5 py-3 text-slate-200">
+                        {item.feedback}
+                      </td>
+                      <td className="px-5 py-3">
+                        <button
+                          type="button"
+                          onClick={() => void removeFeedback(item)}
+                          disabled={isClearingFeedback || deletingFeedbackId !== null}
+                          className="btn-danger px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {deletingFeedbackId === item.id ? 'Menghapus…' : 'Hapus'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {feedbackItems.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-8 text-center text-slate-400">
+                        Belum ada feedback.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         {currentUser?.auth_level === 3 ? (

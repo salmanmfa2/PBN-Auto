@@ -16,6 +16,7 @@ from app.api import (
     chat,
     cleaning,
     dataset,
+    feedback,
     insights,
     insights_beta,
     pelantikan_agenda,
@@ -81,6 +82,7 @@ def startup() -> None:
 app.include_router(auth.router)
 app.include_router(auth.admin_router)
 app.include_router(chat.router)
+app.include_router(feedback.router)
 app.include_router(upload.router, tags=["upload"])
 app.include_router(cleaning.router)
 app.include_router(dataset.router)

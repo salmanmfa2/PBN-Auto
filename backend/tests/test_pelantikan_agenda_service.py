@@ -280,8 +280,39 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             "Jabatan usulan",
             "abaikan",
         ])
+        roster_worksheet = workbook.create_sheet("Roster")
+        roster_worksheet.append(["Daftar pegawai"])
+        roster_worksheet.append([])
+        roster_worksheet.append([
+            "NO.",
+            "Nama/NIP",
+            "Tanggal lahir",
+            "Jabatan Saat ini/Grade",
+            "Usul Jabatan Baru/Grade",
+            "Kolom yang tidak dipakai",
+        ])
+        roster_worksheet.append([
+            None,
+            None,
+            None,
+            "Baris tanpa nama/NIP",
+            "Baris tanpa nama/NIP",
+            None,
+        ])
+        roster_worksheet.append([
+            2,
+            "Nama Pilihan, S.E.\n234567890123456789",
+            None,
+            "Jabatan kedua",
+            "Usul jabatan kedua",
+            None,
+        ])
         workbook_data = BytesIO()
         workbook.save(workbook_data)
+        self.assertEqual(
+            service.list_workbook_sheets(workbook_data.getvalue(), "pegawai.xlsx"),
+            ["Sheet", "Roster"],
+        )
 
         test_engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(test_engine)
@@ -338,6 +369,23 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 self.assertEqual(
                     person_read.source_nama_nip,
                     "Nama Excel, S.E., MBus Process Mgt.\n123456789012345678",
+                )
+                with patch.object(service, "_lookup_employee_records", return_value={}):
+                    selected_sheet_agenda = service.upload_and_match(
+                        db,
+                        agenda,
+                        workbook_data.getvalue(),
+                        "pegawai.xlsx",
+                        "Roster",
+                    )
+
+                self.assertEqual(selected_sheet_agenda.uploaded_sheet, "Roster")
+                self.assertEqual(len(selected_sheet_agenda.people), 1)
+                self.assertEqual(selected_sheet_agenda.people[0].source_no, "2")
+                self.assertEqual(selected_sheet_agenda.people[0].row_number, 5)
+                self.assertEqual(
+                    selected_sheet_agenda.people[0].nip,
+                    "234567890123456789",
                 )
         finally:
             Base.metadata.drop_all(test_engine)

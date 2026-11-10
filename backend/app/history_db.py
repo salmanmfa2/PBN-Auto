@@ -50,6 +50,7 @@ def init_history_db() -> None:
         PelantikanAgendaPerson,
     )
     from app.models.plt_plh import PltPlhMonitoringRecord  # noqa: F401
+    from app.models.user_feedback import UserFeedback  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 

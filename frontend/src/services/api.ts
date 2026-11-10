@@ -25,6 +25,8 @@ import type {
   ThemeName,
   ChatMessage,
   ChatResponse,
+  FeedbackSubmitPayload,
+  UserFeedback,
   PelantikanAgenda,
   PelantikanAgendaDetail,
   PelantikanAgendaFields,
@@ -104,6 +106,25 @@ export async function updateAdminUser(
 
 export async function deleteAdminUser(username: string): Promise<void> {
   await api.delete(`/admin/users/${encodeURIComponent(username)}`);
+}
+
+export async function submitUserFeedback(payload: FeedbackSubmitPayload): Promise<UserFeedback> {
+  const { data } = await api.post<UserFeedback>('/feedback', payload);
+  return data;
+}
+
+export async function listAdminFeedback(): Promise<UserFeedback[]> {
+  const { data } = await api.get<UserFeedback[]>('/feedback');
+  return data;
+}
+
+export async function deleteAdminFeedback(feedbackId: number): Promise<void> {
+  await api.delete(`/feedback/${feedbackId}`);
+}
+
+export async function clearAdminFeedback(): Promise<{ deleted_count: number }> {
+  const { data } = await api.delete<{ deleted_count: number }>('/feedback');
+  return data;
 }
 
 export async function validatePbnOpenCsv(file: File): Promise<PbnOpenCsvValidation> {
@@ -203,6 +224,7 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
       diagnostic('insights-beta', 'Insight Hub Beta', false, error),
       diagnostic('plt-plh', 'Manajemen Plt./Plh.', false, error),
       diagnostic('pelantikan', 'Undangan Pelantikan', false, error),
+      diagnostic('feedback', 'Feedback', false, error),
     );
     return diagnostics;
   }
@@ -281,8 +303,19 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
         { path: '/undangan-pelantikan/agendas/{agenda_id}', method: 'put' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}', method: 'delete' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/upload', method: 'post' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}/sheets', method: 'post' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/people', method: 'put' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/generate', method: 'post' },
+      ],
+    },
+    {
+      id: 'feedback',
+      label: 'Feedback',
+      routes: [
+        { path: '/feedback', method: 'post' },
+        { path: '/feedback', method: 'get' },
+        { path: '/feedback', method: 'delete' },
+        { path: '/feedback/{feedback_id}', method: 'delete' },
       ],
     },
     {
@@ -443,11 +476,29 @@ export async function updatePelantikanAgenda(
 export async function uploadPelantikanExcel(
   agendaId: string,
   file: File,
+  sheetName?: string,
 ): Promise<PelantikanAgendaUploadResult> {
   const form = new FormData();
   form.append('file', file);
   const { data } = await api.post<PelantikanAgendaUploadResult>(
     `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/upload`,
+    form,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      params: sheetName ? { sheet_name: sheetName } : undefined,
+    },
+  );
+  return data;
+}
+
+export async function listPelantikanWorkbookSheets(
+  agendaId: string,
+  file: File,
+): Promise<string[]> {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post<string[]>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/sheets`,
     form,
     { headers: { 'Content-Type': 'multipart/form-data' } },
   );

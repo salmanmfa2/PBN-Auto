@@ -4,8 +4,13 @@ import remarkGfm from 'remark-gfm';
 import { sendChatMessage } from '../services/api';
 import type { ChatMessage } from '../types';
 
-export function ChatWidget() {
-  const [isOpen, setIsOpen] = useState(false);
+type ChatWidgetProps = {
+  isOpen: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+};
+
+export function ChatWidget({ isOpen, onOpen, onClose }: ChatWidgetProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -16,11 +21,11 @@ export function ChatWidget() {
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
+      if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight });
@@ -94,7 +99,7 @@ export function ChatWidget() {
               </button>
               <button
                 type="button"
-                onClick={() => setIsOpen(false)}
+                onClick={onClose}
                 className="rounded-md px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-brand-400"
                 aria-label="Close chat"
               >
@@ -181,7 +186,7 @@ export function ChatWidget() {
 
       <button
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={isOpen ? onClose : onOpen}
         className="flex h-10 w-10 items-center justify-center rounded-full border border-sky-300/30 bg-sky-600 text-white shadow-lg transition hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-slate-950"
         aria-label={isOpen ? 'Close AI chat' : 'Open AI chat'}
         aria-expanded={isOpen}

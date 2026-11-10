@@ -21,9 +21,10 @@ The desktop application's main navigation is limited to **PBN Analytics** and **
 | **Insight Hub** | ✅ Live | PBN Open + Edu + HB dashboard with employee totals and distributions |
 | **Insight Hub Beta (web)** | ✅ Beta | Same filters, charts, and employee table sourced from `pbncleaner.fetch_pbnopen`; Super Admin can replace the source using a column-checked CSV workflow |
 | **Manajemen Plt./Plh.** | ✅ Live | Monitor acting assignments, calculate tenure/status, receive dashboard notices, select replacement employees from PBN Open, and export records |
-| **Generate ND Undangan Pelantikan (web)** | ✅ Live | Manage personal agendas, match uploaded employee workbooks to PBN Open, preview selected participants, and generate grouped invitation documents in a ZIP |
+| **Generate ND Undangan Pelantikan (web)** | ✅ Live | Manage personal agendas, choose a worksheet from uploaded Excel workbooks, match employees to PBN Open, preview selected participants, and generate grouped invitation documents in a ZIP |
 | **Web accounts and roles** | ✅ Live | Guest, User, Admin, and Super Admin access; one-hour authenticated sessions |
 | **Admin workspace** | ✅ Live | Super Admin account management and shared Plt./Plh. administration |
+| **User feedback (web)** | ✅ Live | Submit menu-specific or overall feedback; Admin and Super Admin can review, delete individual entries, or clear all feedback |
 | **Other web menus** | 🛠️ Placeholder | Analisis Kinerja DJPb, Bahan Pendukung MPK, and Simulasi Mutasi are not implemented; desktop does not include these menus |
 | **Appearance** | ✅ Live | Default, Dark, and Light themes; signed-in users' preferences follow their accounts |
 | **App Toolbar** | ✅ Live | WIB clock, draggable position that snaps to the nearest screen edge, collapsible utility actions, API diagnostics, and Snake |
@@ -221,8 +222,11 @@ VITE_API_URL=http://localhost:8000
 | `GET` / `PUT` | `/auth/preferences/theme` | Read or update the signed-in user's theme preference |
 | `GET` / `POST` / `PUT` / `DELETE` | `/admin/users` | Manage accounts (Super Admin only) |
 | `POST` | `/chat` | Generate an authenticated Groq chat response |
+| `POST` / `GET` / `DELETE` | `/feedback` | Submit feedback (signed-in users), or list/clear feedback (Admin and Super Admin) |
+| `DELETE` | `/feedback/{feedback_id}` | Delete one feedback entry (Admin and Super Admin) |
 | `GET` / `POST` | `/undangan-pelantikan/agendas` | List the signed-in user's agendas or create a new agenda |
 | `GET` / `PUT` / `DELETE` | `/undangan-pelantikan/agendas/{agenda_id}` | Read, update, or delete an agenda owned by the signed-in user |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/sheets` | List worksheet names from an uploaded Excel workbook |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload` | Upload an Excel roster and match its NIPs against PBN Open |
 | `PUT` | `/undangan-pelantikan/agendas/{agenda_id}/people` | Save participant selection and modality |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate` | Generate grouped invitation documents as a ZIP |
@@ -235,10 +239,6 @@ The toolbar offers Default (the original dark appearance), Dark, and Light theme
 
 The first Super Admin is **not seeded automatically**. After creating the account tables, insert the first Super Admin manually using the commented example in `backend/sql/003_create_users_and_sessions.sql`, then sign in and use the Super Admin workspace. User passwords are intentionally stored as plain text in MySQL at this stage, per the current project requirement. This is not suitable for production or sensitive deployments; do not expose the database or use real/reused passwords.
 
-### Sitasi Es.III (Lite)
-
-`Sitasi Es.III (Lite)` uses the same cleaning rules and PowerPoint profile layout as `Sitasi Es.III`, but keeps rows whose second column is empty instead of deleting them. When exporting a cleaned Lite dataset to Excel, section-heading rows (text in `No` and empty values in the remaining columns) are merged across the row. CSV exports and the in-app preview keep the heading text in `No` with other cells blank; CSV has no merged-cell formatting. The standard `Sitasi Es.III` mode is unchanged.
-
 Sitasi Es.III cleaning sets `Keterangan` to proper case after removing its first six characters. Sitasi Es.IV cleaning sets `Pertimbangan` to proper case. Proper case capitalizes the first letter of each word; missing values remain missing.
 
 For **PBN Open + Edu + HB**, Auto Clean removes straight apostrophe and backtick characters from string cell values, then converts `TMT JF Keterampilan`, `TMT JF Keahlian`, `TMT JF Ahli Muda`, `TMT JF Ahli Madya`, `TMT Es4`, `TMT Es3`, `TMT Es2`, and `TMT Jabatan` values to dates. Unparseable non-empty date values are kept as cleaned text and shown in a warning.
@@ -249,7 +249,7 @@ Authenticated users can open the small chat button in the lower-right corner. As
 
 ### Cleaning method recommendation
 
-After upload, the app compares the selected sheet with reference workbooks in `backend/templates/verification/` and highlights a recommended method for the available PBN Open, PBN Open + Edu + HB, Sitasi Es.III, and Sitasi Es.IV templates. The recommendation never runs cleaning automatically. PBN Open + Edu and Sitasi Es.III (Lite) do not have separate verification templates, so they are not automatically recommended.
+After upload, the app compares the selected sheet with reference workbooks in `backend/templates/verification/` and highlights a recommended method for the available PBN Open, PBN Open + Edu + HB, Sitasi Es.III, and Sitasi Es.IV templates. The recommendation never runs cleaning automatically. PBN Open + Edu does not have a separate verification template, so it is not automatically recommended.
 
 ## MySQL Setup (Cleaning History)
 

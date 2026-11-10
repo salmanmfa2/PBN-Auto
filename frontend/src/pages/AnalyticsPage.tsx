@@ -66,7 +66,6 @@ export default function AnalyticsPage() {
     'Sitasi Pelaksana',
     'Sitasi Es.IV',
     'Sitasi Es.III',
-    'Sitasi Es.III (Lite)',
   ];
 
   const handleDownloadCsv = () => {
@@ -185,7 +184,7 @@ export default function AnalyticsPage() {
 
   const isBusy = status === 'uploading' || status === 'cleaning';
   const hasData = !!preview;
-  const canDownloadProfiles = activeAutoCleanMode === 'Sitasi Es.III' || activeAutoCleanMode === 'Sitasi Es.III (Lite)' || activeAutoCleanMode === 'Sitasi Es.IV';
+  const canDownloadProfiles = activeAutoCleanMode === 'Sitasi Es.III' || activeAutoCleanMode === 'Sitasi Es.IV';
   const maxSidebarWidth = Math.max(
     SIDEBAR_MIN_WIDTH,
     Math.min(SIDEBAR_MAX_WIDTH, window.innerWidth * 0.5),
@@ -394,7 +393,7 @@ export default function AnalyticsPage() {
                     type="button"
                     aria-label="Apply selected cleaning method"
                     title="Apply selected cleaning method"
-                    disabled={isBusy || !['PBN Open', 'PBN Open + Edu', 'PBN Open + Edu + HB', 'Sitasi Es.IV', 'Sitasi Es.III', 'Sitasi Es.III (Lite)'].includes(autoCleanMode)}
+                    disabled={isBusy || !['PBN Open', 'PBN Open + Edu', 'PBN Open + Edu + HB', 'Sitasi Es.IV', 'Sitasi Es.III'].includes(autoCleanMode)}
                     onClick={() => applyAutoClean(autoCleanMode)}
                     className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -835,7 +834,7 @@ export default function AnalyticsPage() {
                 <li>Buka file dan pilih <strong>Save As</strong> dengan format <strong>.xlsx</strong>, tanpa mengubah apa pun.</li>
                 <li>Masuk ke <strong>Aplikasi PBN Cleaner</strong>.</li>
                 <li>Upload file yang disimpan pada tahap 2.</li>
-                <li>Pilih Cleaning Method (<strong>Sitasi Es.III</strong>/<strong>Sitasi Es.III (Lite)</strong>/<strong>Sitasi Es.IV</strong>) sesuai kebutuhan.</li>
+                <li>Pilih Cleaning Method (<strong>Sitasi Es.III</strong>/<strong>Sitasi Es.IV</strong>) sesuai kebutuhan.</li>
                 <li>Pilih tombol <strong>Download Profiles PPTX</strong> di bawah.</li>
               </ol>
             )}
