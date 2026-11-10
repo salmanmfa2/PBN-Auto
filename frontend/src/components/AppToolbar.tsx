@@ -551,12 +551,21 @@ export function AppToolbar() {
                   </ul>
                 </section>
                 <section>
+                  <h3 className="font-semibold text-brand-300">Pembaruan web 1.2.1</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    <li>Generate ND Undangan Pelantikan dengan agenda tersimpan, pencocokan pegawai, pratinjau peserta, dan pembuatan dokumen.</li>
+                    <li>Manajemen Plt./Plh. dapat memilih pejabat pengganti dari PBN Open dan menyimpan NIP sebagai snapshot.</li>
+                    <li>Toolbar jam dapat menempel ke tepi layar terdekat setelah digeser.</li>
+                    <li>Launcher deployment jaringan mendeteksi alamat Wi-Fi/LAN secara otomatis dan menyesuaikan URL API serta CORS.</li>
+                  </ul>
+                </section>
+                <section>
                   <h3 className="font-semibold text-brand-300">Pembaruan web 1.2</h3>
                   <ul className="mt-2 list-disc space-y-1 pl-5">
                     <li><strong>Generate Bahan Baperjakat</strong> menggabungkan template 4 orang untuk kategori Mutasi dan template 3 orang untuk kategori Promosi.</li>
                     <li>Akun web dengan peran Guest, User, Admin, dan Super Admin; sesi login berlaku satu jam dan workspace Admin menyediakan pengelolaan akun.</li>
                     <li>Manajemen Plt./Plh. web dengan monitoring, status masa kerja, notifikasi, dan ekspor Excel yang dibatasi berdasarkan peran.</li>
-                    <li>Menu Generate ND Undangan Pelantikan dan Analisis Kinerja DJPb tersedia sebagai placeholder “On development”.</li>
+                    <li>Menu Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi masih berstatus “On development”.</li>
                     <li>Toolbar memiliki jam WIB yang dapat digeser, pilihan tema Default/Dark/Light tersimpan per pengguna, serta kontrol tampil/sembunyikan untuk tombol utilitas.</li>
                     <li>Groq chat web dengan format Markdown, tombol hapus percakapan, dan instruksi agar tidak mengarang fitur yang belum dikonfirmasi.</li>
                     <li>Fitur akun, monitoring, menu tambahan, preferensi pengguna, dan chat ini khusus web; desktop tetap hanya memiliki menu PBN Analytics dan Insight Hub tanpa login.</li>

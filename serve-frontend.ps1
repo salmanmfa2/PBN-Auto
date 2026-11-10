@@ -8,11 +8,16 @@ if (-not (Test-Path $configPath)) {
 $config = Get-Content -Path $configPath -Raw | ConvertFrom-Json
 $frontendPath = Join-Path $PSScriptRoot "frontend"
 $distPath = Join-Path $frontendPath "dist"
-$hostAddress = $config.host
+$hostAddress = $env:APP_PUBLIC_HOST
 $port = [int]$config.frontend_port
 
+if (-not $hostAddress) {
+    $resolvedConfig = & (Join-Path $PSScriptRoot "resolve-network-config.ps1")
+    $hostAddress = ([string]$resolvedConfig -split "\|", 4)[0]
+}
+
 if (-not $hostAddress -or $port -lt 1 -or $port -gt 65535) {
-    throw "config.json must contain a valid host and frontend_port."
+    throw "Could not resolve a valid network host and frontend_port."
 }
 
 if (-not (Test-Path $distPath)) {

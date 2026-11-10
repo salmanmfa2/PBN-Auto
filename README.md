@@ -2,11 +2,13 @@
 
 A full-stack web application for PBN dataset cleaning and analytics.
 
+The web app is titled **MPK Workspace** in the browser; PBN Cleaner remains the repository and project name.
+
 ## Release notes
 
-The current web update is **1.2**: [Web update notes](./Update%20Notes/Update%20Notes%201.2%20Web.md). The corresponding desktop requirements are documented separately in [Desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); those notes do not claim a desktop build or release has been produced.
+The current web update is **1.2.1**: [Web update notes](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), following [Web update 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). The corresponding desktop requirements are documented separately in [Desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); those notes do not claim a desktop build or release has been produced.
 
-The desktop application's main navigation is limited to **PBN Analytics** and **Insight Hub**, with no login system. The additional placeholder menus described in the web notes are web-only. Version **2.0** is a future milestone for when those placeholder menus become functional.
+The desktop application's main navigation is limited to **PBN Analytics** and **Insight Hub**, with no login system. Web accounts, Plt./Plh. monitoring, and Pelantikan agenda generation are web-only. Analisis Kinerja DJPb, Bahan Pendukung MPK, and Simulasi Mutasi remain web placeholders; version **2.0** is a future milestone for those workflows.
 
 ## Features
 
@@ -18,12 +20,13 @@ The desktop application's main navigation is limited to **PBN Analytics** and **
 | **Export** | ✅ Live | Download as `.csv` or `.xlsx` |
 | **Insight Hub** | ✅ Live | PBN Open + Edu + HB dashboard with employee totals and distributions |
 | **Insight Hub Beta (web)** | ✅ Beta | Same filters, charts, and employee table sourced from `pbncleaner.fetch_pbnopen`; Super Admin can replace the source using a column-checked CSV workflow |
-| **Manajemen Plt./Plh.** | ✅ Live | Monitor acting assignments, calculate tenure/status, receive dashboard notices, and export records |
+| **Manajemen Plt./Plh.** | ✅ Live | Monitor acting assignments, calculate tenure/status, receive dashboard notices, select replacement employees from PBN Open, and export records |
+| **Generate ND Undangan Pelantikan (web)** | ✅ Live | Manage personal agendas, match uploaded employee workbooks to PBN Open, preview selected participants, and generate grouped invitation documents in a ZIP |
 | **Web accounts and roles** | ✅ Live | Guest, User, Admin, and Super Admin access; one-hour authenticated sessions |
 | **Admin workspace** | ✅ Live | Super Admin account management and shared Plt./Plh. administration |
-| **Additional web menus** | 🛠️ Placeholder | Generate ND Undangan Pelantikan and Analisis Kinerja DJPb currently show “On development”; desktop does not include them |
+| **Other web menus** | 🛠️ Placeholder | Analisis Kinerja DJPb, Bahan Pendukung MPK, and Simulasi Mutasi are not implemented; desktop does not include these menus |
 | **Appearance** | ✅ Live | Default, Dark, and Light themes; signed-in users' preferences follow their accounts |
-| **App Toolbar** | ✅ Live | WIB clock, draggable position, collapsible utility actions, API diagnostics, and Snake |
+| **App Toolbar** | ✅ Live | WIB clock, draggable position that snaps to the nearest screen edge, collapsible utility actions, API diagnostics, and Snake |
 | **AI chat assistant** | ✅ Live | Authenticated web chat with Markdown rendering, clear-chat control, and concise app-capability guidance; uses backend-configured Groq without reloading documentation per request |
 
 ## Tech Stack
@@ -45,7 +48,9 @@ Project PBNCleaner/
 │   │   │   ├── cleaning.py        # POST /clean/*
 │   │   │   ├── dataset.py         # GET /dataset/:id, GET /export/*
 │   │   │   ├── auth.py            # Web login, preferences, and account endpoints
-│   │   │   └── chat.py            # Authenticated Groq chat endpoint
+│   │   │   ├── chat.py            # Authenticated Groq chat endpoint
+│   │   │   ├── plt_plh.py         # Plt./Plh. monitoring and employee lookup
+│   │   │   └── pelantikan_agenda.py # Pelantikan agenda and document workflow
 │   │   ├── cleaners/
 │   │   │   ├── pbn.py             # PBN Open mode
 │   │   │   ├── pbn_edu.py         # PBN Open + Edu mode
@@ -69,6 +74,7 @@ Project PBNCleaner/
 │       │   ├── AnalyticsPage.tsx  # /pbn-analytics route
 │       │   ├── InsightHubPage.tsx # /insights route
 │       │   ├── PltPlhManagementPage.tsx # Web-only monitoring
+│       │   ├── PelantikanAgendaPage.tsx # Web-only agenda workflow
 │       │   ├── LoginPage.tsx      # Web login/registration/Guest
 │       │   └── AdminPage.tsx      # Web account administration
 │       ├── components/
@@ -94,7 +100,8 @@ Project PBNCleaner/
 │       ├── App.tsx                # React Router setup
 │       └── main.tsx               # BrowserRouter wrapper
 │
-├── config.json                    # Centralized config (IP, ports, CORS)
+├── config.json                    # Centralized network host mode and port config
+├── resolve-network-config.ps1     # Resolve current LAN host and CORS origin
 ├── run-app-testing.bat            # Local dev launcher
 ├── run-app.bat                    # Network deployment launcher
 ├── deploy-windows.ps1             # Environment setup
@@ -132,21 +139,23 @@ App available at: http://localhost:5173 with live routing
 
 ### 3. Network Deployment
 
-Edit `config.json` for network deployment. Set `host` to the server's address and add the matching frontend URL to `cors_origins`:
+Network deployment defaults to automatic host discovery. The launcher prefers an active Wi-Fi IPv4 address, uses it for the app URL/API/CORS settings, and selects the next available backend port if needed. No manual IP edit is required. To use a stable DNS name or a manually reserved address, replace `"auto"` with that hostname/address in `config.json`.
 
 ```json
 {
-  "host": "YOUR_SERVER_HOST_OR_IP",
+  "host": "auto",
   "backend_port": 8000,
   "frontend_port": 8081,
   "cors_origins": [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://YOUR_SERVER_HOST_OR_IP:8081",
-    "http://YOUR_SERVER_HOST_OR_IP"
+    "http://localhost:8081",
+    "http://127.0.0.1:8081"
   ]
 }
 ```
+
+`resolve-network-config.ps1` prefers an active Wi-Fi adapter, then the active physical adapter with the best default route. If DHCP assigns a different address later, restart the launcher and share the newly printed URL; no config edit is needed. If automatic detection cannot find a usable IPv4 address, set `host` explicitly. The network deployment launcher adds the selected frontend origin to the backend CORS allowlist at startup. For a stable URL, prefer a DHCP reservation or internal DNS name over manually assigning an unreserved static IP.
 
 Then run from project root:
 
@@ -167,7 +176,10 @@ The app uses **React Router v7** for URL-based navigation:
 | `/` | LandingPage | Feature selector |
 | `/pbn-analytics` | AnalyticsPage | PBN dataset cleaning (active) |
 | `/insights` | InsightHubPage | PBN Open + Edu + HB analytics dashboard |
+| `/insights-beta` | InsightHubPage | Database-backed PBN Open analytics |
 | `/manajemen-plt-plh` | PltPlhManagementPage | Plt./Plh. assignment register, notifications, and export |
+| `/undangan-pelantikan` | PelantikanAgendaPage | Create and manage Pelantikan agendas |
+| `/undangan-pelantikan/:agendaId` | PelantikanAgendaPage | Resume an owned agenda |
 | `/admin` | AdminPage | Admin workspace; account management is Super Admin-only |
 | `/login` | LoginPage | Sign in, register, or continue as Guest |
 
@@ -195,7 +207,11 @@ VITE_API_URL=http://localhost:8000
 | `GET` | `/export/csv/{id}` | Download as CSV |
 | `GET` | `/export/excel/{id}` | Download as Excel |
 | `GET` | `/plt-plh/records` | List Plt./Plh. monitoring records |
-| `POST` / `PUT` / `PATCH` / `DELETE` | `/plt-plh/records` | Create, edit, activate/deactivate, or delete a record (Admin or Super Admin login required) |
+| `GET` | `/plt-plh/employees?q=...` | Search PBN Open employees for replacement selection (Admin or Super Admin) |
+| `POST` | `/plt-plh/records` | Create a record (Admin or Super Admin login required) |
+| `PUT` | `/plt-plh/records/{record_id}` | Edit a record (Admin or Super Admin login required) |
+| `PATCH` | `/plt-plh/records/{record_id}/active` | Activate or deactivate a record (Admin or Super Admin login required) |
+| `DELETE` | `/plt-plh/records/{record_id}` | Delete a record (Admin or Super Admin login required) |
 | `GET` | `/plt-plh/notifications` | List active records at or past the six-month notification threshold |
 | `GET` | `/plt-plh/records/export` | Download all records as `.xlsx` |
 | `POST` | `/auth/register` | Register a level-1 User account |
@@ -205,6 +221,11 @@ VITE_API_URL=http://localhost:8000
 | `GET` / `PUT` | `/auth/preferences/theme` | Read or update the signed-in user's theme preference |
 | `GET` / `POST` / `PUT` / `DELETE` | `/admin/users` | Manage accounts (Super Admin only) |
 | `POST` | `/chat` | Generate an authenticated Groq chat response |
+| `GET` / `POST` | `/undangan-pelantikan/agendas` | List the signed-in user's agendas or create a new agenda |
+| `GET` / `PUT` / `DELETE` | `/undangan-pelantikan/agendas/{agenda_id}` | Read, update, or delete an agenda owned by the signed-in user |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload` | Upload an Excel roster and match its NIPs against PBN Open |
+| `PUT` | `/undangan-pelantikan/agendas/{agenda_id}/people` | Save participant selection and modality |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate` | Generate grouped invitation documents as a ZIP |
 
 ### Accounts and roles
 
@@ -251,6 +272,8 @@ Run its initial schema once as well:
 ```bash
 mysql -u <user> -p < backend/sql/002_create_plt_plh_monitoring.sql
 ```
+
+Pelantikan agenda history and participant snapshots use the same database. Fresh installations can create their tables with `backend/sql/005_create_pelantikan_agendas.sql`; application startup also creates mapped tables and adds missing snapshot columns. Plt./Plh. replacement selection reads the existing `pbncleaner.fetch_pbnopen` table and stores the selected NIP on the monitoring record; no employee lookup table is added.
 
 Create the account and session tables as well:
 
@@ -326,7 +349,7 @@ For persistence, swap `DatasetStore` (`app/storage/dataset_store.py`) with a Red
 
 ### Future Expansion
 
-- The web-only **Generate ND Undangan Pelantikan** and **Analisis Kinerja DJPb** menus are placeholders. Making these workflows functional is the planned product milestone for version 2.0.
+- **Analisis Kinerja DJPb**, **Bahan Pendukung MPK**, and **Simulasi Mutasi** remain web placeholders. Making those workflows functional is the planned product milestone for version 2.0.
 - Desktop remains a separate product surface with only PBN Analytics and Insight Hub in its main navigation and no account/login system.
 - The service layer and TanStack Table can be extended for future analytics, profiling, and larger datasets as requirements are defined.
 

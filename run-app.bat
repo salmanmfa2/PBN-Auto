@@ -8,19 +8,20 @@ if not exist "%~dp0config.json" (
 	exit /b 1
 )
 
-for /f "usebackq tokens=1-3 delims=|" %%A in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$c = Get-Content -Raw '%~dp0config.json' | ConvertFrom-Json; $p = [int]$c.backend_port; while (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue) { $p++ }; '{0}|{1}|{2}' -f $c.host,$p,$c.frontend_port"`) do (
-	set "CONFIG_HOST=%%A"
+for /f "usebackq tokens=1-4 delims=|" %%A in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0resolve-network-config.ps1"`) do (
+	set "APP_PUBLIC_HOST=%%A"
 	set "BACKEND_PORT=%%B"
 	set "FRONTEND_PORT=%%C"
+	set "CORS_ORIGINS=%%D"
 )
-if not defined CONFIG_HOST (
-	echo Could not read host and ports from config.json.
+if not defined APP_PUBLIC_HOST (
+	echo Could not resolve the network host and ports. Check config.json and the active network adapter.
 	pause
 	exit /b 1
 )
 set "APP_HOST=0.0.0.0"
 set "APP_PORT=%BACKEND_PORT%"
-set "VITE_API_URL=http://%CONFIG_HOST%:%BACKEND_PORT%"
+set "VITE_API_URL=http://%APP_PUBLIC_HOST%:%BACKEND_PORT%"
 
 pushd "%~dp0backend"
 if not exist ".\venv\Scripts\python.exe" (
@@ -53,6 +54,6 @@ popd
 
 echo Backend launch started.
 echo Frontend build and server launch started.
-for /f "usebackq delims=" %%U in (`powershell -NoProfile -Command "$config = Get-Content -Raw '%~dp0config.json' | ConvertFrom-Json; 'http://{0}:{1}' -f $config.host, $config.frontend_port"`) do set "APP_URL=%%U"
+for /f "usebackq delims=" %%U in (`powershell -NoProfile -Command "'http://{0}:{1}' -f '%APP_PUBLIC_HOST%', '%FRONTEND_PORT%'"`) do set "APP_URL=%%U"
 if defined APP_URL echo Open %APP_URL% from other PCs.
 pause

@@ -19,7 +19,11 @@ src/
 ├── pages/                        # React Router page components
 │   ├── LandingPage.tsx          # / route (feature cards)
 │   ├── AnalyticsPage.tsx        # /pbn-analytics (data cleaning)
-│   └── InsightHubPage.tsx       # /insights (analytics dashboard)
+│   ├── InsightHubPage.tsx       # /insights and /insights-beta
+│   ├── PltPlhManagementPage.tsx # /manajemen-plt-plh
+│   ├── PelantikanAgendaPage.tsx # /undangan-pelantikan
+│   ├── LoginPage.tsx            # /login
+│   └── AdminPage.tsx            # /admin
 ├── features/                     # Feature-scoped components
 │   ├── upload/
 │   │   └── UploadZone.tsx
@@ -67,14 +71,22 @@ Output goes to `dist/`.
 
 ## Routing
 
-Using **React Router v7** with file-based page structure:
+Using **React Router v7** with page components in `src/pages/`:
 
 ```
 /                    → LandingPage (feature selector)
 /pbn-analytics       → AnalyticsPage (data cleaning interface)
-/insights            → InsightHubPage (analytics dashboard)
-/anything-else       → Redirects to / (catch-all)
+/insights            → InsightHubPage (in-memory dataset dashboard)
+/insights-beta       → InsightHubPage (database-backed PBN Open dashboard)
+/manajemen-plt-plh   → PltPlhManagementPage (web-only monitoring)
+/undangan-pelantikan → PelantikanAgendaPage (web-only agenda and document workflow)
+/admin               → AdminPage (role-gated administration)
+/login               → LoginPage (authentication and Guest entry)
 ```
+
+All feature routes except `/login` require a session. Unmatched routes redirect to the landing page. Plt./Plh. employee search is restricted to Admin and Super Admin; Pelantikan agendas are scoped to their signed-in owner.
+
+The global `AppToolbar` includes the WIB clock, theme selection, utility tools, and drag-to-move positioning that snaps to the nearest screen edge on release and after viewport resizing.
 
 ### Adding a New Route
 
@@ -181,7 +193,7 @@ Uses **Tailwind CSS v3** with custom theme variables:
 
 2. The `dist/` folder is served by `serve-frontend.ps1` on port 8081 in production.
 
-3. For network deployment, edit `config.json` to change backend IP/port, then run:
+3. For network deployment, `run-app.bat` detects the active LAN address automatically. Set `host` in the root `config.json` only if you need to override it with a DNS name or reserved address:
    ```bash
    run-app.bat
    ```

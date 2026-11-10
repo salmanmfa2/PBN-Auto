@@ -1,14 +1,18 @@
-# Placeholder deployment helper for Windows internal hosting
-# Edit the values below before use.
+# Backend deployment helper for Windows internal hosting.
 
-$backendPath = "D:\Laboratorium\Project PBNCleaner\backend"
-$frontendPath = "D:\Laboratorium\Project PBNCleaner\frontend"
+$backendPath = Join-Path $PSScriptRoot "backend"
 
-$config = Get-Content -Path "$PSScriptRoot\config.json" -Raw | ConvertFrom-Json
+$resolvedConfig = & (Join-Path $PSScriptRoot "resolve-network-config.ps1")
+$networkSettings = [string]$resolvedConfig -split "\|", 4
 
-$env:APP_HOST = $config.host
-$env:APP_PORT = $config.backend_port
-$env:CORS_ORIGINS = ($config.cors_origins -join ",")
+if ($networkSettings.Count -lt 4) {
+    throw "Could not resolve network settings from config.json."
+}
+
+$env:APP_HOST = "0.0.0.0"
+$env:APP_PUBLIC_HOST = $networkSettings[0]
+$env:APP_PORT = $networkSettings[1]
+$env:CORS_ORIGINS = $networkSettings[3]
 
 Set-Location $backendPath
 python .\run_server.py

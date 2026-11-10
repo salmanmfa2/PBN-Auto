@@ -2,11 +2,13 @@
 
 Aplikasi web full-stack untuk pembersihan dataset PBN dan analitik.
 
+Nama aplikasi web pada tab browser adalah **MPK Workspace**; PBN Cleaner tetap menjadi nama proyek dan repositori.
+
 ## Catatan Rilis
 
-Pembaruan web saat ini adalah **1.2**: [Catatan pembaruan Web](./Update%20Notes/Update%20Notes%201.2%20Web.md). Persyaratan desktop terkait didokumentasikan terpisah di [Catatan pembaruan Desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); catatan desktop tersebut tidak menyatakan build atau rilis desktop telah dibuat.
+Pembaruan web saat ini adalah **1.2.1**: [Catatan pembaruan Web](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), setelah [pembaruan Web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). Persyaratan desktop terkait didokumentasikan terpisah di [Catatan pembaruan Desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); catatan desktop tersebut tidak menyatakan build atau rilis desktop telah dibuat.
 
-Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub**, tanpa sistem login. Menu placeholder tambahan pada catatan web hanya berlaku untuk web. Versi **2.0** direncanakan sebagai milestone setelah menu placeholder tersebut berfungsi.
+Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub**, tanpa sistem login. Akun web, monitoring Plt./Plh., dan pembuatan agenda Pelantikan hanya tersedia di web. Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi masih berupa placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
 
 ## Fitur
 
@@ -18,12 +20,13 @@ Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub
 | **Ekspor** | ✅ Aktif | Mengunduh data dalam format `.csv` atau `.xlsx` |
 | **Insight Hub** | ✅ Aktif | Dashboard PBN Open + Edu + HB dengan jumlah pegawai dan distribusi data |
 | **Insight Hub Beta (web)** | ✅ Beta | Filter, grafik, dan tabel pegawai yang sama dari `pbncleaner.fetch_pbnopen`; Super Admin dapat mengganti sumber melalui CSV yang divalidasi kolomnya |
-| **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, dan mengekspor data |
+| **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, memilih pejabat pengganti dari PBN Open, dan mengekspor data |
+| **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Mengelola agenda pribadi, mencocokkan workbook pegawai dengan PBN Open, meninjau peserta terpilih, dan membuat dokumen undangan dalam ZIP |
 | **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, dan Super Admin; sesi pengguna berlaku satu jam |
 | **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin dan administrasi monitoring Plt./Plh. |
-| **Menu web tambahan** | 🛠️ Placeholder | Generate ND Undangan Pelantikan dan Analisis Kinerja DJPb hanya menampilkan “On development”; tidak tersedia di desktop |
+| **Menu web lainnya** | 🛠️ Placeholder | Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi belum diimplementasikan; menu ini tidak tersedia di desktop |
 | **Tampilan** | ✅ Aktif | Tema Default, Dark, dan Light; pilihan pengguna yang login tersimpan pada akunnya |
-| **Toolbar Aplikasi** | ✅ Aktif | Jam WIB, posisi dapat digeser, utilitas dapat disembunyikan, diagnostik API, dan Snake |
+| **Toolbar Aplikasi** | ✅ Aktif | Jam WIB, posisi dapat digeser dan menempel ke tepi layar terdekat, utilitas dapat disembunyikan, diagnostik API, dan Snake |
 | **Chat AI** | ✅ Aktif | Chat web untuk pengguna login dengan Markdown, tombol hapus percakapan, dan panduan kemampuan aplikasi ringkas; memakai Groq dari backend tanpa membaca ulang dokumentasi setiap permintaan |
 
 ## Teknologi
@@ -45,7 +48,9 @@ Project PBNCleaner/
 │   │   │   ├── cleaning.py        # POST /clean/*
 │   │   │   ├── dataset.py         # GET /dataset/:id, GET /export/*
 │   │   │   ├── auth.py            # Login, preferensi, dan endpoint akun web
-│   │   │   └── chat.py            # Endpoint Groq chat terautentikasi
+│   │   │   ├── chat.py            # Endpoint Groq chat terautentikasi
+│   │   │   ├── plt_plh.py         # Monitoring Plt./Plh. dan pencarian pejabat
+│   │   │   └── pelantikan_agenda.py # Agenda Pelantikan dan pembuatan dokumen
 │   │   ├── cleaners/
 │   │   │   ├── pbn.py             # PBN Open mode
 │   │   │   ├── pbn_edu.py         # PBN Open + Edu mode
@@ -69,6 +74,7 @@ Project PBNCleaner/
 │       │   ├── AnalyticsPage.tsx  # /pbn-analytics route
 │       │   ├── InsightHubPage.tsx  # /insights route
 │       │   ├── PltPlhManagementPage.tsx # Monitoring khusus web
+│       │   ├── PelantikanAgendaPage.tsx # Alur agenda khusus web
 │       │   ├── LoginPage.tsx      # Login/registrasi/Guest web
 │       │   └── AdminPage.tsx      # Administrasi akun web
 │       ├── components/
@@ -94,7 +100,8 @@ Project PBNCleaner/
 │       ├── App.tsx                # React Router setup
 │       └── main.tsx               # BrowserRouter wrapper
 │
-├── config.json                    # Centralized config (IP, ports, CORS)
+├── config.json                    # Mode host jaringan dan konfigurasi port terpusat
+├── resolve-network-config.ps1     # Mendeteksi host LAN aktif dan origin CORS
 ├── run-app-testing.bat            # Local dev launcher
 ├── run-app.bat                    # Network deployment launcher
 ├── deploy-windows.ps1             # Environment setup
@@ -132,21 +139,23 @@ Aplikasi tersedia di `http://localhost:5173` dengan routing aktif.
 
 ### 3. Deployment Jaringan
 
-Untuk deployment jaringan, ubah `config.json`. Isi `host` dengan alamat server dan tambahkan URL frontend yang sesuai ke `cors_origins`:
+Deployment jaringan secara bawaan mendeteksi host secara otomatis. Launcher mengutamakan alamat IPv4 Wi-Fi aktif, menggunakannya untuk URL aplikasi/API/CORS, dan memilih port backend kosong berikutnya bila diperlukan. Tidak perlu mengubah IP secara manual. Untuk memakai nama DNS stabil atau alamat reservasi manual, ganti nilai `"auto"` dengan hostname/alamat tersebut di `config.json`.
 
 ```json
 {
-  "host": "YOUR_SERVER_HOST_OR_IP",
+  "host": "auto",
   "backend_port": 8000,
   "frontend_port": 8081,
   "cors_origins": [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://YOUR_SERVER_HOST_OR_IP:8081",
-    "http://YOUR_SERVER_HOST_OR_IP"
+    "http://localhost:8081",
+    "http://127.0.0.1:8081"
   ]
 }
 ```
+
+`resolve-network-config.ps1` mengutamakan adapter Wi-Fi aktif, lalu adapter fisik aktif dengan default route terbaik. Jika DHCP memberikan alamat berbeda, jalankan ulang launcher dan bagikan URL baru yang ditampilkan; config tidak perlu diedit. Jika alamat IPv4 yang dapat dipakai tidak ditemukan, isi `host` secara eksplisit. Launcher jaringan menambahkan origin frontend terpilih ke allowlist CORS backend saat startup. Untuk URL stabil, utamakan reservasi DHCP atau DNS internal daripada menetapkan IP statis yang belum dicadangkan.
 
 Kemudian jalankan perintah berikut dari direktori utama proyek:
 
@@ -167,7 +176,12 @@ Aplikasi menggunakan **React Router v7** untuk navigasi berbasis URL:
 | `/` | LandingPage | Pemilih fitur dengan kartu untuk setiap modul |
 | `/pbn-analytics` | AnalyticsPage | Pembersihan dataset PBN (aktif) |
 | `/insights` | InsightHubPage | Dashboard analitik PBN Open + Edu + HB |
+| `/insights-beta` | InsightHubPage | Analitik PBN Open dari database |
 | `/manajemen-plt-plh` | PltPlhManagementPage | Tabel monitoring Plt./Plh., notifikasi, dan ekspor |
+| `/undangan-pelantikan` | PelantikanAgendaPage | Membuat dan mengelola agenda Pelantikan |
+| `/undangan-pelantikan/:agendaId` | PelantikanAgendaPage | Membuka kembali agenda milik pengguna |
+| `/admin` | AdminPage | Workspace Admin; pengelolaan akun khusus Super Admin |
+| `/login` | LoginPage | Masuk, mendaftar, atau melanjutkan sebagai Guest |
 
 Pengguna dapat menandai rute atau membagikan URL secara langsung untuk membuka fitur tertentu.
 
@@ -193,7 +207,11 @@ VITE_API_URL=http://localhost:8000
 | `GET` | `/export/csv/{id}` | Mengunduh data sebagai CSV |
 | `GET` | `/export/excel/{id}` | Mengunduh data sebagai Excel |
 | `GET` | `/plt-plh/records` | Menampilkan semua record monitoring Plt./Plh. |
-| `POST` / `PUT` / `PATCH` / `DELETE` | `/plt-plh/records` | Membuat, mengubah, mengaktifkan/menonaktifkan, atau menghapus record (memerlukan login Admin atau Super Admin) |
+| `GET` | `/plt-plh/employees?q=...` | Mencari pegawai PBN Open untuk pemilihan pejabat pengganti (Admin atau Super Admin) |
+| `POST` | `/plt-plh/records` | Membuat record (memerlukan login Admin atau Super Admin) |
+| `PUT` | `/plt-plh/records/{record_id}` | Mengubah record (memerlukan login Admin atau Super Admin) |
+| `PATCH` | `/plt-plh/records/{record_id}/active` | Mengaktifkan atau menonaktifkan record (memerlukan login Admin atau Super Admin) |
+| `DELETE` | `/plt-plh/records/{record_id}` | Menghapus record (memerlukan login Admin atau Super Admin) |
 | `GET` | `/plt-plh/notifications` | Menampilkan record aktif yang mencapai ambang notifikasi enam bulan |
 | `GET` | `/plt-plh/records/export` | Mengunduh seluruh record sebagai `.xlsx` |
 | `POST` | `/auth/register` | Mendaftarkan akun User level 1 |
@@ -203,6 +221,11 @@ VITE_API_URL=http://localhost:8000
 | `GET` / `PUT` | `/auth/preferences/theme` | Membaca atau memperbarui tema akun yang sedang masuk |
 | `GET` / `POST` / `PUT` / `DELETE` | `/admin/users` | Mengelola akun (khusus Super Admin) |
 | `POST` | `/chat` | Membuat jawaban chat Groq untuk pengguna yang sudah masuk |
+| `GET` / `POST` | `/undangan-pelantikan/agendas` | Menampilkan agenda pengguna yang masuk atau membuat agenda |
+| `GET` / `PUT` / `DELETE` | `/undangan-pelantikan/agendas/{agenda_id}` | Membaca, memperbarui, atau menghapus agenda milik pengguna |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload` | Mengunggah roster Excel dan mencocokkan NIP dengan PBN Open |
+| `PUT` | `/undangan-pelantikan/agendas/{agenda_id}/people` | Menyimpan pilihan peserta dan moda |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate` | Membuat dokumen undangan berkelompok dalam ZIP |
 
 ### Akun dan peran
 
@@ -249,6 +272,8 @@ Jalankan juga inisialisasi skemanya satu kali:
 ```bash
 mysql -u <user> -p < backend/sql/002_create_plt_plh_monitoring.sql
 ```
+
+Riwayat agenda Pelantikan dan snapshot peserta menggunakan database yang sama. Instalasi baru dapat membuat tabelnya dengan `backend/sql/005_create_pelantikan_agendas.sql`; startup aplikasi juga membuat tabel model dan menambahkan kolom snapshot yang belum tersedia. Pemilihan pejabat pengganti Plt./Plh. membaca tabel `pbncleaner.fetch_pbnopen` yang sudah ada dan menyimpan NIP terpilih pada record monitoring; tidak ada tabel lookup pegawai baru.
 
 Buat juga tabel akun dan sesi:
 

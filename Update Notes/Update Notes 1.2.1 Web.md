@@ -38,8 +38,25 @@ Version 1.2.1 adds the web-only **Generate ND Undangan Pelantikan** workflow. It
 - Application startup adds missing snapshot columns to an existing `pelantikan_agenda_people` table. Fresh database setup is described in `backend/sql/005_create_pelantikan_agendas.sql`.
 - No new frontend or backend dependencies were added.
 
+## Plt./Plh. employee lookup
+
+- Admin and Super Admin can search PBN Open by employee name or NIP when entering the replacement official. Selecting a result fills the name and definitive job title; the selected NIP is stored as a snapshot on the existing monitoring record.
+- Definitive job titles use the shared formatting rule: append the expanded Unit Eselon II only when Eselon is known and not II. Other monitoring fields remain manual.
+- The lookup reuses `pbncleaner.fetch_pbnopen`; no new employee table is required. Fresh monitoring schemas include the nullable NIP field, and startup adds it to existing installations.
+
+## Magnetic toolbar
+
+- Dragging the global clock toolbar snaps it to the nearest screen edge on release.
+- A short transition softens the snap; resizing the browser repositions a manually placed toolbar to keep it aligned and within view.
+
+## Dynamic network host discovery
+
+- Network launch now detects the active Wi-Fi/LAN IPv4 address and uses it for the app URL, frontend API URL, and backend CORS origin.
+- The backend launcher continues to choose the next available port when its configured port is occupied.
+- `config.json` uses `host: "auto"` by default. A hostname or reserved address can still be set as an explicit override; if DHCP later changes the address, restart the launcher and share its updated URL.
+
 ## Implementation and verification
 
 - Frontend: `frontend/src/pages/PelantikanAgendaPage.tsx`, `frontend/src/services/api.ts`, and `frontend/src/types/index.ts`.
 - Backend: `backend/app/api/pelantikan_agenda.py`, `backend/app/services/pelantikan_agenda_service.py`, `backend/app/models/pelantikan_agenda.py`, and `backend/app/schemas/pelantikan_agenda.py`.
-- Verification: all 79 backend tests passed; the frontend production build and focused page lint passed. The build reports the existing advisory for a JavaScript chunk over 500 kB.
+- Verification: 7 focused Plt./Plh. tests and 9 Pelantikan tests passed; toolbar lint and the frontend production build passed. The build reports the existing advisory for a JavaScript chunk over 500 kB. Full backend unittest discovery did not complete under Python 3.14, and the live PBN Open lookup/database migration has not been tested against the production database.

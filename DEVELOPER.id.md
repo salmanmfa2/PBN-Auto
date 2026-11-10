@@ -4,9 +4,9 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 
 ## Cakupan Rilis
 
-- Rilis web saat ini adalah **1.2**. Lihat [catatan pembaruan web](./Update%20Notes/Update%20Notes%201.2%20Web.md) dan [catatan pembaruan desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
+- Rilis web saat ini adalah **1.2.1**. Lihat [catatan pembaruan web](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), [pembaruan web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md), dan [catatan pembaruan desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
 - Navigasi utama desktop hanya berisi PBN Analytics dan Insight Hub serta tidak memiliki sistem login. Menu tambahan dan alur akun hanya berlaku untuk web.
-- Generate ND Undangan Pelantikan dan Analisis Kinerja DJPb masih placeholder di web; versi **2.0** direncanakan sebagai milestone untuk menjadikan keduanya berfungsi.
+- Generate ND Undangan Pelantikan telah berfungsi untuk pengguna web yang masuk. Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi masih placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
 
 ## Gambaran Umum
 
@@ -22,11 +22,12 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - Health check: `GET http://localhost:8000/health`.
 - Frontend:
   - Dari `frontend/`, jalankan `npm install`, kemudian `npm run dev` untuk pengembangan atau `npm run build` untuk build produksi.
-  - Rute tersedia di `http://localhost:5173/`, `/pbn-analytics`, dan `/insights`.
+  - Rute mencakup `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, dan `/undangan-pelantikan`.
 - Menjalankan aplikasi lokal dengan satu klik:
   - Klik dua kali `run-app-testing.bat` dari direktori utama proyek (menjalankan backend dan frontend dengan auto-reload).
 - Menjalankan aplikasi di jaringan dengan satu klik:
-  - Klik dua kali `run-app.bat` dari direktori utama proyek (menggunakan host dan port di `config.json`).
+  - Klik dua kali `run-app.bat` dari direktori utama proyek. Dengan `host: "auto"`, launcher mendeteksi IPv4 Wi-Fi/LAN saat ini, membangun URL API frontend, dan mengatur origin CORS yang sesuai.
+  - Isi `host` di `config.json` dengan hostname atau alamat reservasi untuk mengganti deteksi otomatis.
   - Jika diperlukan, sajikan frontend hasil build dengan `serve-frontend.ps1`.
 
 ## Struktur Repositori (File Penting)
@@ -39,6 +40,8 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `templates/verification/` — workbook format sumber yang digunakan untuk rekomendasi metode pembersihan.
   - `app/api/insights.py` — endpoint dashboard PBN; permintaan filter menghitung ulang agregat dari seluruh dataset.
   - `app/api/insights_beta.py` — endpoint Insight Hub Beta berbasis database untuk `pbncleaner.fetch_pbnopen`.
+  - `app/api/plt_plh.py` — API monitoring Plt./Plh., termasuk pencarian pegawai PBN Open khusus Admin.
+  - `app/api/pelantikan_agenda.py` — API agenda milik pengguna, unggah/pencocokan roster, pilihan peserta, dan pembuatan ZIP.
   - `app/api/auth.py` — endpoint login, pendaftaran, sesi, preferensi pengguna, dan administrasi akun.
   - Router Admin di `auth.py` menyediakan endpoint validasi dan penggantian CSV `pbncleaner.fetch_pbnopen` khusus Super Admin.
   - `app/api/chat.py` — endpoint chat pengguna terautentikasi; kredensial penyedia tetap di backend.
@@ -54,10 +57,15 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `app/history_db.py` — koneksi dan sesi SQLAlchemy MySQL untuk riwayat pembersihan.
   - `app/models/auth.py` — model akun, sesi, dan preferensi pengguna.
   - `app/models/cleaning_history.py` — model SQLAlchemy untuk tabel riwayat pembersihan.
+  - `app/models/plt_plh.py` dan `app/services/plt_plh_service.py` — record monitoring, masa kerja/status, ekspor Excel, dan lookup pejabat pengganti.
+  - `app/models/pelantikan_agenda.py` dan `app/services/pelantikan_agenda_service.py` — snapshot agenda/peserta persisten dan pembuatan DOCX/ZIP.
+  - `app/utils/employee_formatting.py` — pemformatan jabatan definitif bersama untuk alur berbasis pegawai.
   - `app/schemas/pbn_dashboard.py` — skema permintaan filter dashboard.
   - `app/services/history_service.py` — helper pencatatan dan pengambilan riwayat pembersihan.
   - `Cleaning Logic/` — direktori file aturan teks (fallback lama; utamakan cleaner programatis).
   - `sql/001_create_cleaning_history.sql` — skrip inisialisasi MySQL untuk database dan tabel.
+  - `sql/002_create_plt_plh_monitoring.sql` — skema monitoring Plt./Plh., termasuk snapshot NIP opsional.
+  - `sql/005_create_pelantikan_agendas.sql` — skema agenda Pelantikan dan snapshot peserta.
 
 - `frontend/` — aplikasi React + Vite dengan React Router
   - `src/pages/` — komponen halaman untuk setiap rute:
@@ -66,9 +74,11 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
     - `InsightHubPage.tsx` — dashboard interaktif PBN Open + Edu + HB (rute `/insights`).
     - `LoginPage.tsx` / `AdminPage.tsx` — login web dan workspace pengelolaan akun oleh Super Admin.
     - `PltPlhManagementPage.tsx` — UI monitoring khusus web.
+    - `PelantikanAgendaPage.tsx` — UI agenda, pratinjau peserta, dan pembuatan dokumen khusus web.
   - `src/App.tsx` — rute, gerbang sesi/peran, dan pemasangan toolbar/chat bersama.
+  - `frontend/index.html` — judul dokumen browser (`MPK Workspace`).
   - `src/contexts/AuthContext.tsx` — autentikasi, mode Guest, dan status sesi.
-  - `src/components/AppToolbar.tsx` — jam yang dapat digeser, tombol utilitas tersembunyi, menu tema, dan dialog toolbar.
+  - `src/components/AppToolbar.tsx` — jam yang dapat digeser dan menempel ke tepi layar saat dilepas/ukuran layar berubah, tombol utilitas tersembunyi, menu tema, dan dialog toolbar.
   - `src/components/ChatWidget.tsx` — UI Groq chat terautentikasi dan tampilan Markdown.
   - `src/main.tsx` — entry point frontend yang membungkus App dengan `<BrowserRouter>`.
   - `src/hooks/useDataset.ts` — aksi dataset tingkat tinggi dan panggilan API yang digunakan UI.
@@ -76,7 +86,8 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `src/features/cleaning/DataTable.tsx` — komponen tabel untuk halaman; menangani pagination, filter, dan pengurutan.
   - `src/pages/InsightHubPage.tsx` — kontrol dan grafik distribusi dashboard; menerima ID dataset dan nama sheet melalui URL.
 
-- `config.json` — konfigurasi deployment terpusat (IP, port, dan origin CORS), dibaca oleh backend dan skrip PowerShell.
+- `config.json` — konfigurasi deployment terpusat; `host: "auto"` mengaktifkan deteksi alamat LAN dinamis, sedangkan port dan origin CORS loopback tetap dapat diatur.
+- `resolve-network-config.ps1` — resolver host bersama untuk launcher/deployment jaringan; mengutamakan Wi-Fi aktif dan menghitung origin CORS frontend.
 
 ## Aturan Auto-Clean: Cara Kerja dan Penambahan Mode
 
@@ -152,6 +163,23 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 - Cleaner mempertahankan nilai `TMT Jabatan` apa adanya. Dashboard mem-parsing nilai (termasuk teks tanggal dengan apostrof di depan) untuk menghitung masa jabatan tanpa mengubah data hasil pembersihan. Masa jabatan dihitung dalam tahun kalender penuh hingga tanggal saat ini. Baris dengan usia/TMT kosong tetap disertakan pada tampilan rentang penuh dan dikecualikan jika rentang terkait dipersempit.
 - Popup menampilkan `index`, `Nama`, `Eselon`, `Jabatan`, `Pendidikan Terakhir (Th.)`, `Jurusan`, dan `Universitas/Sekolah Tinggi`; `Pendidikan Terakhir (Short)` digunakan jika header pendidikan yang diminta tidak tersedia.
 
+## Lookup Pegawai Plt./Plh.
+
+- Record monitoring disimpan di `plt_plh_monitoring_records`; skema instalasi baru tersedia di `backend/sql/002_create_plt_plh_monitoring.sql`.
+- `GET /plt-plh/employees?q=...` hanya untuk Admin/Super Admin dan mencari nama atau NIP di tabel `pbncleaner.fetch_pbnopen` yang sudah ada. Query memerlukan minimal dua karakter dan mengembalikan maksimal 20 opsi.
+- Saat pegawai dipilih, nama dan jabatan definitif berformat diisikan otomatis serta NIP disimpan sebagai snapshot pada record monitoring. Kolom monitoring lainnya tetap diisi manual.
+- `format_job_with_unit` di `app/utils/employee_formatting.py` juga digunakan oleh pembuatan dokumen Pelantikan. Unit Eselon II yang telah diformalkan hanya ditambahkan jika Eselon diketahui dan bukan II.
+- `init_history_db()` menambahkan kolom nullable `pejabat_pengganti_nip` pada tabel monitoring lama. Jangan membuat tabel pegawai kedua atau migrasi skema lookup terpisah.
+
+## Alur Agenda Pelantikan
+
+- Rute web khusus adalah `/undangan-pelantikan`; `/undangan-pelantikan/:agendaId` membuka kembali agenda. Setiap API agenda memerlukan pengguna yang sudah masuk dan memeriksa kepemilikan agenda.
+- Agenda dan snapshot peserta disimpan di `pelantikan_agendas` dan `pelantikan_agenda_people`. Gunakan `backend/sql/005_create_pelantikan_agendas.sql` untuk instalasi baru; startup membuat tabel model dan menambahkan kolom snapshot yang belum ada pada instalasi lama.
+- Pilihan level jabatan adalah Administrator dan Tinggi Pratama. Pilihan dresscode adalah Wastra Nusantara, PSL Lengkap, atau nilai khusus dari pengguna. Hitung mundur kartu menggunakan tanggal Jakarta dan menampilkan Berakhir untuk tanggal lampau.
+- Unggah roster menerima `.xlsx` dan `.xls` hingga 50 MB. NIP dicocokkan dengan `pbncleaner.fetch_pbnopen`; peserta terpilih dan moda Daring/Luring dapat ditinjau sebelum pembuatan dokumen.
+- Workbook sumber dan dokumen yang dihasilkan tidak disimpan. Agenda dan snapshot peserta tetap tersimpan agar pemilik dapat melanjutkan proses; unggahan ulang mengganti snapshot peserta pada agenda tersebut.
+- Dokumen DOCX dikelompokkan berdasarkan Unit Eselon II dan moda, lalu diunduh bersama dalam ZIP. Jaga konsistensi penulisan penerima serta aturan jabatan pada `pelantikan_agenda_service.py` dan `employee_formatting.py`.
+
 ## Arsitektur Frontend untuk Pengembang Pemula
 
 - Aplikasi menggunakan **React Router v7** dengan setiap halaman sebagai komponen rute terpisah di `src/pages/`.
@@ -224,10 +252,10 @@ cd frontend
 npm install
 npm run dev                # Opens at http://localhost:5173
 ```
-- Deployment jaringan (membaca IP/port dari config.json):
+- Deployment jaringan (mendeteksi host LAN aktif dan membaca port dari config.json):
 ```
 run-app-testing.bat        # Local dev (backend with --reload)
-run-app.bat                # Network deployment (configure config.json first)
+run-app.bat                # Deployment jaringan (deteksi host otomatis; config.json tetap bisa dioverride)
 ```
 - Pemeriksaan build:
 ```
@@ -249,8 +277,8 @@ npm run build              # TypeScript check + Vite build to dist/
 
 ## Cakupan Saat Ini dan Milestone Berikutnya
 
-- **Web 1.2:** PBN Analytics, Insight Hub, akun dan kontrol akses berbasis peran, workspace Admin, monitoring Plt./Plh., preferensi tema tersimpan per pengguna, toolbar utilitas ringkas, dan Groq chat untuk pengguna login.
-- **Placeholder web:** Generate ND Undangan Pelantikan dan Analisis Kinerja DJPb saat ini hanya menampilkan “On development”; alur kerja sesuai namanya belum tersedia.
+- **Web 1.2.1:** PBN Analytics, Insight Hub, akun dan kontrol akses berbasis peran, workspace Admin, monitoring Plt./Plh. dengan lookup pegawai dari PBN Open, agenda dan pembuatan undangan Pelantikan, preferensi tema tersimpan per pengguna, toolbar yang menempel ke tepi layar, dan Groq chat untuk pengguna login.
+- **Placeholder web:** Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi belum menjalankan alur kerja sesuai namanya.
 - **Milestone versi 2.0:** Menjadikan alur kerja placeholder tersebut berfungsi setelah kebutuhannya ditentukan. Jangan menganggap versi 2.0 sudah diimplementasikan.
 - **Desktop:** Menu navigasi utamanya hanya PBN Analytics dan Insight Hub; tidak ada login desktop, workspace Admin, atau menu placeholder web.
 - DatasetStore masih menggunakan memori dan akan kosong setelah backend dimulai ulang. Persistensi dataset ke database perlu dirancang terpisah jika diminta.
