@@ -1,25 +1,345 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as apiClient from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { PltPlhMonitoringRecord } from '../types';
-import logoAnalysis from '../assets/logo_analysis.png';
-import logoBrain from '../assets/logo_brain.png';
-import logoPelantikan from '../assets/pelantikan.png';
-import logoPerformance from '../assets/performance.png';
-import logoMutasi from '../assets/mutasi.png';
 
+type FeatureGroup = 'Analytics & Insight' | 'Operasional' | 'Administrasi';
+type FeatureStatus = 'ready' | 'beta' | 'dev';
+type FeatureIconName =
+  | 'analytics'
+  | 'insight'
+  | 'dashboard'
+  | 'people'
+  | 'document'
+  | 'performance'
+  | 'folder'
+  | 'transfer'
+  | 'admin';
 
-const features = [
-  { key: 'analytics', title: 'PBN Analytics', image: logoAnalysis, subtitle: 'Upload, clean, export, dan generation Bahan Mutasi', path: '/pbn-analytics', color: 'text-emerald-300' },
-  { key: 'insights', title: 'Insight Hub (On Development)', image: logoBrain, subtitle: 'PBN Open + Edu + HB dashboard', path: '/insights', color: 'text-sky-300' },
-  { key: 'insights-beta', title: 'Insight Hub Beta', image: logoBrain, subtitle: 'Employee dashboard from the PBN database', path: '/insights-beta', color: 'text-cyan-300' },
-  { key: 'plt-plh', title: 'Manajemen Plt./Plh.', subtitle: 'Monitoring penugasan Plt. pejabat', path: '/manajemen-plt-plh', color: 'text-violet-300' },
-  { key: 'nd-undangan', title: 'Generate ND Undangan Pelantikan', image: logoPelantikan, subtitle: 'Generate nota dinas undangan pelantikan', color: 'text-amber-300', placeholder: true },
-  { key: 'analisis-kinerja', title: 'Analisis Kinerja DJPb', image: logoPerformance, subtitle: 'Analisis kinerja DJPb', color: 'text-cyan-300', placeholder: true },
-  { key: 'progress-bahan', title: 'Bahan Pendukung MPK', subtitle: 'Library Bahan, dan Monitoring progress bahan ', color: 'text-rose-300', placeholder: true },
-  { Key: 'simulasi-mutasi', title: 'Simulasi Mutasi', subtitle: 'Simulasi mutasi DJPb', color: 'text-fuchsia-300',image:logoMutasi, placeholder: true },
+type Feature = {
+  key: string;
+  title: string;
+  subtitle: string;
+  group: FeatureGroup;
+  status: FeatureStatus;
+  icon: FeatureIconName;
+  path?: string;
+  placeholder?: boolean;
+  adminOnly?: boolean;
+};
+
+const features: Feature[] = [
+  {
+    key: 'analytics',
+    title: 'PBN Analytics',
+    subtitle: 'Unggah, bersihkan, ekspor, dan buat bahan mutasi',
+    group: 'Analytics & Insight',
+    status: 'ready',
+    icon: 'analytics',
+    path: '/pbn-analytics',
+  },
+  {
+    key: 'insights',
+    title: 'Insight Hub',
+    subtitle: 'Dasbor PBN Open + Edu + HB',
+    group: 'Analytics & Insight',
+    status: 'dev',
+    icon: 'insight',
+    path: '/insights',
+  },
+  {
+    key: 'insights-beta',
+    title: 'Insight Hub Beta',
+    subtitle: 'Dasbor pegawai dari basis data PBN',
+    group: 'Analytics & Insight',
+    status: 'beta',
+    icon: 'dashboard',
+    path: '/insights-beta',
+  },
+  {
+    key: 'analisis-kinerja',
+    title: 'Analisis Kinerja DJPb',
+    subtitle: 'Analisis kinerja DJPb',
+    group: 'Analytics & Insight',
+    status: 'dev',
+    icon: 'performance',
+    placeholder: true,
+  },
+  {
+    key: 'plt-plh',
+    title: 'Manajemen Plt./Plh.',
+    subtitle: 'Pemantauan penugasan Plt. pejabat',
+    group: 'Operasional',
+    status: 'ready',
+    icon: 'people',
+    path: '/manajemen-plt-plh',
+  },
+  {
+    key: 'nd-undangan',
+    title: 'Generate ND Undangan Pelantikan',
+    subtitle: 'Buat nota dinas undangan pelantikan',
+    group: 'Operasional',
+    status: 'dev',
+    icon: 'document',
+    placeholder: true,
+  },
+  {
+    key: 'progress-bahan',
+    title: 'Bahan Pendukung MPK',
+    subtitle: 'Pustaka bahan dan pemantauan progres',
+    group: 'Operasional',
+    status: 'dev',
+    icon: 'folder',
+    placeholder: true,
+  },
+  {
+    key: 'simulasi-mutasi',
+    title: 'Simulasi Mutasi',
+    subtitle: 'Simulasi mutasi DJPb',
+    group: 'Operasional',
+    status: 'dev',
+    icon: 'transfer',
+    placeholder: true,
+  },
+  {
+    key: 'admin',
+    title: 'Admin',
+    subtitle: 'Pengelolaan akun dan data',
+    group: 'Administrasi',
+    status: 'ready',
+    icon: 'admin',
+    path: '/admin',
+    adminOnly: true,
+  },
 ];
+
+const groups: FeatureGroup[] = ['Analytics & Insight', 'Operasional', 'Administrasi'];
+const featureKeys = new Set(features.map((feature) => feature.key));
+const FAVORITES_STORAGE_KEY = 'pbn.landing.favorites';
+const RECENT_STORAGE_KEY = 'pbn.landing.recent';
+
+function getWibGreeting(): string {
+  const hour = Number(new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    hourCycle: 'h23',
+    timeZone: 'Asia/Jakarta',
+  }).format(new Date()));
+
+  if (hour >= 4 && hour < 11) return 'Selamat pagi';
+  if (hour >= 11 && hour < 15) return 'Selamat siang';
+  if (hour >= 15 && hour < 18) return 'Selamat sore';
+  return 'Selamat malam';
+}
+
+function readStoredKeys(storageKey: string): { keys: string[]; error: string | null } {
+  try {
+    const storedValue = window.localStorage.getItem(storageKey);
+    if (!storedValue) return { keys: [], error: null };
+
+    const parsed: unknown = JSON.parse(storedValue);
+    if (!Array.isArray(parsed)) {
+      throw new Error('Format preferensi tidak valid.');
+    }
+
+    const keys = parsed.filter(
+      (key): key is string => typeof key === 'string' && featureKeys.has(key),
+    );
+    return { keys: [...new Set(keys)], error: null };
+  } catch (error) {
+    return {
+      keys: [],
+      error: `Preferensi menu tidak dapat dimuat: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+function FeatureIcon({ name, className }: { name: FeatureIconName; className?: string }) {
+  const paths: Record<FeatureIconName, ReactNode> = {
+    analytics: (
+      <>
+        <path d="M4 19.5h16M6.5 16V10m5.5 6V5m5.5 11v-4" />
+        <path d="M5 8.5l5-4 5 4 4-3" />
+      </>
+    ),
+    insight: (
+      <>
+        <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z" />
+        <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15zM5 2l.7 2.3L8 5l-2.3.7L5 8l-.7-2.3L2 5l2.3-.7L5 2z" />
+      </>
+    ),
+    dashboard: (
+      <>
+        <rect x="3" y="3" width="8" height="8" rx="1.5" />
+        <rect x="13" y="3" width="8" height="5" rx="1.5" />
+        <rect x="13" y="10" width="8" height="11" rx="1.5" />
+        <rect x="3" y="13" width="8" height="8" rx="1.5" />
+      </>
+    ),
+    people: (
+      <>
+        <path d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+        <circle cx="10" cy="7" r="4" />
+        <path d="M20 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+      </>
+    ),
+    document: (
+      <>
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+        <path d="M14 2v6h6M8 13h8M8 17h8" />
+      </>
+    ),
+    performance: (
+      <>
+        <path d="M4 19.5h16M6.5 16v-3m5.5 3V6m5.5 10V9" />
+        <path d="M5 9l5-4 5 2 4-4" />
+      </>
+    ),
+    folder: (
+      <path d="M3 6a2 2 0 012-2h5l2 2h7a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V6zM3 9h18" />
+    ),
+    transfer: (
+      <>
+        <path d="M7 7h13l-3-3M17 17H4l3 3" />
+        <path d="M20 7l-3 3M4 17l3-3" />
+      </>
+    ),
+    admin: (
+      <>
+        <path d="M12 3l8 3v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-3z" />
+        <path d="M9 12l2 2 4-4" />
+      </>
+    ),
+  };
+
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name]}
+    </svg>
+  );
+}
+
+function StatusBadge({ feature }: { feature: Feature }) {
+  if (feature.adminOnly) {
+    return <span className="badge shrink-0 border border-surface-700 bg-surface-800 text-slate-300">Admin only</span>;
+  }
+  if (feature.status === 'beta') {
+    return <span className="badge shrink-0 border border-brand-500/30 bg-brand-500/10 text-slate-300">Beta</span>;
+  }
+  if (feature.status === 'dev') {
+    return <span className="badge shrink-0 border border-surface-700 bg-surface-800 text-slate-400">On development</span>;
+  }
+  return null;
+}
+
+function QuickAccessButton({ feature, onOpen }: { feature: Feature; onOpen: (feature: Feature) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(feature)}
+      className="flex min-w-0 items-center gap-2 rounded-xl border border-surface-700 bg-surface-900 px-3 py-2 text-left transition hover:border-brand-500/40 hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 motion-reduce:transition-none"
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-slate-200">
+        <FeatureIcon name={feature.icon} className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 whitespace-normal break-words text-sm font-medium text-slate-200">{feature.title}</span>
+    </button>
+  );
+}
+
+function FeatureCard({
+  feature,
+  notificationCount,
+  isFavorite,
+  index,
+  onOpen,
+  onToggleFavorite,
+}: {
+  feature: Feature;
+  notificationCount: number;
+  isFavorite: boolean;
+  index: number;
+  onOpen: (feature: Feature) => void;
+  onToggleFavorite: (feature: Feature) => void;
+}) {
+  const borderGradient = feature.status === 'dev'
+    ? 'bg-gradient-to-br from-surface-700/70 via-surface-700/30 to-surface-700/50'
+    : 'bg-gradient-to-br from-brand-500/40 via-surface-700/40 to-brand-900/30';
+
+  return (
+    <article
+      className={`group/card animate-fade-in-up rounded-2xl p-px transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-900/20 motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:transform-none ${borderGradient}`}
+      style={{ animationDelay: `${index * 55}ms` }}
+    >
+      <div className="flex min-h-[112px] items-stretch rounded-[15px] bg-surface-900">
+        <button
+          type="button"
+          onClick={() => onOpen(feature)}
+          className="group flex min-w-0 flex-1 items-center gap-3 rounded-l-[15px] px-3 py-4 text-left focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400 sm:gap-4 sm:px-4"
+        >
+          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-500/10 ${feature.status === 'dev' ? 'text-slate-400' : 'text-slate-200'}`}>
+            <FeatureIcon name={feature.icon} className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="min-w-0 whitespace-normal break-words text-sm font-semibold leading-snug text-slate-100">{feature.title}</span>
+              <StatusBadge feature={feature} />
+              {feature.key === 'plt-plh' && (
+                <span
+                  className="badge shrink-0 border border-surface-700 bg-surface-800 text-slate-300"
+                  aria-label={`${notificationCount} notifikasi`}
+                >
+                  {notificationCount}
+                </span>
+              )}
+            </span>
+            <span className="mt-1 block truncate text-xs text-slate-400">{feature.subtitle}</span>
+          </span>
+          <svg
+            className="h-5 w-5 shrink-0 text-slate-400 transition-transform group-hover:translate-x-1 group-hover:text-slate-200 motion-reduce:transition-none"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-6-6l6 6-6 6" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => onToggleFavorite(feature)}
+          aria-label={isFavorite ? `Lepas sematan ${feature.title}` : `Sematkan ${feature.title}`}
+          aria-pressed={isFavorite}
+          title={isFavorite ? 'Lepas sematan' : 'Sematkan menu'}
+          className="flex w-11 shrink-0 items-center justify-center rounded-r-[15px] text-slate-400 transition hover:bg-surface-800 hover:text-slate-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400 motion-reduce:transition-none sm:w-12"
+        >
+          <svg
+            className="h-5 w-5"
+            fill={isFavorite ? 'currentColor' : 'none'}
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3z" />
+          </svg>
+        </button>
+      </div>
+    </article>
+  );
+}
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -27,15 +347,17 @@ export default function LandingPage() {
   const [notifications, setNotifications] = useState<PltPlhMonitoringRecord[]>([]);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [developmentMenu, setDevelopmentMenu] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!developmentMenu) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setDevelopmentMenu(null);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [developmentMenu]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [initialPreferences] = useState(() => ({
+    favorites: readStoredKeys(FAVORITES_STORAGE_KEY),
+    recent: readStoredKeys(RECENT_STORAGE_KEY),
+  }));
+  const [favoriteKeys, setFavoriteKeys] = useState(initialPreferences.favorites.keys);
+  const [recentKeys, setRecentKeys] = useState(initialPreferences.recent.keys);
+  const [storageError, setStorageError] = useState<string | null>(
+    initialPreferences.favorites.error ?? initialPreferences.recent.error,
+  );
 
   useEffect(() => {
     apiClient.getPltPlhNotifications()
@@ -45,82 +367,216 @@ export default function LandingPage() {
       });
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (developmentMenu) {
+          setDevelopmentMenu(null);
+          return;
+        }
+        if (searchQuery) {
+          setSearchQuery('');
+          return;
+        }
+      }
+
+      const target = event.target;
+      const isEditable = target instanceof HTMLElement
+        && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+      if (event.key === '/' && !event.altKey && !event.ctrlKey && !event.metaKey && !isEditable) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [developmentMenu, searchQuery]);
+
+  const availableFeatures = features.filter(
+    (feature) => !feature.adminOnly || (user?.auth_level ?? 0) >= 2,
+  );
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase('id-ID');
+  const visibleFeatures = availableFeatures.filter((feature) => (
+    !normalizedQuery
+    || `${feature.title} ${feature.subtitle}`.toLocaleLowerCase('id-ID').includes(normalizedQuery)
+  ));
+  const visibleRecent = recentKeys
+    .map((key) => visibleFeatures.find((feature) => feature.key === key))
+    .filter((feature): feature is Feature => Boolean(feature));
+  const visibleFavorites = visibleFeatures.filter((feature) => favoriteKeys.includes(feature.key));
+
+  const persistKeys = (storageKey: string, keys: string[]) => {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(keys));
+      setStorageError(null);
+    } catch (error) {
+      setStorageError(`Preferensi menu tidak dapat disimpan: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const openFeature = (feature: Feature) => {
+    if (feature.placeholder) {
+      setDevelopmentMenu(feature.title);
+      return;
+    }
+    if (!feature.path) return;
+
+    const nextRecent = [feature.key, ...recentKeys.filter((key) => key !== feature.key)].slice(0, 3);
+    setRecentKeys(nextRecent);
+    persistKeys(RECENT_STORAGE_KEY, nextRecent);
+    navigate(feature.path);
+  };
+
+  const toggleFavorite = (feature: Feature) => {
+    const nextFavorites = favoriteKeys.includes(feature.key)
+      ? favoriteKeys.filter((key) => key !== feature.key)
+      : [...favoriteKeys, feature.key];
+    setFavoriteKeys(nextFavorites);
+    persistKeys(FAVORITES_STORAGE_KEY, nextFavorites);
+  };
+
+  const greetingName = user?.name?.trim() || 'Guest';
+  let animationIndex = 0;
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-950 px-6 py-10 text-slate-100">
-      <div className="w-full max-w-2xl pt-12">
-        <div className="mb-8">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Working Utilities</p>
-          <h1 className="text-3xl font-semibold text-white md:text-4xl">Pilih menu</h1>
+    <main className="relative isolate min-h-screen overflow-hidden bg-surface-900 px-4 pb-14 pt-28 text-slate-100 sm:px-6 sm:pt-28">
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-brand-900/15 via-transparent to-brand-500/10"
+        aria-hidden="true"
+      />
+      <div className="mx-auto w-full max-w-6xl">
+        <header className="mb-7">
+          <p className="mb-3 text-sm font-medium text-slate-300">
+            {getWibGreeting()}, {greetingName}
+          </p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Working Utilities</p>
+          <h1 className="text-3xl font-semibold text-slate-100 md:text-4xl">Pilih menu</h1>
           <p className="mt-3 text-sm text-slate-400">Pilih fungsi yang ingin Anda gunakan.</p>
-        </div>
+        </header>
 
         {notifications.length > 0 && (
           <button
             type="button"
-            onClick={() => navigate('/manajemen-plt-plh')}
-            className="mb-5 flex w-full items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-left transition hover:bg-amber-500/15 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            onClick={() => openFeature(features.find((feature) => feature.key === 'plt-plh')!)}
+            className="mb-4 flex w-full items-center gap-3 rounded-xl border border-brand-500/30 bg-brand-500/10 px-4 py-3 text-left transition hover:bg-brand-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 motion-reduce:transition-none"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-amber-300">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-slate-200">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 9v4m0 4h.01M10.3 3.95L2.8 17a2 2 0 001.73 3h14.94a2 2 0 001.73-3l-7.5-13.05a2 2 0 00-3.4 0z" />
               </svg>
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold text-amber-200">Notifikasi Manajemen Plt./Plh.</span>
-              <span className="mt-0.5 block text-xs text-amber-100/70">
+              <span className="block text-sm font-semibold text-slate-100">Notifikasi Manajemen Plt./Plh.</span>
+              <span className="mt-0.5 block text-xs text-slate-300">
                 {notifications.length} record perlu diperhatikan — buka monitoring
               </span>
             </span>
-            <span className="text-lg text-amber-300" aria-hidden="true">→</span>
+            <span className="text-lg text-slate-200" aria-hidden="true">→</span>
           </button>
         )}
         {notificationError && (
-          <div role="alert" className="mb-5 rounded-lg border border-rose-700/50 bg-rose-900/20 px-4 py-3 text-xs text-rose-200">
+          <div role="alert" className="mb-4 rounded-lg border border-brand-500/40 bg-surface-800 px-4 py-3 text-sm text-slate-200">
             Notifikasi Plt./Plh. tidak dapat dimuat: {notificationError}
           </div>
         )}
+        {storageError && (
+          <div role="alert" className="mb-4 rounded-lg border border-brand-500/40 bg-surface-800 px-4 py-3 text-sm text-slate-200">
+            {storageError}
+          </div>
+        )}
 
-        <div className="space-y-2">
-          {[
-            ...features,
-            ...(user && user.auth_level >= 2
-              ? [{ key: 'admin', title: 'Admin', subtitle: 'Pengelolaan akun dan data', path: '/admin', color: 'text-amber-300' }]
-              : []),
-          ].map((feature) => (
-            <button
-              key={feature.key}
-              type="button"
-              onClick={() => {
-                if ('placeholder' in feature && feature.placeholder) {
-                  setDevelopmentMenu(feature.title);
-                  return;
-                }
-                if ('path' in feature && feature.path) navigate(feature.path);
-              }}
-              className="group flex w-full items-center gap-4 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3.5 text-left transition hover:border-slate-700 hover:bg-slate-800/80 focus:outline-none focus:ring-2 focus:ring-brand-400"
-            >
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 ${feature.color}`}>
-                {feature.image ? (
-                  <img src={feature.image} alt="" className="h-6 w-6 object-contain" />
-                ) : feature.key === 'admin' ? (
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 3l8 3v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-3zm-3 9l2 2 4-4" />
-                  </svg>
-                ) : (
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2zM8 7h8M8 11h8" />
-                  </svg>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold text-slate-100">{feature.title}</h2>
-                <p className="mt-0.5 text-xs text-slate-400">{feature.subtitle}</p>
-              </div>
-              <span className="text-lg text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-slate-200" aria-hidden="true">→</span>
-            </button>
-          ))}
-        </div>
+        <label className="relative mb-7 block">
+          <span className="sr-only">Cari menu berdasarkan nama atau deskripsi</span>
+          <svg
+            className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path strokeLinecap="round" d="M20 20l-4-4" />
+          </svg>
+          <input
+            ref={searchInputRef}
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Cari menu…"
+            className="input h-11 pl-10 pr-14 focus-visible:ring-2 focus-visible:ring-brand-400"
+          />
+          <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-surface-700 bg-surface-800 px-1.5 py-0.5 text-xs text-slate-400">
+            /
+          </kbd>
+        </label>
+
+        {visibleRecent.length > 0 && (
+          <section aria-labelledby="recent-heading" className="mb-7">
+            <h2 id="recent-heading" className="mb-3 text-sm font-semibold text-slate-200">Terakhir dibuka</h2>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {visibleRecent.map((feature) => (
+                <QuickAccessButton key={feature.key} feature={feature} onOpen={openFeature} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {visibleFavorites.length > 0 && (
+          <section aria-labelledby="favorites-heading" className="mb-7">
+            <h2 id="favorites-heading" className="mb-3 text-sm font-semibold text-slate-200">Menu disematkan</h2>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {visibleFavorites.map((feature) => (
+                <QuickAccessButton key={feature.key} feature={feature} onOpen={openFeature} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {visibleFeatures.length === 0 ? (
+          <div className="rounded-2xl border border-surface-700 bg-surface-900 px-5 py-10 text-center">
+            <p className="text-sm font-medium text-slate-200">Tidak ada menu yang cocok.</p>
+            <p className="mt-1 text-sm text-slate-400">Coba kata kunci lain.</p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {groups.map((group) => {
+              const groupFeatures = visibleFeatures.filter((feature) => feature.group === group);
+              if (groupFeatures.length === 0) return null;
+
+              return (
+                <section key={group} aria-labelledby={`group-${group.replace(/\W+/g, '-').toLowerCase()}`}>
+                  <h2
+                    id={`group-${group.replace(/\W+/g, '-').toLowerCase()}`}
+                    className="mb-3 text-sm font-semibold text-slate-300"
+                  >
+                    {group}
+                  </h2>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    {groupFeatures.map((feature) => {
+                      const index = animationIndex;
+                      animationIndex += 1;
+                      return (
+                        <FeatureCard
+                          key={feature.key}
+                          feature={feature}
+                          notificationCount={notifications.length}
+                          isFavorite={favoriteKeys.includes(feature.key)}
+                          index={index}
+                          onOpen={openFeature}
+                          onToggleFavorite={toggleFavorite}
+                        />
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
       </div>
+
       {developmentMenu && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/75 p-4"
@@ -130,21 +586,26 @@ export default function LandingPage() {
           }}
         >
           <section
-            className="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl"
+            className="w-full max-w-sm rounded-xl border border-surface-700 bg-surface-900 p-6 text-center shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="landing-development-title"
           >
-            <h2 id="landing-development-title" className="text-lg font-semibold text-white">
+            <h2 id="landing-development-title" className="text-lg font-semibold text-slate-100">
               On development
             </h2>
             <p className="mt-2 text-sm text-slate-400">{developmentMenu}</p>
-            <button type="button" onClick={() => setDevelopmentMenu(null)} className="btn-secondary mt-5" autoFocus>
+            <button
+              type="button"
+              onClick={() => setDevelopmentMenu(null)}
+              className="btn-secondary mt-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+              autoFocus
+            >
               Tutup
             </button>
           </section>
         </div>
       )}
-    </div>
+    </main>
   );
 }
