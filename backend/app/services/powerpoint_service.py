@@ -21,6 +21,7 @@ from app.storage.dataset_store import DatasetStore
 TEMPLATE_PATHS = {
     "Sitasi Es.III": Path(__file__).resolve().parents[2] / "templates" / "template.pptx",
     "Sitasi Es.III (3-row)": Path(__file__).resolve().parents[2] / "templates" / "template_3 Row.pptx",
+    "Baperjakat": Path(__file__).resolve().parents[2] / "templates" / "combined_tempalate.pptx",
     "Sitasi Es.III (Lite)": Path(__file__).resolve().parents[2] / "templates" / "template.pptx",
     "Sitasi Es.IV": Path(__file__).resolve().parents[2] / "templates" / "template_es4.pptx",
 }
@@ -129,6 +130,119 @@ def build_sitasi_profiles(
                 _set_cell_text(table.cell(table_row, column_index), value)
         _center_table_columns(table, template_layout["centered_columns"])
 
+    output = BytesIO()
+    presentation.save(output)
+    return output.getvalue()
+
+
+def build_baperjakat_profiles(
+    dataset_id: str,
+    sheet_name: str,
+    filters: dict[str, Any] | None = None,
+) -> bytes:
+    template_path = TEMPLATE_PATHS["Baperjakat"]
+    if not template_path.is_file():
+        raise FileNotFoundError(f"PowerPoint template not found: {template_path}")
+
+    sheets = DatasetStore.get(dataset_id)
+    if sheets is None:
+        raise KeyError(f"Dataset '{dataset_id}' not found. Please upload a file first.")
+    if sheet_name not in sheets:
+        raise KeyError(f"Sheet '{sheet_name}' not found.")
+
+    source = sheets[sheet_name]
+    category_column = next(
+        (column for column in source.columns if str(column).strip().casefold() == "kategori"),
+        None,
+    )
+    if category_column is None:
+        raise ValueError("The selected sheet must contain a Kategori column.")
+
+    filters_without_category = {
+        column: values
+        for column, values in (filters or {}).items()
+        if str(column).strip().casefold() != "kategori"
+    }
+    dataframe = filter_dataframe(source, filters_without_category)
+    categories = dataframe[category_column].map(
+        lambda value: "" if value is None or pd.isna(value) else str(value).strip().casefold()
+    )
+    mutasi_records = dataframe.loc[categories == "mutasi"].to_dict(orient="records")
+    promosi_records = dataframe.loc[categories == "promosi"].to_dict(orient="records")
+    if not mutasi_records:
+        raise ValueError("No Mutasi records match the selected filters.")
+    if not promosi_records:
+        raise ValueError("No Promosi records match the selected filters.")
+
+    presentation = Presentation(str(template_path))
+    if len(presentation.slides) != 2:
+        raise ValueError("The combined Baperjakat template must contain exactly two starter slides.")
+
+    category_specs = (
+        (presentation.slides[0], mutasi_records, 4, "Mutasi", 1),
+        (presentation.slides[1], promosi_records, 3, "Promosi", 2),
+    )
+    ordered_slides = []
+    for template_slide, records, people_per_slide, category_name, initial_page_number in category_specs:
+        category_number = 0
+        table = _get_profile_table(template_slide)
+        if len(table.columns) != len(ESIII_COLUMN_ALIASES):
+            raise ValueError(
+                f"The {category_name} Baperjakat template table must have exactly "
+                f"{len(ESIII_COLUMN_ALIASES)} columns."
+            )
+        if len(table.rows) != 3 + people_per_slide:
+            raise ValueError(
+                f"The {category_name} Baperjakat template must have three header rows "
+                f"and space for {people_per_slide} people."
+            )
+
+        for page_number, start in enumerate(range(0, len(records), people_per_slide), start=1):
+            slide = (
+                template_slide
+                if page_number == 1
+                else _duplicate_slide(presentation, template_slide)
+            )
+            table = _get_profile_table(slide)
+            current_page_number = initial_page_number if page_number == 1 else 1
+            _set_slide_number(slide, page_number, current_page_number)
+            for table_row in range(3, len(table.rows)):
+                record_index = start + table_row - 3
+                if record_index >= len(records):
+                    values = [""] * len(ESIII_COLUMN_ALIASES)
+                    is_pendamping = False
+                else:
+                    record = records[record_index]
+                    values = _record_values(record, ESIII_COLUMN_ALIASES)
+                    original_number = next(
+                        (
+                            value
+                            for column, value in record.items()
+                            if str(column).strip().casefold() in {"index", "no"}
+                        ),
+                        None,
+                    )
+                    preserved_label = _display_value(original_number).strip().casefold()
+                    is_pendamping = category_name == "Promosi" and preserved_label in {
+                        "pendamping i",
+                        "pendamping ii",
+                    }
+                    if is_pendamping:
+                        values[0] = _display_value(original_number).strip()
+                    else:
+                        category_number += 1
+                        values[0] = str(category_number)
+                for column_index, value in enumerate(values):
+                    cell = table.cell(table_row, column_index)
+                    _set_cell_text(cell, value)
+                    if is_pendamping and column_index == 0:
+                        cell._tc.get_or_add_tcPr().set("vert", "vert270")
+                    elif category_name == "Promosi" and column_index == 0:
+                        cell._tc.get_or_add_tcPr().attrib.pop("vert", None)
+            _center_table_columns(table, (2, 3, 4, 6, 7))
+            ordered_slides.append(slide)
+
+    _reorder_slides(presentation, ordered_slides)
     output = BytesIO()
     presentation.save(output)
     return output.getvalue()
@@ -373,9 +487,9 @@ def _center_table_columns(table, column_indices: tuple[int, ...]) -> None:
                 paragraph.alignment = PP_ALIGN.CENTER
 
 
-def _set_slide_number(slide: Slide, page_number: int) -> None:
+def _set_slide_number(slide: Slide, page_number: int, current_page_number: int = 1) -> None:
     for shape in slide.shapes:
-        if shape.has_text_frame and shape.text.strip() == "1":
+        if shape.has_text_frame and shape.text.strip() == str(current_page_number):
             paragraph = shape.text_frame.paragraphs[0]
             if paragraph.runs:
                 paragraph.runs[0].text = str(page_number)
@@ -394,3 +508,16 @@ def _duplicate_slide(presentation: Presentation, source_slide: Slide) -> Slide:
     for element in list(source_tree)[2:]:
         new_tree.insert_element_before(deepcopy(element), "p:extLst")
     return new_slide
+
+
+def _reorder_slides(presentation: Presentation, ordered_slides: list[Slide]) -> None:
+    slide_id_list = presentation.slides._sldIdLst
+    slide_ids_by_part = {
+        presentation.part.related_part(slide_id.rId): slide_id
+        for slide_id in slide_id_list
+    }
+    ordered_slide_ids = [slide_ids_by_part[slide.part] for slide in ordered_slides]
+    for slide_id in list(slide_id_list):
+        slide_id_list.remove(slide_id)
+    for slide_id in ordered_slide_ids:
+        slide_id_list.append(slide_id)

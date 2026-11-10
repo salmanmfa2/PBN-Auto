@@ -143,25 +143,12 @@ export default function AnalyticsPage() {
       Object.entries(tableFilters).filter(([column]) => column.trim().toLowerCase() !== 'kategori'),
     );
     try {
-      const mutasiPresentation = await apiClient.generatePowerPoint(
+      const presentation = await apiClient.generateBaperjakatPowerPoint(
         preview.dataset_id,
-        'Sitasi Es.III',
         preview.selected_sheet,
-        { ...filtersWithoutCategory, [categoryColumn]: ['Mutasi'] },
-        'standard',
+        filtersWithoutCategory,
       );
-      const promosiPresentation = await apiClient.generatePowerPoint(
-        preview.dataset_id,
-        'Sitasi Es.III',
-        preview.selected_sheet,
-        { ...filtersWithoutCategory, [categoryColumn]: ['Promosi'] },
-        'three-row',
-      );
-      const combinedPresentation = await apiClient.combinePowerPoints([
-        mutasiPresentation,
-        promosiPresentation,
-      ]);
-      apiClient.downloadCombinedPowerPoint(combinedPresentation, 'bahan_baperjakat.pptx');
+      apiClient.downloadCombinedPowerPoint(presentation, 'bahan_baperjakat.pptx');
     } catch (generationError) {
       setBahanBaperjakatError(
         generationError instanceof Error ? generationError.message : String(generationError),

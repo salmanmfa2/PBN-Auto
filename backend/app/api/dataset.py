@@ -147,6 +147,31 @@ async def merge_sitasi_profiles(files: list[UploadFile] = File(...)):
     )
 
 
+@router.post("/export/powerpoint/baperjakat/{dataset_id}")
+def export_baperjakat_profiles(
+    dataset_id: str,
+    sheet_name: str,
+    filters: Optional[dict[str, list[str]]] = Body(default=None),
+):
+    try:
+        data = powerpoint_service.build_baperjakat_profiles(
+            dataset_id,
+            sheet_name,
+            filters,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": 'attachment; filename="bahan_baperjakat.pptx"'},
+    )
+
+
 @router.get("/export/powerpoint/{dataset_id}")
 def export_sitasi_profiles(
     dataset_id: str,

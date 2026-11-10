@@ -26,8 +26,8 @@ Provide one action that generates a combined Sitasi Es.III PowerPoint for the Ba
 - The selected sheet must contain a column whose trimmed name matches `Kategori` case-insensitively. If absent, do not generate a file; show the Indonesian error that the `Kategori` column was not found on the selected sheet.
 - Always filter the source rows to exact category values `Mutasi` and `Promosi`, respectively.
 - Ignore any existing user filter on the `Kategori` column and replace it with the required category for each half of the output. Preserve the other active table filters for both halves.
-- Generate Mutasi first with the `standard` template variant; generate Promosi second with the `three-row` variant.
-- Merge the two generated presentations in that order and download one file named `bahan_baperjakat.pptx`.
+- Generate Mutasi first with the 4-person starter slide and Promosi second with the 3-person starter slide from `backend/templates/combined_tempalate.pptx`.
+- Keep the output as one presentation using the combined template; do not merge two separately generated PPTX files for this action. Download one file named `bahan_baperjakat.pptx`.
 - Do not add the intermediate presentations to the user's separate staging queue.
 
 ### Progress and errors
@@ -38,10 +38,10 @@ Provide one action that generates a combined Sitasi Es.III PowerPoint for the Ba
 
 ### Web implementation map
 
-- `frontend/src/pages/AnalyticsPage.tsx` — visibility/eligibility, category-filter replacement, sequential generation, merge, download name, and error/progress state (`handleGenerateBahanBaperjakat`).
-- `frontend/src/services/api.ts` — PPTX generation, ordered PPTX merge, and download helpers.
-- `backend/app/services/powerpoint_service.py` — template selection, filtered profile generation, and presentation merge behavior.
-- `backend/app/api/dataset.py` — PowerPoint generation and merge endpoints.
+- `frontend/src/pages/AnalyticsPage.tsx` — visibility/eligibility, category filtering, one-request generation, download name, and error/progress state (`handleGenerateBahanBaperjakat`).
+- `frontend/src/services/api.ts` — Baperjakat generation request, regular PPTX generation/merge, and download helpers.
+- `backend/app/services/powerpoint_service.py` — combined-template Baperjakat generation and regular profile/merge behavior.
+- `backend/app/api/dataset.py` — PowerPoint generation, Baperjakat, and merge endpoints.
 
 ## 2. Global topbar, update notes, and API diagnostics
 
@@ -59,7 +59,7 @@ Provide one action that generates a combined Sitasi Es.III PowerPoint for the Ba
 ### Patch Notes and unresolved notes
 
 - **Patch Notes** opens a modal containing the release/update summary maintained in the toolbar component.
-- **Unresolved notes** opens a modal with the current staging caveat: staging is still being refined; use PowerPoint Repair if prompted and manually add any missing title header after staging; apologize for the inconvenience.
+- **Catatan Staging** opens a modal stating that the staging process was fixed in update 1.2.0.
 - Both dialogs close from the close button, Escape, or clicking the backdrop. They must not navigate away from the current route.
 
 ### API Test popup: meaning of a passing check
@@ -223,7 +223,7 @@ The database has a generated primary key used internally by API mutations and ta
 
 When modifying these features:
 
-- For Baperjakat, verify the category column lookup, replacement of any existing Kategori filter, retention of other filters, Mutasi-before-Promosi order, 4-person/3-person templates, output filename, progress state, and visible error handling.
+- For Baperjakat, verify the category column lookup, replacement of any existing Kategori filter, retention of other filters, Mutasi-before-Promosi order, 4-person/3-person starter slides from the combined template, output filename, progress state, and visible error handling.
 - For the API Test, verify it performs only the documented health, OpenAPI, and read requests; each missing route group or failed data request must display a failure. Confirm elapsed time is reported after completion.
 - For Snake, verify the backend route serves the game and the toolbar opens/closes the iframe without changing the current app route.
 - For monitoring, test the 5- and 6-completed-month boundaries, deactivation override, future-TMT rejection, password rejection, CRUD, notification selection, and export. Include a regression test where database IDs are non-contiguous (for example 7 and 11) and assert visible/export row numbers are 1 and 2.

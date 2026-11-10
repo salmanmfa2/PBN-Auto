@@ -10,7 +10,7 @@ This is the implementation specification for the desktop counterpart to web upda
 - Do not add any other main navigation menu to desktop as part of this update. Any additional menus or menu-specific workflows belong only in the web update notes unless the user separately changes this requirement.
 - Desktop has no login, registration, Guest mode, Admin workspace, or account-management system. Do not add an authentication flow or imply that desktop menus require an account.
 - Toolbar actions such as Patch Notes, API Test, and Snake are utility controls, not additional main navigation menus.
-- Do not port web-only modules, database tables/views, notifications, or access-control behavior into desktop. Keep existing desktop data-table numbering and export behavior unchanged unless separately requested.
+- Do not port web-only modules, database tables/views, notifications, or access-control behavior into desktop. Keep existing desktop data-table numbering and export behavior unchanged, except for the Baperjakat-specific numbering and layout requirements below.
 
 The web behavioral reference is [Update Notes 1.2 Web](./Update%20Notes%201.2%20Web.md). This document spells out which behavior applies to desktop and the desktop-specific constraints. It does not by itself claim that a desktop build, installer, or release has already been produced or published.
 
@@ -20,14 +20,15 @@ Provide the same user-facing convenience workflow as web 1.2 where it is explici
 
 1. Make **Generate Bahan Baperjakat** available only for the **Sitasi Es.III** cleaning/export mode after a dataset and sheet are loaded.
 2. Locate a source column named `Kategori`, ignoring surrounding whitespace and letter case. If the selected sheet lacks that column, show a clear error and do not generate output.
-3. Generate one PPTX filtered to exact category `Mutasi` using the standard template with **4 people per slide**.
-4. Generate a second PPTX filtered to exact category `Promosi` using the 3-row template with **3 people per slide**.
-5. Preserve all active filters other than `Kategori`; replace any existing Kategori filter with the required category for each generated presentation.
-6. Merge the presentations in Mutasi-then-Promosi order and download one file named `bahan_baperjakat.pptx`.
-7. Keep this convenience workflow separate from the user's manual staging queue and preserve the existing single-file PPTX export.
-8. Show a busy state during generation/merge, prevent duplicate requests, surface failures, and clear the busy state after either success or failure.
+3. Use the supplied combined template `backend/templates/combined_tempalate.pptx`, whose first starter slide has space for **4 Mutasi people per slide** and second starter slide has space for **3 Promosi people per slide**.
+4. Preserve all active filters other than `Kategori`; replace any existing Kategori filter with the required category for each output section.
+5. Produce one presentation with Mutasi slides first and Promosi slides second; do not generate separate presentations and merge them for this action. Download one file named `bahan_baperjakat.pptx`.
+6. Keep this convenience workflow separate from the user's manual staging queue and preserve the existing single-file PPTX export.
+7. Show a busy state during generation, prevent duplicate requests, surface failures, and clear the busy state after either success or failure.
+8. Number rows sequentially from 1 independently within each category. Preserve the Promosi `No.` values `Pendamping I` and `Pendamping II` instead of replacing them with numbers.
+9. Rotate only the `No.` cells containing `Pendamping I` or `Pendamping II` by 270 degrees. Do not rotate other `No.` cells or cells in other columns.
 
-Use the desktop's existing PowerPoint templates, filter model, merge implementation, and error UI. Verify that mixed 4-person and 3-person layouts survive the merge; do not assume copying slide XML alone preserves layout/master relationships.
+Use the desktop's PowerPoint template, filter model, and error UI. Keep the combined template's layouts and slide-master design intact in the generated file.
 
 ## 2. Global topbar and update-note dialogs
 
@@ -35,7 +36,7 @@ Add a compact application-wide toolbar at the upper-right of the desktop app, us
 
 - A live date/time clock formatted for Indonesian users and WIB (`Asia/Jakarta`), refreshed once per second.
 - A **Patch Notes** icon button that opens the update summary.
-- An **Unresolved Notes** icon button that shows the current staging caveat: staging is still being refined; use PowerPoint Repair if prompted and manually add a missing title header after staging; apologize for the inconvenience.
+- A **Catatan Staging** icon button that states: “Proses Staging telah diperbaiki pada update 1.2.0.”
 - A **Mini Game · Snake** button.
 - An **API Test** button.
 
@@ -85,8 +86,8 @@ Do not add or port web-only module code, schemas, SQL migrations, database views
 
 Minimum verification for the in-scope features:
 
-- Baperjakat is visible only in Sitasi Es.III, rejects a missing Kategori column, applies exact Mutasi/Promosi filters while preserving other filters, uses 4-person/3-person templates, merges in the specified order, downloads the specified filename, and reports errors/progress correctly.
-- Mixed-template PPTX merge retains the right slide layout and package relationships.
+- Baperjakat is visible only in Sitasi Es.III, rejects a missing Kategori column, applies exact Mutasi/Promosi filters while preserving other filters, uses the combined template with 4-person/3-person layouts, orders Mutasi before Promosi, numbers each category independently, preserves and rotates only the Pendamping No. cells, downloads the specified filename, and reports errors/progress correctly.
+- The generated Baperjakat PPTX retains the combined template's slide layouts and master design.
 - The topbar works across desktop app screens; clock and dialogs are usable by keyboard.
 - API Test shows each capability result, reports failures accurately, does not mutate user data, and displays elapsed time.
 - Snake works inside the desktop app and in an installed/offline package; high score and sound preference remain local.

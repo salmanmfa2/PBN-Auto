@@ -221,6 +221,7 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
       label: 'PBN Analytics · Dataset & Export',
       routes: [
         { path: '/dataset/{dataset_id}', method: 'get' },
+        { path: '/export/powerpoint/baperjakat/{dataset_id}', method: 'post' },
         { path: '/export/csv/{dataset_id}', method: 'get' },
         { path: '/export/csv/{dataset_id}', method: 'post' },
         { path: '/export/excel/{dataset_id}', method: 'get' },
@@ -574,6 +575,18 @@ export function generatePowerPoint(
   return requestFilteredExport(
     `/export/powerpoint/${datasetId}`,
     { mode, sheet_name: sheetName, template_variant: templateVariant },
+    filters,
+  );
+}
+
+export function generateBaperjakatPowerPoint(
+  datasetId: string,
+  sheetName: string,
+  filters: Record<string, string[]> = {},
+): Promise<Blob> {
+  return requestFilteredExport(
+    `/export/powerpoint/baperjakat/${datasetId}`,
+    { sheet_name: sheetName },
     filters,
   );
 }

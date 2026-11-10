@@ -235,7 +235,7 @@ export function AppToolbar() {
   const dialogTitle = activeDialog === 'patch'
     ? 'Patch Notes'
     : activeDialog === 'unfixed'
-      ? 'Catatan yang Belum Diperbaiki'
+      ? 'Catatan Staging'
       : activeDialog === 'api'
         ? 'Uji Fungsi & Koneksi API'
         : 'Mini Game · Snake';
@@ -348,8 +348,8 @@ export function AppToolbar() {
             </button>
             <button
               type="button"
-              title="Catatan yang Belum Diperbaiki"
-              aria-label="Buka catatan yang belum diperbaiki"
+              title="Catatan Staging"
+              aria-label="Buka catatan staging"
               onClick={() => setActiveDialog('unfixed')}
               className="rounded-lg p-2 text-amber-300 transition hover:bg-surface-700 hover:text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300"
             >
@@ -532,7 +532,7 @@ export function AppToolbar() {
               </div>
             ) : (
               <p className="text-sm leading-relaxed text-slate-300">
-                Fungsi <em>Staging</em> dalam proses penyempurnaan, Klik &quot;Repair&quot; ketika diminta PPTX dan tambahkan header title manual yang hilang dalam proses staging. Mohon Maaf atas Ketidaknyamanannya
+                Proses Staging telah diperbaiki pada update 1.2.0.
               </p>
             )}
           </section>

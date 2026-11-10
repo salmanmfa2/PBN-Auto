@@ -34,6 +34,7 @@ class PbnDashboardRouteTests(unittest.TestCase):
         self.assertIn(("/insights-beta/pbn/dashboard/people", "POST"), registered_routes)
         self.assertIn(("/admin/pbnopen-data-source/validate", "POST"), registered_routes)
         self.assertIn(("/admin/pbnopen-data-source/replace", "POST"), registered_routes)
+        self.assertIn(("/export/powerpoint/baperjakat/{dataset_id}", "POST"), registered_routes)
 
 
 class PbnDashboardTests(unittest.TestCase):
