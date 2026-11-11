@@ -8,6 +8,7 @@ import type {
   AuthUser,
   UserFeedback,
   PbnOpenCsvValidation,
+  PbnOpenDataSourceSyncStatus,
 } from '../types';
 import { Spinner } from '../components/Spinner';
 
@@ -41,6 +42,14 @@ function formatFeedbackDate(value: string): string {
   }).format(new Date(value));
 }
 
+function formatSourceSyncDate(value: string): string {
+  return new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone: 'Asia/Jakarta',
+  }).format(new Date(value));
+}
+
 export default function AdminPage() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<AuthUser[]>([]);
@@ -56,8 +65,12 @@ export default function AdminPage() {
   const [form, setForm] = useState<UserForm>(emptyForm);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceValidation, setSourceValidation] = useState<PbnOpenCsvValidation | null>(null);
+  const [sourceSyncStatus, setSourceSyncStatus] = useState<PbnOpenDataSourceSyncStatus | null>(null);
+  const [isLoadingSourceSync, setIsLoadingSourceSync] = useState((currentUser?.auth_level ?? 0) >= 2);
+  const [sourceSyncError, setSourceSyncError] = useState<string | null>(null);
   const [isValidatingSource, setIsValidatingSource] = useState(false);
   const [isReplacingSource, setIsReplacingSource] = useState(false);
+  const [isSyncingEmployeeTable, setIsSyncingEmployeeTable] = useState(false);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
   const [sourceDialogError, setSourceDialogError] = useState<string | null>(null);
   const [sourceReplaceFailed, setSourceReplaceFailed] = useState(false);
@@ -92,6 +105,24 @@ export default function AdminPage() {
     }
   }, [currentUser?.auth_level]);
 
+  const refreshSourceSyncStatus = useCallback(async () => {
+    if ((currentUser?.auth_level ?? 0) < 2) {
+      setSourceSyncStatus(null);
+      setIsLoadingSourceSync(false);
+      return;
+    }
+
+    setIsLoadingSourceSync(true);
+    setSourceSyncError(null);
+    try {
+      setSourceSyncStatus(await apiClient.getPbnOpenDataSourceSyncStatus());
+    } catch (loadError) {
+      setSourceSyncError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setIsLoadingSourceSync(false);
+    }
+  }, [currentUser?.auth_level]);
+
   const closeSourceDialog = useCallback(() => {
     if (sourceDialogError) setError(sourceDialogError);
     setShowSourceDialog(false);
@@ -104,6 +135,10 @@ export default function AdminPage() {
   useEffect(() => {
     void refreshFeedback();
   }, [refreshFeedback]);
+
+  useEffect(() => {
+    void refreshSourceSyncStatus();
+  }, [refreshSourceSyncStatus]);
 
   useEffect(() => {
     if (!showSourceDialog || isValidatingSource || isReplacingSource) return;
@@ -236,16 +271,36 @@ export default function AdminPage() {
     setIsReplacingSource(true);
     try {
       const result = await apiClient.replacePbnOpenCsv(sourceFile);
-      setNotice(`Sumber data Insight Hub Beta berhasil diganti dengan ${result.row_count} baris.`);
+      setNotice(`Employee Data Source berhasil di-resync dengan ${result.row_count} baris.`);
       setShowSourceDialog(false);
       setSourceValidation(null);
       setSourceFile(null);
       if (sourceFileInput.current) sourceFileInput.current.value = '';
+      await refreshSourceSyncStatus();
     } catch (replaceError) {
       setSourceReplaceFailed(true);
       setSourceDialogError(replaceError instanceof Error ? replaceError.message : String(replaceError));
     } finally {
       setIsReplacingSource(false);
+    }
+  };
+
+  const syncEmployeeTable = async () => {
+    const confirmed = window.confirm(
+      'Sinkronkan pbncleaner.dt_employee dari pbncleaner.fetch_pbnopen? Data yang cocok berdasarkan NIP akan diperbarui tanpa mengubah employee_id, data baru akan ditambahkan, dan pegawai yang tidak ada lagi di sumber akan dihapus.',
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setNotice(null);
+    setIsSyncingEmployeeTable(true);
+    try {
+      const result = await apiClient.syncDtEmployeeFromPbnOpen();
+      setNotice(`dt_employee berhasil disinkronkan dengan ${result.row_count} baris.`);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : String(syncError));
+    } finally {
+      setIsSyncingEmployeeTable(false);
     }
   };
 
@@ -275,16 +330,6 @@ export default function AdminPage() {
             {error ?? notice}
           </div>
         )}
-
-        <section className="card p-5">
-          <h2 className="font-semibold">Pengelolaan Data</h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Admin dapat mengelola record Manajemen Plt./Plh. Penggantian sumber data Insight Hub Beta hanya tersedia untuk Super Admin.
-          </p>
-          <Link to="/manajemen-plt-plh" className="btn-secondary mt-4 inline-flex">
-            Buka Manajemen Plt./Plh.
-          </Link>
-        </section>
 
         <section className="card overflow-hidden">
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-700 px-5 py-4">
@@ -353,30 +398,72 @@ export default function AdminPage() {
           )}
         </section>
 
+        {(currentUser?.auth_level ?? 0) >= 2 && (
+          <section className="card p-5">
+              <h2 className="font-semibold">Employee Data Source</h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Sumber data pegawai utama untuk berbagai fitur aplikasi, bukan hanya Insight Hub Beta.
+                Unggah CSV untuk mengganti seluruh isi <code>pbncleaner.fetch_pbnopen</code>; kolom harus cocok dengan tabel saat ini.
+                Hanya Super Admin yang dapat melakukan re-sync; data lama baru diganti setelah validasi berhasil dan konfirmasi.
+                Sinkronisasi <code>dt_employee</code> dilakukan terpisah: NIP yang cocok mempertahankan <code>employee_id</code>,
+                pegawai baru ditambahkan, dan pegawai yang tidak lagi ada di sumber akan dihapus.
+              </p>
+              <div className="mt-4 rounded-lg border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm">
+                <h3 className="font-medium text-slate-200">Re-sync terakhir</h3>
+                {isLoadingSourceSync ? (
+                  <div className="mt-2"><Spinner size="sm" label="Memuat status sumber data…" /></div>
+                ) : sourceSyncError ? (
+                  <p role="alert" className="mt-2 text-rose-300">{sourceSyncError}</p>
+                ) : sourceSyncStatus?.last_synced_at ? (
+                  <>
+                    <p className="mt-2 text-slate-300">
+                      {formatSourceSyncDate(sourceSyncStatus.last_synced_at)}
+                    </p>
+                    <p className="mt-1 text-slate-400">
+                      Dilakukan oleh: {sourceSyncStatus.synced_by_name || sourceSyncStatus.synced_by_user}
+                      {sourceSyncStatus.synced_by_name && sourceSyncStatus.synced_by_user
+                        ? ` (@${sourceSyncStatus.synced_by_user})`
+                        : ''}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-slate-400">Belum ada catatan re-sync melalui aplikasi.</p>
+                )}
+              </div>
+              {currentUser?.auth_level === 3 && (
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSourceFile(null);
+                      setSourceValidation(null);
+                      setSourceDialogError(null);
+                      setSourceReplaceFailed(false);
+                      setError(null);
+                      setShowSourceDialog(true);
+                    }}
+                    disabled={isSyncingEmployeeTable}
+                    className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Re-sync Employee Data Source
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void syncEmployeeTable()}
+                    disabled={isSyncingEmployeeTable || isValidatingSource || isReplacingSource}
+                    className="btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSyncingEmployeeTable
+                      ? <Spinner size="sm" label="Menyinkronkan dt_employee…" />
+                      : 'Sync dt_employee dari fetch_pbnopen'}
+                  </button>
+                </div>
+              )}
+          </section>
+        )}
+
         {currentUser?.auth_level === 3 ? (
           <>
-            <section className="card p-5">
-              <h2 className="font-semibold">Sumber Data Insight Hub Beta</h2>
-              <p className="mt-2 text-sm text-slate-400">
-                Unggah CSV untuk mengganti seluruh isi <code>pbncleaner.fetch_pbnopen</code>. Kolom harus cocok dengan tabel saat ini.
-                Data lama baru dihapus setelah validasi berhasil dan Anda menyetujui konfirmasi berikutnya.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setSourceFile(null);
-                  setSourceValidation(null);
-                  setSourceDialogError(null);
-                  setSourceReplaceFailed(false);
-                  setError(null);
-                  setShowSourceDialog(true);
-                }}
-                className="btn-primary mt-4"
-              >
-                Unggah CSV Sumber Data
-              </button>
-            </section>
-
             <section className="card overflow-hidden">
               <div className="border-b border-slate-700 px-5 py-4">
                 <h2 className="font-semibold">Manajemen Akun</h2>

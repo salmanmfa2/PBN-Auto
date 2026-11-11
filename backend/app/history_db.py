@@ -45,6 +45,12 @@ def init_history_db() -> None:
     from app.models.cleaning_history import CleaningHistory  # noqa: F401
     from app.models.dataset_file import DatasetFile  # noqa: F401
     from app.models.dataset_run import DatasetRun  # noqa: F401
+    from app.models.pbnopen_data_source_sync import PbnOpenDataSourceSync  # noqa: F401
+    from app.models.performance_kinerja import (  # noqa: F401
+        PerformanceKinerjaDataset,
+        PerformanceKinerjaInsight,
+        PerformanceKinerjaRecord,
+    )
     from app.models.pelantikan_agenda import (  # noqa: F401
         PelantikanAgenda,
         PelantikanAgendaPerson,
@@ -53,6 +59,30 @@ def init_history_db() -> None:
     from app.models.user_feedback import UserFeedback  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+
+    performance_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("performance_kinerja_records")
+    }
+    performance_columns_to_add = {
+        "unit_eselon_ii": "VARCHAR(255) NOT NULL DEFAULT 'Unidentified'",
+        "eselon": "VARCHAR(255) NOT NULL DEFAULT 'Unidentified'",
+        "unit_eselon_iii": "VARCHAR(255) NOT NULL DEFAULT 'Unidentified'",
+    }
+    missing_performance_columns = {
+        name: column_type
+        for name, column_type in performance_columns_to_add.items()
+        if name not in performance_columns
+    }
+    if missing_performance_columns:
+        with engine.begin() as connection:
+            for name, column_type in missing_performance_columns.items():
+                connection.execute(
+                    text(
+                        f"ALTER TABLE performance_kinerja_records "
+                        f"ADD COLUMN {name} {column_type}"
+                    )
+                )
 
     columns = {column["name"]: column for column in inspect(engine).get_columns("dataset_files")}
     if "google_drive_file_id" in columns and not columns["google_drive_file_id"]["nullable"]:
@@ -79,6 +109,54 @@ def init_history_db() -> None:
     if missing_people_columns:
         with engine.begin() as connection:
             for name, column_type in missing_people_columns.items():
+                connection.execute(
+                    text(
+                        f"ALTER TABLE pelantikan_agenda_people "
+                        f"ADD COLUMN {name} {column_type}"
+                    )
+                )
+
+    agenda_columns = {
+        column["name"] for column in inspect(engine).get_columns("pelantikan_agendas")
+    }
+    if "workflow_mode" not in agenda_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE pelantikan_agendas "
+                    "ADD COLUMN workflow_mode VARCHAR(16) NOT NULL DEFAULT 'single_sheet'"
+                )
+            )
+    if "import_strategy" not in agenda_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE pelantikan_agendas "
+                    "ADD COLUMN import_strategy VARCHAR(24) NOT NULL DEFAULT 'single_sheet'"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE pelantikan_agendas SET import_strategy = 'all_sheets' "
+                    "WHERE workflow_mode = 'all_sheets'"
+                )
+            )
+
+    people_columns = {
+        column["name"] for column in inspect(engine).get_columns("pelantikan_agenda_people")
+    }
+    provenance_columns_to_add = {
+        "source_sheet": "VARCHAR(255) NULL",
+        "source_row_number": "INT NULL",
+    }
+    missing_provenance_columns = {
+        name: column_type
+        for name, column_type in provenance_columns_to_add.items()
+        if name not in people_columns
+    }
+    if missing_provenance_columns:
+        with engine.begin() as connection:
+            for name, column_type in missing_provenance_columns.items():
                 connection.execute(
                     text(
                         f"ALTER TABLE pelantikan_agenda_people "

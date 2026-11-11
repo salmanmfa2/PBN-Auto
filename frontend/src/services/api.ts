@@ -22,6 +22,14 @@ import type {
   AuthSessionResponse,
   AuthUser,
   PbnOpenCsvValidation,
+  PbnOpenDataSourceSyncStatus,
+  PerformanceAnalysisResponse,
+  PerformanceDashboardResponse,
+  PerformanceGroupBy,
+  PerformanceInsight,
+  PerformanceRecord,
+  PerformanceRecordsResponse,
+  PerformanceUploadValidation,
   ThemeName,
   ChatMessage,
   ChatResponse,
@@ -31,6 +39,7 @@ import type {
   PelantikanAgendaDetail,
   PelantikanAgendaFields,
   PelantikanAgendaSummary,
+  PelantikanImportStrategy,
   PelantikanAgendaUploadResult,
   PelantikanPersonChoice,
 } from '../types';
@@ -48,12 +57,63 @@ const api = axios.create({
 
 export const AUTH_TOKEN_STORAGE_KEY = 'pbn.auth.token';
 export const AUTH_GUEST_STORAGE_KEY = 'pbn.auth.guest';
+export const AUTH_SESSION_EXPIRED_EVENT = 'pbn:auth-session-expired';
+
+function dispatchSessionExpiredEvent(): void {
+  if (window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) {
+    window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED_EVENT));
+  }
+}
+
+function verifySessionAfterForbiddenResponse(): void {
+  const token = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  if (!token) return;
+
+  void axios.get<AuthUser>('/auth/me', {
+    baseURL: BASE_URL,
+    timeout: 60_000,
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(
+    () => undefined,
+    (error: unknown) => {
+      if (
+        axios.isAxiosError(error) &&
+        (error.response?.status === 401 || error.response?.status === 403)
+      ) {
+        dispatchSessionExpiredEvent();
+      }
+    },
+  );
+}
 
 api.interceptors.request.use((config) => {
   const token = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (axios.isAxiosError<{ detail?: unknown }>(error)) {
+      const status = error.response?.status;
+      const detail = error.response?.data?.detail;
+      const isExpiredSession =
+        status === 401 ||
+        (status === 403 &&
+          typeof detail === 'string' &&
+          /session (expired|invalid)|authentication is required/i.test(detail));
+
+      if (isExpiredSession) {
+        dispatchSessionExpiredEvent();
+      } else if (status === 403) {
+        verifySessionAfterForbiddenResponse();
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
 
 export async function login(user: string, password: string): Promise<AuthSessionResponse> {
   const { data } = await api.post<AuthSessionResponse>('/auth/login', { user, password });
@@ -136,6 +196,13 @@ export async function validatePbnOpenCsv(file: File): Promise<PbnOpenCsvValidati
   return data;
 }
 
+export async function getPbnOpenDataSourceSyncStatus(): Promise<PbnOpenDataSourceSyncStatus> {
+  const { data } = await api.get<PbnOpenDataSourceSyncStatus>(
+    '/admin/pbnopen-data-source/status',
+  );
+  return data;
+}
+
 export async function replacePbnOpenCsv(file: File): Promise<{ message: string; row_count: number }> {
   const form = new FormData();
   form.append('file', file);
@@ -145,6 +212,230 @@ export async function replacePbnOpenCsv(file: File): Promise<{ message: string; 
     { headers: { 'Content-Type': 'multipart/form-data' } },
   );
   return data;
+}
+
+export async function syncDtEmployeeFromPbnOpen(): Promise<{ message: string; row_count: number }> {
+  try {
+    const { data } = await api.post<{ message: string; row_count: number }>(
+      '/admin/dt-employee/sync',
+    );
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError<{ detail?: unknown }>(error)) {
+      const detail = error.response?.data.detail;
+      if (typeof detail === 'string') throw new Error(detail);
+    }
+    throw error;
+  }
+}
+
+function getPerformanceRequestError(error: unknown): Error {
+  if (axios.isAxiosError<{ detail?: unknown }>(error)) {
+    const detail = error.response?.data.detail;
+    if (typeof detail === 'string') return new Error(detail);
+  }
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function createPerformanceUpload(file: File, period: string): FormData {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('period', period);
+  return form;
+}
+
+export async function getPerformanceAnalysis(
+  groupBy: PerformanceGroupBy,
+): Promise<PerformanceAnalysisResponse> {
+  try {
+    const { data } = await api.get<PerformanceAnalysisResponse>(
+      '/performance/analysis',
+      { params: { group_by: groupBy } },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function getPerformanceDashboard(
+  unitEselonII: string,
+  eselons: string[],
+): Promise<PerformanceDashboardResponse> {
+  try {
+    const { data } = await api.get<PerformanceDashboardResponse>(
+      '/performance/dashboard',
+      {
+        params: {
+          unit_eselon_ii: unitEselonII || undefined,
+          eselon: eselons,
+        },
+        paramsSerializer: { indexes: null },
+      },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function getPerformanceInsight(): Promise<PerformanceInsight> {
+  try {
+    const { data } = await api.get<PerformanceInsight>('/performance/insight');
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function updatePerformanceInsight(content: string): Promise<PerformanceInsight> {
+  try {
+    const { data } = await api.put<PerformanceInsight>('/performance/insight', { content });
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function downloadPerformanceUnitAnalysis(): Promise<Blob> {
+  try {
+    const { data } = await api.get<Blob>(
+      '/performance/exports/unit-eselon-ii',
+      { responseType: 'blob' },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function downloadPerformanceRecordsExcel(
+  search: string,
+  filters: Partial<Record<keyof PerformanceRecord, string>> = {},
+  sortBy: keyof PerformanceRecord = 'nama',
+  sortOrder: 'asc' | 'desc' = 'asc',
+): Promise<Blob> {
+  try {
+    const { data } = await api.get<Blob>(
+      '/performance/exports/records',
+      {
+        params: {
+          search,
+          filters: JSON.stringify(filters),
+          sort_by: sortBy,
+          sort_order: sortOrder,
+        },
+        responseType: 'blob',
+      },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function getPerformanceRecords(
+  page: number,
+  pageSize: number,
+  search: string,
+  filters: Partial<Record<keyof PerformanceRecord, string>> = {},
+  sortBy: keyof PerformanceRecord = 'nama',
+  sortOrder: 'asc' | 'desc' = 'asc',
+): Promise<PerformanceRecordsResponse> {
+  try {
+    const { data } = await api.get<PerformanceRecordsResponse>(
+      '/performance/records',
+      {
+        params: {
+          page,
+          page_size: pageSize,
+          search,
+          filters: JSON.stringify(filters),
+          sort_by: sortBy,
+          sort_order: sortOrder,
+        },
+      },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function validatePerformanceFullData(
+  file: File,
+  period: string,
+): Promise<PerformanceUploadValidation> {
+  try {
+    const { data } = await api.post<PerformanceUploadValidation>(
+      '/performance/full-data/validate',
+      createPerformanceUpload(file, period),
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function replacePerformanceFullData(
+  file: File,
+  period: string,
+): Promise<PerformanceUploadValidation> {
+  try {
+    const { data } = await api.post<PerformanceUploadValidation>(
+      '/performance/full-data/replace',
+      createPerformanceUpload(file, period),
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function downloadPerformanceAdjustmentTemplate(): Promise<Blob> {
+  try {
+    const { data } = await api.get<Blob>(
+      '/performance/adjustments/template',
+      { responseType: 'blob' },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function validatePerformanceAdjustments(
+  file: File,
+  period: string,
+): Promise<PerformanceUploadValidation> {
+  try {
+    const { data } = await api.post<PerformanceUploadValidation>(
+      '/performance/adjustments/validate',
+      createPerformanceUpload(file, period),
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function replacePerformanceAdjustments(
+  file: File,
+  period: string,
+): Promise<PerformanceUploadValidation> {
+  try {
+    const { data } = await api.post<PerformanceUploadValidation>(
+      '/performance/adjustments/replace',
+      createPerformanceUpload(file, period),
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
 }
 
 export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatResponse> {
@@ -278,6 +569,7 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
         { path: '/insights-beta/pbn/dashboard/people', method: 'post' },
         { path: '/admin/pbnopen-data-source/validate', method: 'post' },
         { path: '/admin/pbnopen-data-source/replace', method: 'post' },
+        { path: '/admin/pbnopen-data-source/status', method: 'get' },
       ],
     },
     {
@@ -303,6 +595,8 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
         { path: '/undangan-pelantikan/agendas/{agenda_id}', method: 'put' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}', method: 'delete' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/upload', method: 'post' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}/upload-sheets', method: 'post' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}/upload-all-sheets', method: 'post' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/sheets', method: 'post' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/people', method: 'put' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/generate', method: 'post' },
@@ -450,8 +744,12 @@ export async function listPelantikanAgendas(): Promise<PelantikanAgendaSummary[]
 
 export async function createPelantikanAgenda(
   payload: PelantikanAgendaFields,
+  workflowMode: 'single_sheet' | 'all_sheets' = 'single_sheet',
 ): Promise<PelantikanAgenda> {
-  const { data } = await api.post<PelantikanAgenda>('/undangan-pelantikan/agendas', payload);
+  const { data } = await api.post<PelantikanAgenda>('/undangan-pelantikan/agendas', {
+    ...payload,
+    workflow_mode: workflowMode,
+  });
   return data;
 }
 
@@ -487,6 +785,38 @@ export async function uploadPelantikanExcel(
       headers: { 'Content-Type': 'multipart/form-data' },
       params: sheetName ? { sheet_name: sheetName } : undefined,
     },
+  );
+  return data;
+}
+
+export async function uploadPelantikanExcelAllSheets(
+  agendaId: string,
+  file: File,
+): Promise<PelantikanAgendaUploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post<PelantikanAgendaUploadResult>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/upload-all-sheets`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data;
+}
+
+export async function uploadPelantikanExcelWithStrategy(
+  agendaId: string,
+  file: File,
+  importStrategy: PelantikanImportStrategy,
+  sheetNames: string[] = [],
+): Promise<PelantikanAgendaUploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('import_strategy', importStrategy);
+  sheetNames.forEach((sheetName) => form.append('sheet_names', sheetName));
+  const { data } = await api.post<PelantikanAgendaUploadResult>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/upload-sheets`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
   );
   return data;
 }

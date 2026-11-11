@@ -71,6 +71,41 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             "Kepala Bagian Umum",
         )
 
+    def test_roster_document_uses_database_current_job_not_proposed_job(self):
+        table = etree.fromstring(
+            f"""<w:tbl xmlns:w="{service.W_NS}">
+              <w:tr>
+                <w:tc><w:p><w:r><w:t>No</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>Nama/NIP</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>Jabatan Saat ini</w:t></w:r></w:p></w:tc>
+              </w:tr>
+              <w:tr>
+                <w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>Template</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>Template</w:t></w:r></w:p></w:tc>
+              </w:tr>
+            </w:tbl>"""
+        )
+        service._populate_roster(
+            table,
+            [
+                SimpleNamespace(
+                    nama="Nama Pegawai",
+                    nip="123456789012345678",
+                    jabatan="Jabatan saat ini dari database",
+                    unit_eselon_ii="Unit A",
+                    eselon="II",
+                    source_usul_jabatan_baru="Jabatan baru rahasia",
+                )
+            ],
+        )
+
+        data_row = table.findall("./w:tr", service.NS)[1]
+        job_cell = data_row.findall("./w:tc", service.NS)[2]
+        job_text = service._cell_text(job_cell)
+        self.assertIn("Jabatan saat ini dari database", job_text)
+        self.assertNotIn("Jabatan baru rahasia", job_text)
+
     def test_pendamping_cannot_be_saved_as_selected(self):
         person = SimpleNamespace(
             id=1,
@@ -365,6 +400,8 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 )
                 self.assertEqual(updated.people[0].source_jabatan_saat_ini, "Jabatan lama")
                 self.assertEqual(updated.people[0].source_usul_jabatan_baru, "Jabatan usulan")
+                self.assertEqual(updated.people[0].source_sheet, "Sheet")
+                self.assertEqual(updated.people[0].source_row_number, 5)
                 person_read = PelantikanAgendaPersonRead.model_validate(updated.people[0])
                 self.assertEqual(
                     person_read.source_nama_nip,
@@ -386,6 +423,200 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 self.assertEqual(
                     selected_sheet_agenda.people[0].nip,
                     "234567890123456789",
+                )
+        finally:
+            Base.metadata.drop_all(test_engine)
+            test_engine.dispose()
+
+    def test_all_sheets_import_tracks_provenance_skips_invalid_and_keeps_first_duplicate(self):
+        workbook = Workbook()
+        empty_sheet = workbook.active
+        empty_sheet.title = "Kosong"
+        empty_sheet.append(["Daftar pegawai"])
+        empty_sheet.append([])
+        empty_sheet.append([
+            "No",
+            "Nama/NIP",
+            "Jabatan Saat ini",
+            "Usul Jabatan Baru",
+        ])
+
+        def add_roster_sheet(name, rows):
+            worksheet = workbook.create_sheet(name)
+            worksheet.append(["Daftar pegawai"])
+            worksheet.append([])
+            worksheet.append([
+                "No",
+                "Nama/NIP",
+                "Jabatan Saat ini",
+                "Usul Jabatan Baru",
+            ])
+            for row in rows:
+                worksheet.append(row)
+
+        first_nip = "123456789012345678"
+        second_nip = "234567890123456789"
+        add_roster_sheet("Alpha", [[1, f"Nama Alpha\n{first_nip}", "Excel lama", "Usulan A"]])
+        add_roster_sheet(
+            "Beta",
+            [
+                [1, f"Nama duplikat\n{first_nip}", "Excel lama", "Usulan duplikat"],
+                [2, f"Nama Beta\n{second_nip}", "Excel lama", "Usulan B"],
+            ],
+        )
+        notes = workbook.create_sheet("Catatan")
+        notes.append(["Informasi"])
+        notes.append([])
+        notes.append(["Catatan"])
+        notes.append(["Bukan roster"])
+
+        workbook_data = BytesIO()
+        workbook.save(workbook_data)
+
+        test_engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(test_engine)
+        try:
+            with Session(test_engine) as db:
+                agenda = PelantikanAgenda(
+                    id="agenda-all-sheets",
+                    created_by="alice",
+                    tanggal_pelantikan=date(2026, 9, 20),
+                    nd_undangan_pelantikan="ND-001",
+                    tanggal_nd_undangan_pelantikan=date(2026, 9, 1),
+                    jam_pelantikan="09:00",
+                    dresscode="Pakaian dinas",
+                    level_jabatan="Administrator",
+                )
+                db.add(agenda)
+                db.commit()
+                employee_record = {
+                    "nama": "Nama Database",
+                    "jabatan": "Jabatan Database",
+                    "unit_eselon_ii": "Unit A",
+                    "eselon": "III",
+                }
+                with patch.object(
+                    service,
+                    "_lookup_employee_records",
+                    return_value={
+                        first_nip: employee_record,
+                        second_nip: employee_record,
+                    },
+                ):
+                    updated, processed_sheets, skipped_sheets, duplicate_count = (
+                        service.upload_all_sheets_and_match(
+                            db,
+                            agenda,
+                            workbook_data.getvalue(),
+                            "pegawai.xlsx",
+                        )
+                    )
+
+                self.assertEqual(processed_sheets, ["Alpha", "Beta"])
+                self.assertEqual(skipped_sheets, ["Kosong", "Catatan"])
+                self.assertEqual(duplicate_count, 1)
+                self.assertEqual(updated.workflow_mode, "all_sheets")
+                self.assertEqual(updated.import_strategy, "all_sheets")
+                self.assertEqual(updated.uploaded_sheet, "Semua sheet")
+                self.assertEqual([person.row_number for person in updated.people], [1, 2, 3])
+                self.assertEqual(
+                    [(person.source_sheet, person.source_row_number) for person in updated.people],
+                    [("Alpha", 4), ("Beta", 4), ("Beta", 5)],
+                )
+                self.assertEqual(
+                    [person.lookup_status for person in updated.people],
+                    ["matched", "duplicate", "matched"],
+                )
+
+                for person in updated.people:
+                    if person.lookup_status == "matched":
+                        person.selected = True
+                        person.modality = "daring"
+                grouped_people = []
+
+                def capture_group(_agenda, people, _modality, unit):
+                    grouped_people.append((unit, [person.source_sheet for person in people]))
+                    return b"docx"
+
+                with patch.object(service, "build_agenda_docx", side_effect=capture_group):
+                    _, group_count = service.generate_agenda_zip(db, updated)
+
+                self.assertEqual(group_count, 1)
+                self.assertEqual(grouped_people, [("Unit A", ["Alpha", "Beta"])])
+
+                with patch.object(
+                    service,
+                    "_lookup_employee_records",
+                    return_value={
+                        first_nip: employee_record,
+                        second_nip: employee_record,
+                    },
+                ):
+                    selected, selected_sheets, _, _ = service.upload_sheets_and_match(
+                        db,
+                        agenda,
+                        workbook_data.getvalue(),
+                        "pegawai.xlsx",
+                        "selected_sheets",
+                        ["Beta"],
+                    )
+
+                self.assertEqual(selected.import_strategy, "selected_sheets")
+                self.assertEqual(selected_sheets, ["Beta"])
+                self.assertEqual([person.source_sheet for person in selected.people], ["Beta", "Beta"])
+
+                with patch.object(
+                    service,
+                    "_lookup_employee_records",
+                    return_value={first_nip: employee_record},
+                ):
+                    single_sheet, single_sheets, _, _ = service.upload_sheets_and_match(
+                        db,
+                        agenda,
+                        workbook_data.getvalue(),
+                        "pegawai.xlsx",
+                        "single_sheet",
+                        ["Alpha"],
+                    )
+
+                self.assertEqual(single_sheet.workflow_mode, "all_sheets")
+                self.assertEqual(single_sheet.import_strategy, "single_sheet")
+                self.assertEqual(single_sheets, ["Alpha"])
+                self.assertEqual([person.source_sheet for person in single_sheet.people], ["Alpha"])
+
+                with patch.object(
+                    service,
+                    "_lookup_employee_records",
+                    return_value={
+                        first_nip: employee_record,
+                        second_nip: employee_record,
+                    },
+                ):
+                    isolated, _, _, _ = service.upload_sheets_and_match(
+                        db,
+                        agenda,
+                        workbook_data.getvalue(),
+                        "pegawai.xlsx",
+                        "isolated_sheets",
+                    )
+                self.assertEqual(isolated.import_strategy, "isolated_sheets")
+                for person in isolated.people:
+                    if person.lookup_status == "matched":
+                        person.selected = True
+                        person.modality = "daring"
+                isolated_groups = []
+
+                def capture_isolated_group(_agenda, people, _modality, unit):
+                    isolated_groups.append((unit, [person.source_sheet for person in people]))
+                    return b"docx"
+
+                with patch.object(service, "build_agenda_docx", side_effect=capture_isolated_group):
+                    _, isolated_group_count = service.generate_agenda_zip(db, isolated)
+
+                self.assertEqual(isolated_group_count, 2)
+                self.assertEqual(
+                    isolated_groups,
+                    [("Unit A", ["Alpha"]), ("Unit A", ["Beta"])],
                 )
         finally:
             Base.metadata.drop_all(test_engine)

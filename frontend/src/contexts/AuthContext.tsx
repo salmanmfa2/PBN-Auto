@@ -9,6 +9,7 @@ type AuthContextValue = {
   user: AuthUser | null;
   isLoading: boolean;
   initializationError: string | null;
+  sessionExpired: boolean;
   logoutError: string | null;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, name: string, password: string) => Promise<void>;
@@ -23,7 +24,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [initializationError, setInitializationError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      window.localStorage.removeItem(apiClient.AUTH_TOKEN_STORAGE_KEY);
+      window.localStorage.removeItem(apiClient.AUTH_GUEST_STORAGE_KEY);
+      setUser(null);
+      setMode(null);
+      setSessionExpired(true);
+    };
+
+    window.addEventListener(apiClient.AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => {
+      window.removeEventListener(apiClient.AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -57,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string) => {
     setInitializationError(null);
+    setSessionExpired(false);
     const session = await apiClient.login(username, password);
     window.localStorage.setItem(apiClient.AUTH_TOKEN_STORAGE_KEY, session.token);
     window.localStorage.removeItem(apiClient.AUTH_GUEST_STORAGE_KEY);
@@ -74,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(apiClient.AUTH_GUEST_STORAGE_KEY, 'true');
     setUser(null);
     setInitializationError(null);
+    setSessionExpired(false);
     setMode('guest');
   };
 
@@ -98,12 +117,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     isLoading,
     initializationError,
+    sessionExpired,
     logoutError,
     login,
     register,
     continueAsGuest,
     logout,
-  }), [mode, user, isLoading, initializationError, logoutError]);
+  }), [mode, user, isLoading, initializationError, sessionExpired, logoutError]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

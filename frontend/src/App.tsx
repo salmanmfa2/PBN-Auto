@@ -6,6 +6,7 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import InsightHubPage from './pages/InsightHubPage';
 import LoginPage from './pages/LoginPage';
 import PelantikanAgendaPage from './pages/PelantikanAgendaPage';
+import PerformanceAnalysisPage from './pages/PerformanceAnalysisPage';
 import PltPlhManagementPage from './pages/PltPlhManagementPage';
 import { AppToolbar } from './components/AppToolbar';
 import { ChatWidget } from './components/ChatWidget';
@@ -63,11 +64,20 @@ function AppRoutes() {
           <Route path="/insights" element={<InsightHubPage />} />
           <Route path="/insights-beta" element={<InsightHubPage source="database" />} />
           <Route path="/manajemen-plt-plh" element={<PltPlhManagementPage />} />
-          <Route path="/undangan-pelantikan" element={<PelantikanAgendaPage />} />
-          <Route path="/undangan-pelantikan/:agendaId" element={<PelantikanAgendaPage />} />
+          <Route path="/analisis-kinerja" element={<PerformanceAnalysisPage />} />
           <Route element={<RequireAdmin />}>
             <Route path="/admin" element={<AdminPage />} />
           </Route>
+          <Route path="/undangan-pelantikan" element={<PelantikanAgendaPage />} />
+          <Route path="/undangan-pelantikan/:agendaId" element={<PelantikanAgendaPage />} />
+          <Route
+            path="/undangan-pelantikan-experimental"
+            element={<PelantikanAgendaPage workflowMode="all_sheets" />}
+          />
+          <Route
+            path="/undangan-pelantikan-experimental/:agendaId"
+            element={<PelantikanAgendaPage workflowMode="all_sheets" />}
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
         {!user && <Route path="*" element={<Navigate to="/login" replace />} />}

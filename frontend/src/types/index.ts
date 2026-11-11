@@ -138,6 +138,136 @@ export interface PbnOpenCsvValidation {
   row_count: number;
 }
 
+export interface PbnOpenDataSourceSyncStatus {
+  last_synced_at: string | null;
+  synced_by_user: string | null;
+  synced_by_name: string | null;
+}
+
+export type PerformanceGroupBy = 'overall' | 'unit_eselon_ii' | 'eselon_level' | 'unit_and_eselon';
+
+export interface PerformanceDatasetStatus {
+  period: string;
+  row_count: number;
+  uploaded_at: string;
+  uploaded_by_user: string;
+  uploaded_by_name: string;
+}
+
+export interface PerformanceUploadValidation {
+  period: string;
+  row_count: number;
+  unidentified_count: number;
+  normalized_penalty_count: number;
+}
+
+export interface PerformanceHistogramBin {
+  start: number;
+  end: number;
+  label: string;
+  count: number;
+}
+
+export interface PerformanceCorrectionStats {
+  count: number;
+  positive_count: number;
+  negative_count: number;
+  average: number | null;
+  minimum: number | null;
+  maximum: number | null;
+}
+
+export interface PerformanceAnalysisGroup {
+  label: string;
+  employee_count: number;
+  hukdis_count: number;
+  dampak_pelanggaran_count: number;
+  dampak_perilaku_count: number;
+  correction: PerformanceCorrectionStats;
+  histogram: PerformanceHistogramBin[];
+  status_counts: Record<string, number>;
+}
+
+export interface PerformanceAnalysisResponse {
+  dataset: PerformanceDatasetStatus | null;
+  group_by: PerformanceGroupBy;
+  total_employees: number;
+  groups: PerformanceAnalysisGroup[];
+}
+
+export interface PerformanceUnitMetrics {
+  label: string;
+  employee_count: number;
+  average_npk: number | null;
+  average_nhk: number | null;
+  average_nkp_awal: number | null;
+  nkp_awal_sangat_istimewa_count: number;
+  nkp_awal_sangat_istimewa_percentage: number;
+  hukdis_count: number;
+  dampak_pelanggaran_count: number;
+  dampak_perilaku_count: number;
+  correction: PerformanceCorrectionStats;
+  average_nkp_akhir: number | null;
+  nkp_akhir_sangat_istimewa_count: number;
+  nkp_akhir_sangat_istimewa_percentage: number;
+  status_gap_count: number;
+}
+
+export type PerformanceUnitEselonIIISummary = PerformanceUnitMetrics;
+
+export interface PerformanceUnitSummary extends PerformanceUnitMetrics {
+  children: PerformanceUnitEselonIIISummary[];
+}
+
+export interface PerformanceDashboardResponse {
+  dataset: PerformanceDatasetStatus | null;
+  total_employees: number;
+  unit_eselon_ii_options: string[];
+  eselon_options: string[];
+  overview: PerformanceAnalysisGroup;
+  units: PerformanceUnitSummary[];
+}
+
+export interface PerformanceInsight {
+  content: string;
+  updated_at: string | null;
+  updated_by_name: string | null;
+}
+
+export interface PerformanceRecord {
+  nama: string;
+  nip: string;
+  unit_eselon_ii: string;
+  unit_eselon_iii: string;
+  eselon: string;
+  nhk: number | null;
+  npk: number | null;
+  nhk_kalibrasi: number | null;
+  npk_kalibrasi: number | null;
+  nkp_awal: number | null;
+  rating_hasil_kerja_awal: string | null;
+  rating_perilaku_kerja_awal: string | null;
+  predikat_kinerja_awal: string | null;
+  nilai_hukuman_disiplin: number | null;
+  nilai_dampak_pelanggaran_disiplin: number | null;
+  nilai_dampak_perilaku: number | null;
+  nilai_koreksi: number | null;
+  nko: number | null;
+  nkp_akhir: number | null;
+  rating_hasil_kerja: string | null;
+  rating_perilaku_kerja: string | null;
+  predikat_kinerja: string | null;
+  status: string;
+}
+
+export interface PerformanceRecordsResponse {
+  period: string | null;
+  page: number;
+  page_size: number;
+  total: number;
+  records: PerformanceRecord[];
+}
+
 export interface CleaningMethodRecommendation {
   dataset_id: string;
   sheet_name: string;
@@ -266,6 +396,12 @@ export interface ColumnRenameEntry {
 export type PelantikanStatus = 'draft' | 'ready' | 'generated';
 export type PelantikanLookupStatus = 'matched' | 'not_found' | 'missing_nip' | 'duplicate';
 export type PelantikanModality = 'daring' | 'luring';
+export type PelantikanWorkflowMode = 'single_sheet' | 'all_sheets';
+export type PelantikanImportStrategy =
+  | 'single_sheet'
+  | 'all_sheets'
+  | 'selected_sheets'
+  | 'isolated_sheets';
 
 export interface PelantikanAgendaFields {
   tanggal_pelantikan: string;
@@ -280,6 +416,8 @@ export interface PelantikanAgenda extends PelantikanAgendaFields {
   id: string;
   hari_pelantikan: string;
   status: PelantikanStatus;
+  workflow_mode: PelantikanWorkflowMode;
+  import_strategy: PelantikanImportStrategy;
   uploaded_filename: string | null;
   uploaded_sheet: string | null;
   last_generated_at: string | null;
@@ -291,6 +429,8 @@ export interface PelantikanAgendaPerson {
   id: number;
   row_number: number;
   source_no: string | null;
+  source_sheet: string | null;
+  source_row_number: number | null;
   source_nama_nip: string | null;
   source_jabatan_saat_ini: string | null;
   source_usul_jabatan_baru: string | null;
@@ -317,6 +457,9 @@ export interface PelantikanAgendaUploadResult {
   selected_sheet: string;
   row_count: number;
   people: PelantikanAgendaPerson[];
+  processed_sheets: string[];
+  skipped_sheets: string[];
+  duplicate_count: number;
 }
 
 export interface PelantikanPersonChoice {

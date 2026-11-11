@@ -6,7 +6,7 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 
 - Rilis web saat ini adalah **1.2.1**. Lihat [catatan pembaruan web](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), [pembaruan web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md), dan [catatan pembaruan desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
 - Navigasi utama desktop hanya berisi PBN Analytics dan Insight Hub serta tidak memiliki sistem login. Menu tambahan dan alur akun hanya berlaku untuk web.
-- Generate ND Undangan Pelantikan telah berfungsi untuk pengguna web yang masuk. Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi masih placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
+- Generate ND Undangan Pelantikan telah berfungsi untuk pengguna web yang masuk. Analisis Kinerja DJPb dapat dilihat publik, termasuk Guest; hanya Super Admin yang dapat mengunggah atau menyesuaikan dataset triwulan aktif. Bahan Pendukung MPK dan Simulasi Mutasi masih placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
 
 ## Gambaran Umum
 
@@ -22,7 +22,7 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - Health check: `GET http://localhost:8000/health`.
 - Frontend:
   - Dari `frontend/`, jalankan `npm install`, kemudian `npm run dev` untuk pengembangan atau `npm run build` untuk build produksi.
-  - Rute mencakup `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, dan `/undangan-pelantikan`.
+  - Rute mencakup `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, `/undangan-pelantikan`, dan `/undangan-pelantikan-experimental`.
 - Menjalankan aplikasi lokal dengan satu klik:
   - Klik dua kali `run-app-testing.bat` dari direktori utama proyek (menjalankan backend dan frontend dengan auto-reload).
 - Menjalankan aplikasi di jaringan dengan satu klik:
@@ -171,10 +171,11 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 
 ## Alur Agenda Pelantikan
 
-- Rute web khusus adalah `/undangan-pelantikan`; `/undangan-pelantikan/:agendaId` membuka kembali agenda. Setiap API agenda memerlukan pengguna yang sudah masuk dan memeriksa kepemilikan agenda.
-- Agenda dan snapshot peserta disimpan di `pelantikan_agendas` dan `pelantikan_agenda_people`. Gunakan `backend/sql/005_create_pelantikan_agendas.sql` untuk instalasi baru; startup membuat tabel model dan menambahkan kolom snapshot yang belum ada pada instalasi lama.
+- Rute standar adalah `/undangan-pelantikan`; `/undangan-pelantikan/:agendaId` membuka kembali agenda satu sheet. `/undangan-pelantikan-experimental` dan rute `:agendaId`-nya menyediakan pilihan impor semua, sheet tertentu, sheet terpisah, atau satu sheet. Setiap API agenda memerlukan pengguna yang sudah masuk dan memeriksa kepemilikan agenda.
+- Agenda dan snapshot peserta disimpan di `pelantikan_agendas` dan `pelantikan_agenda_people`. Gunakan `backend/sql/005_create_pelantikan_agendas.sql` untuk instalasi baru; startup menambahkan kolom mode alur, strategi impor, dan provenance yang belum ada pada instalasi lama.
 - Pilihan level jabatan adalah Administrator dan Tinggi Pratama. Pilihan dresscode adalah Wastra Nusantara, PSL Lengkap, atau nilai khusus dari pengguna. Hitung mundur kartu menggunakan tanggal Jakarta dan menampilkan Berakhir untuk tanggal lampau.
-- Unggah roster menerima `.xlsx` dan `.xls` hingga 50 MB. NIP dicocokkan dengan `pbncleaner.fetch_pbnopen`; peserta terpilih dan moda Daring/Luring dapat ditinjau sebelum pembuatan dokumen.
+- Unggah roster menerima `.xlsx` dan `.xls` hingga 50 MB. Alur standar memproses satu sheet yang dipilih. Impor eksperimental menawarkan pilihan menggabungkan semua sheet, menggabungkan sheet tertentu, memisahkan setiap sheet, atau memproses satu sheet. Sheet kosong/non-roster dilewati dengan pemberitahuan; nama sheet/baris sumber disimpan. Duplikat NIP diselesaikan menurut urutan tab/baris workbook; kemunculan pertama dapat dipilih.
+- Kedua alur memakai pilihan peserta yang sama, termasuk Pilih Semua dan Batalkan Semua. Impor gabungan menyatukan Unit Eselon II yang sama dari sheet berbeda tetapi tetap memisahkan moda Daring/Luring. Mode terpisah juga menjaga sheet sumber sebagai grup pratinjau/dokumen tersendiri. Roster dokumen memakai `Jabatan` saat ini dari database; usulan jabatan baru di workbook hanya menjadi referensi pratinjau dan tidak disalin.
 - Workbook sumber dan dokumen yang dihasilkan tidak disimpan. Agenda dan snapshot peserta tetap tersimpan agar pemilik dapat melanjutkan proses; unggahan ulang mengganti snapshot peserta pada agenda tersebut.
 - Dokumen DOCX dikelompokkan berdasarkan Unit Eselon II dan moda, lalu diunduh bersama dalam ZIP. Jaga konsistensi penulisan penerima serta aturan jabatan pada `pelantikan_agenda_service.py` dan `employee_formatting.py`.
 
@@ -276,8 +277,9 @@ npm run build              # TypeScript check + Vite build to dist/
 ## Cakupan Saat Ini dan Milestone Berikutnya
 
 - **Web 1.2.1:** PBN Analytics, Insight Hub, akun dan kontrol akses berbasis peran, workspace Admin, monitoring Plt./Plh. dengan lookup pegawai dari PBN Open, agenda dan pembuatan undangan Pelantikan, preferensi tema tersimpan per pengguna, toolbar yang menempel ke tepi layar, dan Groq chat untuk pengguna login.
-- **Placeholder web:** Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi belum menjalankan alur kerja sesuai namanya.
-- **Milestone versi 2.0:** Menjadikan alur kerja placeholder tersebut berfungsi setelah kebutuhannya ditentukan. Jangan menganggap versi 2.0 sudah diimplementasikan.
+- **Tambahan pada working tree Web 1.2.1:** Analisis Kinerja DJPb menyimpan satu triwulan aktif, mencocokkan NIP dengan sumber pegawai terkini, dan mendukung unggahan dataset serta penyesuaian oleh Super Admin. Tabel didaftarkan di `backend/app/history_db.py`; DDL MySQL manual tersedia di `backend/sql/006_create_performance_kinerja.sql`.
+- **Placeholder web:** Bahan Pendukung MPK dan Simulasi Mutasi belum menjalankan alur kerja sesuai namanya.
+- **Milestone versi 2.0:** Menjadikan alur kerja placeholder yang tersisa berfungsi setelah kebutuhannya ditentukan. Jangan menganggap versi 2.0 sudah diimplementasikan.
 - **Desktop:** Menu navigasi utamanya hanya PBN Analytics dan Insight Hub; tidak ada login desktop, workspace Admin, atau menu placeholder web.
 - DatasetStore masih menggunakan memori dan akan kosong setelah backend dimulai ulang. Persistensi dataset ke database perlu dirancang terpisah jika diminta.
 

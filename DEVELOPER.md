@@ -5,7 +5,7 @@ This file helps new contributors (especially juniors) understand where to make c
 **Release scope**
 - The current web release is **1.2.1**. See [web update notes](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), [web update 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md), and [desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
 - Desktop main navigation is limited to PBN Analytics and Insight Hub and has no login system. The additional web menus and account workflow are web-only.
-- Generate ND Undangan Pelantikan is implemented for signed-in web users. Analisis Kinerja DJPb, Bahan Pendukung MPK, and Simulasi Mutasi remain web placeholders; version **2.0** is the planned milestone for those workflows.
+- Generate ND Undangan Pelantikan is implemented for signed-in web users. Analisis Kinerja DJPb is publicly readable, including Guest mode; only Super Admins can upload or adjust its active quarterly dataset. Bahan Pendukung MPK and Simulasi Mutasi remain web placeholders; version **2.0** is the planned milestone for those workflows.
 
 **Overview**
 - **Purpose**: A data management platform for PBN dataset cleaning and analytics. Backend is FastAPI (Python), frontend is React 19 + Vite with React Router (TypeScript).
@@ -19,7 +19,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - Health: `GET http://localhost:8000/health`.
 - Frontend:
   - From `frontend/`: `npm install` then `npm run dev` for development or `npm run build` for production build.
-  - Routes include `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, and `/undangan-pelantikan`.
+  - Routes include `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, `/undangan-pelantikan`, and `/undangan-pelantikan-experimental`.
 - One-click local launch:
   - Double-click `run-app-testing.bat` from the repo root (starts both backend & frontend with auto-reload).
 - One-click network launch:
@@ -165,10 +165,11 @@ This file helps new contributors (especially juniors) understand where to make c
 
 ## Pelantikan agenda workflow
 
-- The web-only route is `/undangan-pelantikan`; `/undangan-pelantikan/:agendaId` resumes an agenda. Every agenda API call requires a signed-in user and checks ownership.
-- Agenda records and participant snapshots are persisted in `pelantikan_agendas` and `pelantikan_agenda_people`. Use `backend/sql/005_create_pelantikan_agendas.sql` for fresh installations; startup creates mapped tables and adds missing participant snapshot columns on existing installations.
+- The standard web route is `/undangan-pelantikan`; `/undangan-pelantikan/:agendaId` resumes a single-sheet agenda. `/undangan-pelantikan-experimental` and its `:agendaId` route provide configurable all, selected, isolated, or single-sheet import. Every agenda API call requires a signed-in user and checks ownership.
+- Agenda records and participant snapshots are persisted in `pelantikan_agendas` and `pelantikan_agenda_people`. Use `backend/sql/005_create_pelantikan_agendas.sql` for fresh installations; startup adds missing workflow, import-strategy, and provenance columns on existing installations.
 - The form's level choices are Administrator and Tinggi Pratama. Dress code choices are Wastra Nusantara, PSL Lengkap, or a user-entered value. The card countdown uses the Jakarta date and shows Berakhir for past dates.
-- Roster upload accepts `.xlsx` and `.xls` up to 50 MB. The `/sheets` endpoint lists worksheet names so the user can choose the exact sheet to process; a single-sheet workbook is selected automatically. Upload then matches extracted NIPs against `pbncleaner.fetch_pbnopen`; selected employees and their Daring/Luring modality can be reviewed before generation.
+- Roster upload accepts `.xlsx` and `.xls` up to 50 MB. The standard workflow processes one selected sheet. Experimental import offers combine all sheets, combine chosen sheets, isolate each sheet, or process one sheet. It skips empty/non-roster sheets with a notice, persists each source sheet/row, and resolves NIP duplicates by workbook-tab/row order; the first occurrence is selectable.
+- Both workflows share participant selection, including Select All and Deselect All. Combined imports group matching Unit Eselon II values across sheets while keeping Daring and Luring separate. Isolated imports also keep source sheets in separate preview/document groups. The generated roster uses the employee database's current `Jabatan`; the workbook's proposed new title is only a preview reference and is not copied into the document.
 - The source workbook and generated documents are not retained on the server. The agenda and participant snapshot remain so the owner can resume the workflow; re-uploading a workbook or switching sheets replaces that agenda's participant snapshot. The frontend keeps the current workbook and sheet selected after upload so the owner can replace the roster without creating another agenda.
 - Generated DOCX files are grouped by Unit Eselon II and modality, then downloaded together as a ZIP. Keep recipient wording and the shared job-title formatting rules in `pelantikan_agenda_service.py` and `employee_formatting.py` aligned.
 
@@ -264,7 +265,8 @@ npm run build              # TypeScript check + Vite build to dist/
 ## Current Product Scope and Next Milestone
 
 - **Web 1.2.1:** PBN Analytics, Insight Hub, web accounts and role-based access, the Admin workspace, Plt./Plh. monitoring with PBN Open employee lookup, Pelantikan agenda and invitation generation, user-persisted appearance preferences, magnetic toolbar snapping, and the authenticated Groq assistant.
-- **Web-only placeholders:** Analisis Kinerja DJPb, Bahan Pendukung MPK, and Simulasi Mutasi do not yet implement their named workflows.
-- **Version 2.0 milestone:** Make those placeholder workflows functional after requirements are defined. Do not treat 2.0 as already implemented.
+- **Web 1.2.1 working-tree addition:** Analisis Kinerja DJPb stores one active quarter, matches NIP against the current employee source, and supports Super Admin full-data/adjustment uploads. Its tables are registered in `backend/app/history_db.py`; `backend/sql/006_create_performance_kinerja.sql` is the manual MySQL DDL.
+- **Web-only placeholders:** Bahan Pendukung MPK and Simulasi Mutasi do not yet implement their named workflows.
+- **Version 2.0 milestone:** Make the remaining placeholder workflows functional after requirements are defined. Do not treat 2.0 as already implemented.
 - **Desktop:** Only PBN Analytics and Insight Hub are main navigation menus; there is no desktop login, Admin workflow, or web-only placeholder menu.
 - DatasetStore remains in-memory and is cleared by a backend restart. Database persistence for datasets should be designed separately if/when requested.

@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -17,6 +17,7 @@ from app.schemas.pelantikan_agenda import (
     PelantikanAgendaSummary,
     PelantikanAgendaUploadRead,
     PelantikanAgendaUpdate,
+    PelantikanImportStrategy,
 )
 from app.services import pelantikan_agenda_service
 
@@ -136,6 +137,121 @@ async def upload_agenda_excel(
         "selected_sheet": updated.uploaded_sheet or "",
         "row_count": len(updated.people),
         "people": updated.people,
+        "processed_sheets": [updated.uploaded_sheet] if updated.uploaded_sheet else [],
+        "skipped_sheets": [],
+        "duplicate_count": sum(
+            person.lookup_status == "duplicate" for person in updated.people
+        ),
+    }
+
+
+@router.post(
+    "/agendas/{agenda_id}/upload-sheets",
+    response_model=PelantikanAgendaUploadRead,
+)
+async def upload_agenda_excel_sheets(
+    agenda_id: str,
+    file: UploadFile = File(...),
+    import_strategy: PelantikanImportStrategy = Form(...),
+    sheet_names: list[str] = Form(default=[]),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        filename = file.filename or ""
+        content = await file.read(pelantikan_agenda_service.MAX_UPLOAD_SIZE + 1)
+        if len(content) > pelantikan_agenda_service.MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail="Ukuran file Excel melebihi 50 MB.")
+        if not content:
+            raise HTTPException(status_code=400, detail="File Excel kosong.")
+        updated, processed_sheets, skipped_sheets, duplicate_count = (
+            pelantikan_agenda_service.upload_sheets_and_match(
+                db,
+                agenda,
+                content,
+                filename,
+                import_strategy,
+                sheet_names,
+            )
+        )
+    except HTTPException:
+        raise
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Hasil pencarian pegawai tidak dapat disimpan.",
+        ) from exc
+    finally:
+        await file.close()
+
+    return {
+        "selected_sheet": updated.uploaded_sheet or "",
+        "row_count": len(updated.people),
+        "people": updated.people,
+        "processed_sheets": processed_sheets,
+        "skipped_sheets": skipped_sheets,
+        "duplicate_count": duplicate_count,
+    }
+
+
+@router.post(
+    "/agendas/{agenda_id}/upload-all-sheets",
+    response_model=PelantikanAgendaUploadRead,
+)
+async def upload_agenda_excel_all_sheets(
+    agenda_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        filename = file.filename or ""
+        content = await file.read(pelantikan_agenda_service.MAX_UPLOAD_SIZE + 1)
+        if len(content) > pelantikan_agenda_service.MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail="Ukuran file Excel melebihi 50 MB.")
+        if not content:
+            raise HTTPException(status_code=400, detail="File Excel kosong.")
+        updated, processed_sheets, skipped_sheets, duplicate_count = (
+            pelantikan_agenda_service.upload_all_sheets_and_match(
+                db,
+                agenda,
+                content,
+                filename,
+            )
+        )
+    except HTTPException:
+        raise
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Hasil pencarian pegawai tidak dapat disimpan.",
+        ) from exc
+    finally:
+        await file.close()
+
+    return {
+        "selected_sheet": updated.uploaded_sheet or "Semua sheet",
+        "row_count": len(updated.people),
+        "people": updated.people,
+        "processed_sheets": processed_sheets,
+        "skipped_sheets": skipped_sheets,
+        "duplicate_count": duplicate_count,
     }
 
 

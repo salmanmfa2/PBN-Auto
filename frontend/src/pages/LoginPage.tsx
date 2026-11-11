@@ -3,7 +3,16 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function LoginPage() {
-  const { mode, isLoading, initializationError, logoutError, login, register, continueAsGuest } = useAuth();
+  const {
+    mode,
+    isLoading,
+    initializationError,
+    sessionExpired,
+    logoutError,
+    login,
+    register,
+    continueAsGuest,
+  } = useAuth();
   const navigate = useNavigate();
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
@@ -35,7 +44,7 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface-950 px-4 py-10 text-slate-100">
       <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-300">MPK Workspace</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-300">Tim Mutasi Pejabat MPK Workspace</p>
         <h1 className="mt-2 text-2xl font-semibold">{isRegistering ? 'Buat akun User' : 'Masuk'}</h1>
         <p className="mt-2 text-sm text-slate-400">
           {isRegistering
@@ -43,11 +52,13 @@ export default function LoginPage() {
             : 'Masuk untuk menggunakan akun atau lanjut sebagai Guest.'}
         </p>
 
-        {(error || initializationError || logoutError) && (
+        {(error || initializationError || sessionExpired || logoutError) && (
           <div role="alert" className="mt-4 rounded-lg border border-rose-700/50 bg-rose-900/20 px-3 py-2 text-sm text-rose-200">
             {error ?? (logoutError
               ? `Logout server gagal; sesi lokal sudah dihapus: ${logoutError}`
-              : `Sesi tidak dapat diverifikasi: ${initializationError}`)}
+              : sessionExpired
+                ? 'Sesi Anda telah berakhir. Silakan masuk kembali.'
+                : `Sesi tidak dapat diverifikasi: ${initializationError}`)}
           </div>
         )}
 

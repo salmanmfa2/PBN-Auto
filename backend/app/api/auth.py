@@ -1,3 +1,5 @@
+from datetime import timezone
+
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -5,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.history_db import get_history_db
 from app.models.auth import User
+from app.models.pbnopen_data_source_sync import PbnOpenDataSourceSync
 from app.schemas.auth import (
     AdminUserCreate,
     AdminUserUpdate,
@@ -16,7 +19,9 @@ from app.schemas.auth import (
     ThemePreferenceUpdate,
     UserRead,
 )
+from app.schemas.pbnopen_data_source import PbnOpenDataSourceSyncStatus
 from app.services import auth_service
+from app.services import performance_kinerja_service
 from app.services import pbnopen_import_service
 
 
@@ -90,11 +95,15 @@ async def validate_pbnopen_data_source(
 @admin_router.post("/pbnopen-data-source/replace")
 async def replace_pbnopen_data_source(
     file: UploadFile = File(...),
-    _: User = Depends(get_super_admin),
+    user: User = Depends(get_super_admin),
 ):
     content = await _read_pbnopen_csv(file)
     try:
-        row_count = pbnopen_import_service.replace_pbnopen_data(content)
+        row_count = pbnopen_import_service.replace_pbnopen_data(
+            content,
+            synced_by_user=user.user,
+            synced_by_name=user.name,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
@@ -102,7 +111,57 @@ async def replace_pbnopen_data_source(
             status_code=503,
             detail="Could not replace 'pbncleaner.fetch_pbnopen'. Verify the table state before retrying; check database connectivity and schema.",
         ) from exc
+    performance_kinerja_service.invalidate_dashboard_cache()
     return {"message": "PBN Open data source replaced successfully.", "row_count": row_count}
+
+
+@admin_router.get(
+    "/pbnopen-data-source/status",
+    response_model=PbnOpenDataSourceSyncStatus,
+)
+def get_pbnopen_data_source_status(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        sync = db.get(PbnOpenDataSourceSync, 1)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not read the employee data source re-sync status.",
+        ) from exc
+
+    if sync is None:
+        return PbnOpenDataSourceSyncStatus()
+    timestamp = sync.last_synced_at
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    else:
+        timestamp = timestamp.astimezone(timezone.utc)
+    return PbnOpenDataSourceSyncStatus(
+        last_synced_at=timestamp,
+        synced_by_user=sync.synced_by_user,
+        synced_by_name=sync.synced_by_name,
+    )
+
+
+@admin_router.post("/dt-employee/sync")
+def sync_dt_employee_from_pbnopen(
+    _: User = Depends(get_super_admin),
+):
+    try:
+        row_count = pbnopen_import_service.sync_dt_employee_from_pbnopen()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not sync 'pbncleaner.dt_employee' from 'pbncleaner.fetch_pbnopen'. Check database connectivity and schema.",
+        ) from exc
+    return {
+        "message": "'pbncleaner.dt_employee' synced successfully from 'pbncleaner.fetch_pbnopen'.",
+        "row_count": row_count,
+    }
 
 
 @router.post("/register", response_model=UserRead, status_code=201)

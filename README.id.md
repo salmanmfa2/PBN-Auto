@@ -8,7 +8,7 @@ Nama aplikasi web pada tab browser adalah **MPK Workspace**; PBN Cleaner tetap m
 
 Pembaruan web saat ini adalah **1.2.1**: [Catatan pembaruan Web](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), setelah [pembaruan Web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). Persyaratan desktop terkait didokumentasikan terpisah di [Catatan pembaruan Desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); catatan desktop tersebut tidak menyatakan build atau rilis desktop telah dibuat.
 
-Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub**, tanpa sistem login. Akun web, monitoring Plt./Plh., dan pembuatan agenda Pelantikan hanya tersedia di web. Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi masih berupa placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
+Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub**, tanpa sistem login. Akun web, monitoring Plt./Plh., pembuatan agenda Pelantikan, dan Analisis Kinerja DJPb hanya tersedia di web. Bahan Pendukung MPK dan Simulasi Mutasi masih berupa placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
 
 ## Fitur
 
@@ -20,12 +20,13 @@ Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub
 | **Ekspor** | ✅ Aktif | Mengunduh data dalam format `.csv` atau `.xlsx` |
 | **Insight Hub** | ✅ Aktif | Dashboard PBN Open + Edu + HB dengan jumlah pegawai dan distribusi data |
 | **Insight Hub Beta (web)** | ✅ Beta | Filter, grafik, dan tabel pegawai yang sama dari `pbncleaner.fetch_pbnopen`; Super Admin dapat mengganti sumber melalui CSV yang divalidasi kolomnya |
+| **Analisis Kinerja DJPb (web)** | ✅ Aktif | Analisis dan tabel data dapat diakses semua pengguna termasuk Guest; hanya Super Admin yang dapat mengunggah atau menyesuaikan data |
 | **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, memilih pejabat pengganti dari PBN Open, dan mengekspor data |
 | **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Mengelola agenda pribadi, memilih sheet dari workbook Excel, mencocokkan pegawai dengan PBN Open, meninjau peserta terpilih, dan membuat dokumen undangan dalam ZIP |
 | **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, dan Super Admin; sesi pengguna berlaku satu jam |
 | **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin dan administrasi monitoring Plt./Plh. |
 | **Feedback pengguna (web)** | ✅ Aktif | Mengirim masukan untuk menu tertentu atau keseluruhan aplikasi; Admin dan Super Admin dapat melihat, menghapus satu masukan, atau menghapus semuanya |
-| **Menu web lainnya** | 🛠️ Placeholder | Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi belum diimplementasikan; menu ini tidak tersedia di desktop |
+| **Menu web lainnya** | 🛠️ Placeholder | Bahan Pendukung MPK dan Simulasi Mutasi belum diimplementasikan; menu ini tidak tersedia di desktop |
 | **Tampilan** | ✅ Aktif | Tema Default, Dark, dan Light; pilihan pengguna yang login tersimpan pada akunnya |
 | **Toolbar Aplikasi** | ✅ Aktif | Jam WIB, posisi dapat digeser dan menempel ke tepi layar terdekat, utilitas dapat disembunyikan, diagnostik API, dan Snake |
 | **Chat AI** | ✅ Aktif | Chat web untuk pengguna login dengan Markdown, tombol hapus percakapan, dan panduan kemampuan aplikasi ringkas; memakai Groq dari backend tanpa membaca ulang dokumentasi setiap permintaan |
@@ -181,6 +182,8 @@ Aplikasi menggunakan **React Router v7** untuk navigasi berbasis URL:
 | `/manajemen-plt-plh` | PltPlhManagementPage | Tabel monitoring Plt./Plh., notifikasi, dan ekspor |
 | `/undangan-pelantikan` | PelantikanAgendaPage | Membuat dan mengelola agenda Pelantikan |
 | `/undangan-pelantikan/:agendaId` | PelantikanAgendaPage | Membuka kembali agenda milik pengguna |
+| `/undangan-pelantikan-experimental` | PelantikanAgendaPage | Impor eksperimental untuk menggabungkan semua/pilihan sheet, memisahkan sheet, atau memproses satu sheet |
+| `/undangan-pelantikan-experimental/:agendaId` | PelantikanAgendaPage | Membuka kembali agenda eksperimental semua sheet |
 | `/admin` | AdminPage | Workspace Admin; pengelolaan akun khusus Super Admin |
 | `/login` | LoginPage | Masuk, mendaftar, atau melanjutkan sebagai Guest |
 
@@ -228,6 +231,8 @@ VITE_API_URL=http://localhost:8000
 | `GET` / `PUT` / `DELETE` | `/undangan-pelantikan/agendas/{agenda_id}` | Membaca, memperbarui, atau menghapus agenda milik pengguna |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/sheets` | Menampilkan nama sheet dari workbook Excel yang diunggah |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload` | Mengunggah roster Excel dan mencocokkan NIP dengan PBN Open |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-sheets` | Mengimpor semua, sheet pilihan, sheet terpisah, atau satu sheet pada alur eksperimental |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-all-sheets` | Menggabungkan sheet roster valid, melaporkan sheet yang dilewati dan NIP duplikat, lalu mencocokkan NIP dengan PBN Open |
 | `PUT` | `/undangan-pelantikan/agendas/{agenda_id}/people` | Menyimpan pilihan peserta dan moda |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate` | Membuat dokumen undangan berkelompok dalam ZIP |
 

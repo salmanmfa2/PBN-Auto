@@ -61,11 +61,11 @@ const features: Feature[] = [
   {
     key: 'analisis-kinerja',
     title: 'Analisis Kinerja DJPb',
-    subtitle: 'Analisis kinerja DJPb',
+    subtitle: 'Lihat analisis dan data skor kinerja pegawai',
     group: 'Analytics & Insight',
-    status: 'dev',
+    status: 'ready',
     icon: 'performance',
-    placeholder: true,
+    path: '/analisis-kinerja',
   },
   {
     key: 'plt-plh',
@@ -84,6 +84,16 @@ const features: Feature[] = [
     status: 'ready',
     icon: 'document',
     path: '/undangan-pelantikan',
+    userOnly: true,
+  },
+  {
+    key: 'nd-undangan-experimental',
+    title: 'Generate ND Menu Experimental',
+    subtitle: 'Gabungkan sheet roster dari satu workbook',
+    group: 'Operasional',
+    status: 'beta',
+    icon: 'document',
+    path: '/undangan-pelantikan-experimental',
     userOnly: true,
   },
   {

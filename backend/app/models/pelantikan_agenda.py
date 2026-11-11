@@ -23,6 +23,14 @@ class PelantikanAgenda(Base):
             "status IN ('draft', 'ready', 'generated')",
             name="chk_pelantikan_agendas_status",
         ),
+        CheckConstraint(
+            "workflow_mode IN ('single_sheet', 'all_sheets')",
+            name="chk_pelantikan_agendas_workflow_mode",
+        ),
+        CheckConstraint(
+            "import_strategy IN ('single_sheet', 'all_sheets', 'selected_sheets', 'isolated_sheets')",
+            name="chk_pelantikan_agendas_import_strategy",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -39,6 +47,18 @@ class PelantikanAgenda(Base):
     dresscode: Mapped[str] = mapped_column(String(1000), nullable=False)
     level_jabatan: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    workflow_mode: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="single_sheet",
+        server_default="single_sheet",
+    )
+    import_strategy: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default="single_sheet",
+        server_default="single_sheet",
+    )
     uploaded_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     uploaded_sheet: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -83,6 +103,8 @@ class PelantikanAgendaPerson(Base):
     )
     row_number: Mapped[int] = mapped_column(Integer, nullable=False)
     source_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_sheet: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_row_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_nama_nip: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_jabatan_saat_ini: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_usul_jabatan_baru: Mapped[str | None] = mapped_column(Text, nullable=True)

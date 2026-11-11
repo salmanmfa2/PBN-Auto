@@ -23,6 +23,7 @@ from app.schemas.pelantikan_agenda import (
     PelantikanAgendaPersonRead,
     PelantikanAgendaRead,
     PelantikanAgendaSummary,
+    PelantikanImportStrategy,
     PelantikanPersonChoice,
 )
 from app.services import dataset_service
@@ -133,6 +134,107 @@ def _find_column(columns: list[object], aliases: tuple[str, ...]) -> object | No
     return None
 
 
+def _extract_roster_rows(dataframe: pd.DataFrame, sheet_name: str) -> list[dict]:
+    columns = list(dataframe.columns)
+    no_column = _find_column(columns, ("No", "NO."))
+    name_nip_column = _find_column(columns, ("Nama/NIP",))
+    current_job_column = _find_column(
+        columns,
+        ("Jabatan Saat ini", "Jabatan Saat ini/Grade", "Jabatan Saat Ini/Grade"),
+    )
+    proposed_job_column = _find_column(
+        columns,
+        ("Usul Jabatan Baru", "Usul Jabatan Baru/Grade"),
+    )
+    required_columns = {
+        "No": no_column,
+        "Nama/NIP": name_nip_column,
+        "Jabatan Saat ini": current_job_column,
+        "Usul Jabatan Baru": proposed_job_column,
+    }
+    missing_columns = [name for name, column in required_columns.items() if column is None]
+    if missing_columns:
+        raise ValueError(
+            "Kolom wajib tidak ditemukan pada baris header ketiga: "
+            + ", ".join(missing_columns)
+            + "."
+        )
+
+    extracted = []
+    for index, row in dataframe.iterrows():
+        source_name_nip = _display_text(row[name_nip_column])
+        if not source_name_nip:
+            continue
+        source_row_number = int(index) + 4
+        extracted.append(
+            {
+                "row_number": source_row_number,
+                "source_sheet": sheet_name,
+                "source_row_number": source_row_number,
+                "nip": _extract_nip_from_name_nip(source_name_nip),
+                "source_no": _display_source_value(row[no_column]),
+                "source_nama_nip": source_name_nip,
+                "source_jabatan_saat_ini": _display_source_value(row[current_job_column]),
+                "source_usul_jabatan_baru": _display_source_value(row[proposed_job_column]),
+            }
+        )
+    return extracted
+
+
+def _match_extracted_rows(
+    extracted: list[dict],
+) -> tuple[list[PelantikanAgendaPerson], int]:
+    nips = {row["nip"] for row in extracted if row["nip"]}
+    employee_records = _lookup_employee_records(nips)
+    seen_nips: set[str] = set()
+    people: list[PelantikanAgendaPerson] = []
+    duplicate_count = 0
+    for row in extracted:
+        nip = row["nip"]
+        employee = employee_records.get(nip) if nip else None
+        if not nip:
+            lookup_status = "missing_nip"
+        elif nip in seen_nips:
+            lookup_status = "duplicate"
+            duplicate_count += 1
+        elif employee is None:
+            lookup_status = "not_found"
+        else:
+            lookup_status = "matched"
+
+        if nip:
+            seen_nips.add(nip)
+        if employee:
+            name = employee["nama"]
+            job = employee["jabatan"]
+            unit = employee["unit_eselon_ii"]
+        else:
+            name = ""
+            job = ""
+            unit = ""
+
+        people.append(
+            PelantikanAgendaPerson(
+                row_number=row["row_number"],
+                source_no=row["source_no"],
+                source_sheet=row["source_sheet"],
+                source_row_number=row["source_row_number"],
+                source_nama_nip=row["source_nama_nip"],
+                source_jabatan_saat_ini=row["source_jabatan_saat_ini"],
+                source_usul_jabatan_baru=row["source_usul_jabatan_baru"],
+                nip=nip,
+                nama=name,
+                jabatan=job,
+                unit_eselon_ii=unit,
+                eselon=employee.get("eselon") if employee else None,
+                lookup_status=lookup_status,
+                selected=False,
+                modality=None,
+            )
+        )
+    return people, duplicate_count
+
+
 def _lookup_employee_records(nips: set[str]) -> dict[str, dict[str, str]]:
     if not nips:
         return {}
@@ -207,6 +309,8 @@ def agenda_to_read(agenda: PelantikanAgenda) -> PelantikanAgendaRead:
         dresscode=agenda.dresscode,
         level_jabatan=agenda.level_jabatan,
         status=agenda.status,
+        workflow_mode=agenda.workflow_mode,
+        import_strategy=agenda.import_strategy,
         uploaded_filename=agenda.uploaded_filename,
         uploaded_sheet=agenda.uploaded_sheet,
         last_generated_at=agenda.last_generated_at,
@@ -250,10 +354,14 @@ def create_agenda(
     username: str,
     fields: PelantikanAgendaCreate,
 ) -> PelantikanAgenda:
+    values = fields.model_dump()
+    values["import_strategy"] = (
+        "all_sheets" if fields.workflow_mode == "all_sheets" else "single_sheet"
+    )
     agenda = PelantikanAgenda(
         id=str(uuid4()),
         created_by=username,
-        **fields.model_dump(),
+        **values,
     )
     db.add(agenda)
     db.commit()
@@ -346,99 +454,19 @@ def upload_and_match(
         if dataframe.empty:
             raise ValueError("The selected worksheet has no employee rows.")
 
-        columns = list(dataframe.columns)
-        no_column = _find_column(columns, ("No", "NO."))
-        name_nip_column = _find_column(columns, ("Nama/NIP",))
-        current_job_column = _find_column(
-            columns,
-            ("Jabatan Saat ini", "Jabatan Saat ini/Grade", "Jabatan Saat Ini/Grade"),
-        )
-        proposed_job_column = _find_column(
-            columns,
-            ("Usul Jabatan Baru", "Usul Jabatan Baru/Grade"),
-        )
-        required_columns = {
-            "No": no_column,
-            "Nama/NIP": name_nip_column,
-            "Jabatan Saat ini": current_job_column,
-            "Usul Jabatan Baru": proposed_job_column,
-        }
-        missing_columns = [name for name, column in required_columns.items() if column is None]
-        if missing_columns:
-            raise ValueError(
-                "Kolom wajib tidak ditemukan pada baris header ketiga: "
-                + ", ".join(missing_columns)
-                + "."
-            )
-
-        extracted = []
-        for index, row in dataframe.iterrows():
-            source_name_nip = _display_text(row[name_nip_column])
-            if not source_name_nip:
-                continue
-            extracted.append(
-                {
-                    "row_number": int(index) + 4,
-                    "nip": _extract_nip_from_name_nip(source_name_nip),
-                    "source_no": _display_source_value(row[no_column]),
-                    "source_nama_nip": source_name_nip,
-                    "source_jabatan_saat_ini": _display_source_value(row[current_job_column]),
-                    "source_usul_jabatan_baru": _display_source_value(row[proposed_job_column]),
-                }
-            )
+        extracted = _extract_roster_rows(dataframe, selected_sheet)
         if not extracted:
             raise ValueError("Tidak ada baris pegawai dengan isi pada kolom Nama/NIP.")
 
-        nips = {row["nip"] for row in extracted if row["nip"]}
-        employee_records = _lookup_employee_records(nips)
-        seen_nips: set[str] = set()
-        people: list[PelantikanAgendaPerson] = []
-        for row in extracted:
-            nip = row["nip"]
-            employee = employee_records.get(nip) if nip else None
-            if not nip:
-                lookup_status = "missing_nip"
-            elif nip in seen_nips:
-                lookup_status = "duplicate"
-            elif employee is None:
-                lookup_status = "not_found"
-            else:
-                lookup_status = "matched"
-
-            if nip:
-                seen_nips.add(nip)
-            if employee:
-                name = employee["nama"]
-                job = employee["jabatan"]
-                unit = employee["unit_eselon_ii"]
-            else:
-                name = ""
-                job = ""
-                unit = ""
-
-            people.append(
-                PelantikanAgendaPerson(
-                    row_number=row["row_number"],
-                    source_no=row["source_no"],
-                    source_nama_nip=row["source_nama_nip"],
-                    source_jabatan_saat_ini=row["source_jabatan_saat_ini"],
-                    source_usul_jabatan_baru=row["source_usul_jabatan_baru"],
-                    nip=nip,
-                    nama=name,
-                    jabatan=job,
-                    unit_eselon_ii=unit,
-                    eselon=employee.get("eselon") if employee else None,
-                    lookup_status=lookup_status,
-                    selected=False,
-                    modality=None,
-                )
-            )
+        people, _ = _match_extracted_rows(extracted)
 
         agenda.people.clear()
         db.flush()
         agenda.people.extend(people)
         agenda.uploaded_filename = Path(filename).name[:255]
         agenda.uploaded_sheet = selected_sheet[:255]
+        agenda.workflow_mode = "single_sheet"
+        agenda.import_strategy = "single_sheet"
         agenda.status = "ready" if any(person.selected for person in people) else "draft"
         db.commit()
         db.refresh(agenda)
@@ -452,6 +480,144 @@ def upload_and_match(
     finally:
         if dataset_id:
             DatasetStore.delete(dataset_id)
+
+
+def upload_all_sheets_and_match(
+    db: Session,
+    agenda: PelantikanAgenda,
+    content: bytes,
+    filename: str,
+) -> tuple[PelantikanAgenda, list[str], list[str], int]:
+    return upload_sheets_and_match(
+        db,
+        agenda,
+        content,
+        filename,
+        "all_sheets",
+    )
+
+
+def upload_sheets_and_match(
+    db: Session,
+    agenda: PelantikanAgenda,
+    content: bytes,
+    filename: str,
+    import_strategy: PelantikanImportStrategy,
+    sheet_names: list[str] | None = None,
+) -> tuple[PelantikanAgenda, list[str], list[str], int]:
+    if import_strategy not in {
+        "single_sheet",
+        "all_sheets",
+        "selected_sheets",
+        "isolated_sheets",
+    }:
+        raise ValueError("Pilih metode impor sheet yang valid.")
+    extension = Path(filename).suffix.casefold()
+    if extension not in ALLOWED_EXTENSIONS:
+        raise ValueError("Unggah file Excel berformat .xlsx atau .xls.")
+    if not content:
+        raise ValueError("File Excel kosong.")
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise ValueError("Ukuran file Excel melebihi 50 MB.")
+
+    engine_name = "openpyxl" if extension == ".xlsx" else "xlrd"
+    try:
+        workbook = pd.ExcelFile(BytesIO(content), engine=engine_name)
+    except Exception as exc:
+        raise ValueError(f"Could not read file: {exc}") from exc
+
+    extracted: list[dict] = []
+    processed_sheets: list[str] = []
+    skipped_sheets: list[str] = []
+    try:
+        try:
+            workbook_sheets = list(workbook.sheet_names)
+            if not workbook_sheets:
+                raise ValueError("Uploaded file contains no worksheets.")
+            requested_sheets = sheet_names or []
+            if import_strategy == "selected_sheets":
+                if not requested_sheets:
+                    raise ValueError("Pilih setidaknya satu sheet untuk digabungkan.")
+                if len(requested_sheets) != len(set(requested_sheets)):
+                    raise ValueError("Sheet yang dipilih tidak boleh duplikat.")
+            elif import_strategy == "single_sheet" and len(requested_sheets) != 1:
+                raise ValueError("Pilih tepat satu sheet untuk diproses.")
+
+            if import_strategy in {"selected_sheets", "single_sheet"}:
+                unknown_sheets = [
+                    sheet_name
+                    for sheet_name in requested_sheets
+                    if sheet_name not in workbook_sheets
+                ]
+                if unknown_sheets:
+                    raise ValueError(
+                        "Sheet tidak ditemukan di workbook: " + ", ".join(unknown_sheets) + "."
+                    )
+                selected_names = set(requested_sheets)
+                sheets_to_process = [
+                    sheet_name for sheet_name in workbook_sheets if sheet_name in selected_names
+                ]
+            else:
+                sheets_to_process = workbook_sheets
+
+            for sheet_name in sheets_to_process:
+                dataframe = workbook.parse(sheet_name=sheet_name, skiprows=2, header=0)
+                if dataframe.empty:
+                    skipped_sheets.append(sheet_name)
+                    continue
+                try:
+                    rows = _extract_roster_rows(dataframe, sheet_name)
+                except ValueError:
+                    skipped_sheets.append(sheet_name)
+                    continue
+                if not rows:
+                    skipped_sheets.append(sheet_name)
+                    continue
+                for row in rows:
+                    row["row_number"] = len(extracted) + 1
+                    extracted.append(row)
+                processed_sheets.append(sheet_name)
+        finally:
+            workbook.close()
+
+        if not extracted:
+            skipped_detail = (
+                " Sheet yang dilewati: " + ", ".join(skipped_sheets) + "."
+                if skipped_sheets
+                else ""
+            )
+            raise ValueError(
+                "Tidak ditemukan sheet roster yang dapat diproses." + skipped_detail
+            )
+
+        people, duplicate_count = _match_extracted_rows(extracted)
+        agenda.people.clear()
+        db.flush()
+        agenda.people.extend(people)
+        agenda.uploaded_filename = Path(filename).name[:255]
+        if import_strategy in {"all_sheets", "isolated_sheets"}:
+            agenda.uploaded_sheet = "Semua sheet"
+        elif import_strategy == "selected_sheets":
+            agenda.uploaded_sheet = ", ".join(processed_sheets)[:255]
+        else:
+            agenda.uploaded_sheet = processed_sheets[0][:255]
+        agenda.workflow_mode = "all_sheets"
+        agenda.import_strategy = import_strategy
+        agenda.status = "ready" if any(person.selected for person in people) else "draft"
+        db.commit()
+        db.refresh(agenda)
+        return (
+            get_owned_agenda(db, agenda.id, agenda.created_by),
+            processed_sheets,
+            skipped_sheets,
+            duplicate_count,
+        )
+    except (KeyError, ValueError, RuntimeError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise RuntimeError("Could not save the employee lookup results for this agenda.") from exc
 
 
 def save_person_choices(
@@ -761,12 +927,17 @@ def generate_agenda_zip(db: Session, agenda: PelantikanAgenda) -> tuple[bytes, i
             "dan memiliki pilihan Daring atau Luring."
         )
 
-    grouped: dict[tuple[str, str], list[PelantikanAgendaPerson]] = {}
-    display_names: dict[tuple[str, str], str] = {}
+    isolate_sheets = (
+        getattr(agenda, "workflow_mode", "single_sheet") == "all_sheets"
+        and getattr(agenda, "import_strategy", "all_sheets") == "isolated_sheets"
+    )
+    grouped: dict[tuple[str | None, str, str], list[PelantikanAgendaPerson]] = {}
+    display_names: dict[tuple[str | None, str, str], str] = {}
     for person in sorted(included, key=lambda item: item.row_number):
         unit_name = person.unit_eselon_ii.strip()
         modality = person.modality
-        key = (unit_name.casefold(), modality)
+        source_sheet = (person.source_sheet or "Sheet") if isolate_sheets else None
+        key = (source_sheet, unit_name.casefold(), modality)
         grouped.setdefault(key, []).append(person)
         display_names.setdefault(key, unit_name)
 
@@ -774,11 +945,16 @@ def generate_agenda_zip(db: Session, agenda: PelantikanAgenda) -> tuple[bytes, i
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
         for index, (key, people) in enumerate(grouped.items(), start=1):
             unit_name = display_names[key]
-            modality = key[1]
+            source_sheet, _, modality = key
             document = build_agenda_docx(agenda, people, modality, unit_name)
             mode_label = "daring" if modality == "daring" else "luring"
+            source_label = (
+                f"_{_safe_filename(source_sheet)}"
+                if source_sheet is not None
+                else ""
+            )
             entry_name = (
-                f"{index:02d}_{_safe_filename(unit_name)}_{mode_label}.docx"
+                f"{index:02d}_{_safe_filename(unit_name)}{source_label}_{mode_label}.docx"
             )
             archive.writestr(entry_name, document)
 

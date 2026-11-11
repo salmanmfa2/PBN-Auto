@@ -49,6 +49,10 @@ class ChatServiceTests(unittest.TestCase):
         self.assertIn("do not claim the app performs OCR", system_prompt)
         self.assertIn("Insight Hub Beta is a web dashboard backed by pbncleaner.fetch_pbnopen", system_prompt)
         self.assertIn("only Super Admins can replace that source", system_prompt)
+        self.assertIn("Analisis Kinerja DJPb is a publicly readable web feature", system_prompt)
+        self.assertIn("only Super Admins can replace the full CSV dataset", system_prompt)
+        self.assertIn("does not retain previous quarters", system_prompt)
+        self.assertIn("Bahan Pendukung MPK and Simulasi Mutasi remain web placeholder", system_prompt)
         self.assertIn("Desktop navigation has only PBN Analytics and Insight Hub", system_prompt)
         self.assertEqual(request["messages"][-1], {"role": "user", "content": "Hello"})
 

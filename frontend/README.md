@@ -22,6 +22,7 @@ src/
 │   ├── InsightHubPage.tsx       # /insights and /insights-beta
 │   ├── PltPlhManagementPage.tsx # /manajemen-plt-plh
 │   ├── PelantikanAgendaPage.tsx # /undangan-pelantikan
+│   ├── PerformanceAnalysisPage.tsx # /analisis-kinerja
 │   ├── LoginPage.tsx            # /login
 │   └── AdminPage.tsx            # /admin
 ├── features/                     # Feature-scoped components
@@ -80,11 +81,15 @@ Using **React Router v7** with page components in `src/pages/`:
 /insights-beta       → InsightHubPage (database-backed PBN Open dashboard)
 /manajemen-plt-plh   → PltPlhManagementPage (web-only monitoring)
 /undangan-pelantikan → PelantikanAgendaPage (web-only agenda and document workflow)
+/analisis-kinerja   → PerformanceAnalysisPage (public read access; uploads are Super Admin-only)
+/undangan-pelantikan-experimental → PelantikanAgendaPage (configurable experimental sheet import)
 /admin               → AdminPage (role-gated administration)
 /login               → LoginPage (authentication and Guest entry)
 ```
 
 All feature routes except `/login` require a session. Unmatched routes redirect to the landing page. Plt./Plh. employee search is restricted to Admin and Super Admin; Pelantikan agendas are scoped to their signed-in owner.
+
+Analisis Kinerja is publicly readable, including in Guest mode. Only Super Admin can upload or adjust performance data.
 
 The global `AppToolbar` includes the WIB clock, theme selection, utility tools, and drag-to-move positioning that snaps to the nearest screen edge on release and after viewport resizing.
 

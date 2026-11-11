@@ -8,7 +8,7 @@ The web app is titled **MPK Workspace** in the browser; PBN Cleaner remains the 
 
 The current web update is **1.2.1**: [Web update notes](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), following [Web update 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). The corresponding desktop requirements are documented separately in [Desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); those notes do not claim a desktop build or release has been produced.
 
-The desktop application's main navigation is limited to **PBN Analytics** and **Insight Hub**, with no login system. Web accounts, Plt./Plh. monitoring, and Pelantikan agenda generation are web-only. Analisis Kinerja DJPb, Bahan Pendukung MPK, and Simulasi Mutasi remain web placeholders; version **2.0** is a future milestone for those workflows.
+The desktop application's main navigation is limited to **PBN Analytics** and **Insight Hub**, with no login system. Web accounts, Plt./Plh. monitoring, Pelantikan agenda generation, and Analisis Kinerja DJPb are web-only. Bahan Pendukung MPK and Simulasi Mutasi remain web placeholders; version **2.0** is a future milestone for those workflows.
 
 ## Features
 
@@ -19,13 +19,14 @@ The desktop application's main navigation is limited to **PBN Analytics** and **
 | **Column Management** | ✅ Live | Hide/remove columns; inline rename with preview table |
 | **Export** | ✅ Live | Download as `.csv` or `.xlsx` |
 | **Insight Hub** | ✅ Live | PBN Open + Edu + HB dashboard with employee totals and distributions |
-| **Insight Hub Beta (web)** | ✅ Beta | Same filters, charts, and employee table sourced from `pbncleaner.fetch_pbnopen`; Super Admin can replace the source using a column-checked CSV workflow |
+| **Insight Hub Beta (web)** | ✅ Beta | Same filters, charts, and employee table sourced from `pbncleaner.fetch_pbnopen`; Super Admin can replace the source CSV and separately sync `pbncleaner.dt_employee` from it |
+| **Analisis Kinerja DJPb (web)** | ✅ Live | Public analysis and extracted-data table, including Guest access; only Super Admin can upload or adjust data |
 | **Manajemen Plt./Plh.** | ✅ Live | Monitor acting assignments, calculate tenure/status, receive dashboard notices, select replacement employees from PBN Open, and export records |
 | **Generate ND Undangan Pelantikan (web)** | ✅ Live | Manage personal agendas, choose a worksheet from uploaded Excel workbooks, match employees to PBN Open, preview selected participants, and generate grouped invitation documents in a ZIP |
 | **Web accounts and roles** | ✅ Live | Guest, User, Admin, and Super Admin access; one-hour authenticated sessions |
 | **Admin workspace** | ✅ Live | Super Admin account management and shared Plt./Plh. administration |
 | **User feedback (web)** | ✅ Live | Submit menu-specific or overall feedback; Admin and Super Admin can review, delete individual entries, or clear all feedback |
-| **Other web menus** | 🛠️ Placeholder | Analisis Kinerja DJPb, Bahan Pendukung MPK, and Simulasi Mutasi are not implemented; desktop does not include these menus |
+| **Other web menus** | 🛠️ Placeholder | Bahan Pendukung MPK and Simulasi Mutasi are not implemented; desktop does not include these menus |
 | **Appearance** | ✅ Live | Default, Dark, and Light themes; signed-in users' preferences follow their accounts |
 | **App Toolbar** | ✅ Live | WIB clock, draggable position that snaps to the nearest screen edge, collapsible utility actions, API diagnostics, and Snake |
 | **AI chat assistant** | ✅ Live | Authenticated web chat with Markdown rendering, clear-chat control, and concise app-capability guidance; uses backend-configured Groq without reloading documentation per request |
@@ -51,7 +52,8 @@ Project PBNCleaner/
 │   │   │   ├── auth.py            # Web login, preferences, and account endpoints
 │   │   │   ├── chat.py            # Authenticated Groq chat endpoint
 │   │   │   ├── plt_plh.py         # Plt./Plh. monitoring and employee lookup
-│   │   │   └── pelantikan_agenda.py # Pelantikan agenda and document workflow
+│   │   │   ├── pelantikan_agenda.py # Pelantikan agenda and document workflow
+│   │   │   └── performance_kinerja.py # Quarterly employee performance analysis
 │   │   ├── cleaners/
 │   │   │   ├── pbn.py             # PBN Open mode
 │   │   │   ├── pbn_edu.py         # PBN Open + Edu mode
@@ -76,6 +78,7 @@ Project PBNCleaner/
 │       │   ├── InsightHubPage.tsx # /insights route
 │       │   ├── PltPlhManagementPage.tsx # Web-only monitoring
 │       │   ├── PelantikanAgendaPage.tsx # Web-only agenda workflow
+│   │       ├── PerformanceAnalysisPage.tsx # Web-only performance analysis
 │       │   ├── LoginPage.tsx      # Web login/registration/Guest
 │       │   └── AdminPage.tsx      # Web account administration
 │       ├── components/
@@ -181,6 +184,8 @@ The app uses **React Router v7** for URL-based navigation:
 | `/manajemen-plt-plh` | PltPlhManagementPage | Plt./Plh. assignment register, notifications, and export |
 | `/undangan-pelantikan` | PelantikanAgendaPage | Create and manage Pelantikan agendas |
 | `/undangan-pelantikan/:agendaId` | PelantikanAgendaPage | Resume an owned agenda |
+| `/undangan-pelantikan-experimental` | PelantikanAgendaPage | Experimental import with combine-all, selected-sheet, isolated-sheet, or single-sheet options |
+| `/undangan-pelantikan-experimental/:agendaId` | PelantikanAgendaPage | Resume an experimental all-sheets agenda |
 | `/admin` | AdminPage | Admin workspace; account management is Super Admin-only |
 | `/login` | LoginPage | Sign in, register, or continue as Guest |
 
@@ -221,6 +226,10 @@ VITE_API_URL=http://localhost:8000
 | `POST` | `/auth/logout` | Revoke the current session |
 | `GET` / `PUT` | `/auth/preferences/theme` | Read or update the signed-in user's theme preference |
 | `GET` / `POST` / `PUT` / `DELETE` | `/admin/users` | Manage accounts (Super Admin only) |
+| `POST` | `/admin/pbnopen-data-source/validate` | Validate a CSV against the current `fetch_pbnopen` columns (Super Admin only) |
+| `POST` | `/admin/pbnopen-data-source/replace` | Replace `fetch_pbnopen` using a validated CSV (Super Admin only) |
+| `GET` | `/admin/pbnopen-data-source/status` | Read the latest in-app `fetch_pbnopen` replacement status |
+| `POST` | `/admin/dt-employee/sync` | Sync `dt_employee` from `fetch_pbnopen`, preserving IDs by NIP, inserting new rows, and removing employees absent from the source (Super Admin only) |
 | `POST` | `/chat` | Generate an authenticated Groq chat response |
 | `POST` / `GET` / `DELETE` | `/feedback` | Submit feedback (signed-in users), or list/clear feedback (Admin and Super Admin) |
 | `DELETE` | `/feedback/{feedback_id}` | Delete one feedback entry (Admin and Super Admin) |
@@ -228,6 +237,8 @@ VITE_API_URL=http://localhost:8000
 | `GET` / `PUT` / `DELETE` | `/undangan-pelantikan/agendas/{agenda_id}` | Read, update, or delete an agenda owned by the signed-in user |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/sheets` | List worksheet names from an uploaded Excel workbook |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload` | Upload an Excel roster and match its NIPs against PBN Open |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-sheets` | Import all, selected, isolated, or one workbook sheet in the experimental workflow |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-all-sheets` | Combine valid roster sheets, report skipped sheets and duplicate NIPs, and match NIPs against PBN Open |
 | `PUT` | `/undangan-pelantikan/agendas/{agenda_id}/people` | Save participant selection and modality |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate` | Generate grouped invitation documents as a ZIP |
 

@@ -20,6 +20,7 @@ from app.api import (
     insights,
     insights_beta,
     pelantikan_agenda,
+    performance_kinerja,
     plt_plh,
     stored_datasets,
     upload,
@@ -89,6 +90,7 @@ app.include_router(dataset.router)
 app.include_router(insights.router)
 app.include_router(insights_beta.router)
 app.include_router(pelantikan_agenda.router)
+app.include_router(performance_kinerja.router)
 app.include_router(plt_plh.router)
 app.include_router(stored_datasets.router)
 

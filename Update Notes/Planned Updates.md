@@ -1,43 +1,58 @@
-# Planned Updates
+# Analisis Kinerja — Implementation Plan
 
-**Status:** Web 1.2 account/admin and user-preference workflows and web-only Undangan Pelantikan 1.2.1 are implemented; remaining deferred work is listed below
-**Last discussed:** 5 November 2026
+## Agreed workflow
 
-## Release scope
+- Store the performance data in MySQL.
+- Keep one active dataset. Before a full upload, select its period in the app (for example, `Q3-2026`); save that period with the active dataset. A validated full upload replaces the active dataset. The first version does not retain or compare previous quarters.
+- Accept 16- or 18-digit NIPs and trim surrounding whitespace before matching. Use current employee data for Unit Eselon II and Eselon grouping when available. Keep unmatched NIPs in the dataset and assign both grouping fields the value `Unidentified`.
+- Treat the example as a semicolon-delimited CSV. Accept either comma or period as the decimal separator; there are no thousands separators.
+- Anyone, including Guest users, can view the analysis and extracted-data table; only Super Admins can upload or adjust data.
+- Validate all rows before changing MySQL. Reject duplicate NIPs and report unknown NIPs; a failed validation must not partially change either dataset.
 
-- Current web release notes: [Update Notes 1.2 Web](./Update%20Notes%201.2%20Web.md).
-- Web-only Undangan Pelantikan 1.2.1: [Update Notes 1.2.1 Web](./Update%20Notes%201.2.1%20Web.md).
-- Desktop requirements are tracked separately in [Update Notes 1.2 Desktop](./Update%20Notes%201.2%20Desktop.md). Desktop main navigation remains limited to PBN Analytics and Insight Hub and has no login system.
-- Generate ND Undangan Pelantikan is implemented as a web-only workflow in version 1.2.1. Analisis Kinerja DJPb remains a web-only placeholder; making that workflow functional is a planned version 2.0 product milestone.
+## Full-data upload and calculations
 
-## Manajemen Plt./Plh.
+- Validate source scores (NHK, NPK, calibration scores, and NKO) within `0–120`.
+- Validate Nilai Koreksi within `-20–20`; penalty magnitudes have no arbitrary maximum. Normalize positive Hukdis and both Dampak values to negative deductions, and report how many values were normalized.
+- Preserve `NKP Awal` and `NKP Akhir` as supplied by the validated full-data source; the source values are the baseline for analysis.
+- Recalculate `NKP Akhir` from the preserved `NKP Awal` and `NKO` only when a validated adjustment upload is applied.
+- Do not change NKO when adjustment values are uploaded.
+- Calculate the weighted base for NKP Akhir:
+  - If `NKO > NKP Awal`: `0.10 × NKO + 0.90 × NKP Awal`
+  - If `NKO < NKP Awal`: `0.70 × NKO + 0.30 × NKP Awal`
+  - If they are equal, either branch produces the same base.
+- Calculate `NKP Akhir = weighted base + Nilai Koreksi + Nilai Hukuman Disiplin + Nilai Dampak Pelanggaran Disiplin`.
+- The adjustments apply to NKP Akhir, not to the imported NKP Awal. Nilai Dampak Perilaku is stored and adjustable but is not included in the NKP Akhir formula.
+- Keep full precision in calculations; round to two decimal places for display/export.
+- Preserve `Rating Hasil Kerja`, `Rating Perilaku Kerja`, and `Predikat Kinerja` from the full upload. Calculate a separate `Status` from NKP Akhir:
+  - `>=115`: Sangat Istimewa
+  - `110–<115`: Istimewa
+  - `100–<110`: Tinggi
+  - `90–<100`: Sedang
+  - `<90`: Rendah
+  - Missing NKP Akhir: Tidak tersedia
+- Computed NKP Akhir may fall outside `0–120` after adjustments; do not clamp it. Apply the lowest/highest status band accordingly.
+- Reject NPK values outside `0–120`; do not clamp them. The NPK histogram shows bins of width 2 from `80` to `120`, with `120` included in the final bin; values below `80` are omitted from the chart.
 
-This is a web-only work area separate from PBN Cleaner dataset cleaning, but accessible from the same home menu. Integration into the desktop version is not planned.
+## Adjustment upload
 
-### Monitoring and UI implemented
+- Provide a downloadable Excel template containing NIP, Nilai Hukuman Disiplin, Nilai Dampak Pelanggaran Disiplin, Nilai Dampak Perilaku, and Nilai Koreksi. Store NIP as text to prevent spreadsheet precision loss.
+- Select/confirm the target period in the app; it must match the active dataset period.
+- Blank adjustment cells preserve their existing values.
+- Positive Hukdis and Dampak entries in adjustment files are normalized to negative values and reported during validation.
+- Reject duplicate NIPs and report unknown NIPs. If validation finds either, make no changes.
+- Recalculate NKP Akhir and Status after applying valid adjustments; leave NKO and NKP Awal unchanged.
 
-- Monitoring rows and Excel exports use contiguous row numbers (1–N); database primary keys remain internal for record actions.
-- Records can be added, edited, deactivated/reactivated, and deleted. Mutations require an Admin or Super Admin account.
-- Masa Kerja is calculated from TMT to today as completed years and remaining months (`Y M`).
-- Status is derived from completed months: Aktif before 5 months; Mendekati 6 Bulan at 5 to under 6 months; Lebih dari 6 Bulan at 6 months or more; manually deactivated records show Inaktif.
-- The home menu displays a notification button when any active record is Mendekati 6 Bulan or Lebih dari 6 Bulan. The module page also lists those records for attention.
-- Export downloads all monitoring rows as an Excel workbook without app-side filters.
-- The home menu uses compact icon-and-text rows for PBN Analytics, Insight Hub, and Manajemen Plt./Plh.
-- `backend/sql/002_create_plt_plh_monitoring.sql` defines the tables and database views. The schema was applied to the configured `pbncleaner` MySQL-compatible database.
+## Analysis
 
-### Account and admin workflow implemented (web only)
-
-- Roles are Guest, User (level 1), Admin (level 2), and Super Admin (level 3). Registration is public and immediately creates a level-1 account; no approval step is used.
-- Guest and User can use the normal dataset-cleaning workflows and view Plt./Plh. records. Only Admin and Super Admin can mutate shared Plt./Plh. records. Admin workspace access requires an Admin or Super Admin account; only Super Admin can create, edit, or delete accounts.
-- The first Super Admin must be inserted manually using the example in `backend/sql/003_create_users_and_sessions.sql`; no default account or password is seeded. The schema includes `users` and `user_sessions` and uses the existing configured MySQL-compatible database.
-- Account passwords are intentionally plaintext in the database for this functional prototype. Do not treat this implementation as production-secure; hashing and broader security hardening remain future work.
-- The account and admin workflow is for the web app only; no desktop integration is planned.
-- Toolbar theme selection (Default, Dark, Light) is implemented. Authenticated users' selection is persisted per account in `user_preferences`; Guest selection is local to the browser.
-
-### Deferred
-
-- The prepared `backend/data-source/data_source.csv` is a large employee dataset for Insight Hub, not Plt./Plh. monitoring. Its column names match the Insight Hub fields. Import/upload and dataset-refresh behavior remain deferred and need separate requirements; do not attach this dataset to the monitoring records.
-- Word document generation will be planned after the monitoring workflow; the user will provide approved `.docx` templates.
-- Continue security hardening later, including password hashing and broader access-control review.
-- Confirm the exact meaning/boundary of “Lebih dari 6 Bulan” for a record at exactly 6 completed months; current behavior starts that status at 6 months.
-- Discuss any changes to columns, record history/retention, or export formatting after using the initial table.
+- Show an NPK histogram with 2-point bins from 80 to 120 and groupable counts/statistics.
+- Count nonzero entries for Hukdis and each Dampak field; values are negative when applied.
+- Present the dashboard in three tabs: overview, Unit Eselon II analysis, and the extracted employee list.
+- On the overview, filter by Unit Eselon II and Eselon (with an all option); show KPI cards, NPK histogram, NKP Akhir status distribution, and Hukdis/Dampak counts.
+- Provide Eselon as a single-select dropdown with a `Semua Eselon` option. Cache dashboard grouping/filter results and invalidate the cache after performance data changes or employee-source synchronization.
+- Allow Unit Eselon II rows to expand into Unit Eselon III and compare average NPK, NHK, NKP Awal/Akhir, initial/final Sangat Istimewa counts and percentages, penalty counts, and correction statistics.
+- Show Gap Status as the number of employees whose derived status differs between NKP Awal and NKP Akhir, for both Unit Eselon II and Unit Eselon III summaries.
+- Count Nilai Koreksi entries only when the value is nonzero, and separate positive Penambahan from negative Pengurangan. For `-1, -2, 3, 0, 0, 0.23, 2, 1`, the count is 6: 2 Pengurangan and 4 Penambahan. Keep the existing average, minimum, and maximum calculations over nonblank values.
+- Let Admin and Super Admin edit one shared Insight Text; Guest and User can read it.
+- Provide a searchable, paginated table of extracted employee rows alongside analytics, including the imported fields, group values, and derived status.
+- Support per-column table filtering and sorting across the full dataset, with text in A–Z/Z–A order and numeric values in ascending/descending order. Keep the current viewport stable while filters refresh.
+- Provide Excel downloads for Unit Eselon II analysis (including Unit Eselon III detail rows) and employee records. The employee export includes all rows matching the current search, not only the current page.

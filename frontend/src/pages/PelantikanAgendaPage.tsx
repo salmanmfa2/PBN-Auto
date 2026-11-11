@@ -7,8 +7,10 @@ import type {
   PelantikanAgendaFields,
   PelantikanAgendaPerson,
   PelantikanAgendaSummary,
+  PelantikanImportStrategy,
   PelantikanModality,
   PelantikanPersonChoice,
+  PelantikanWorkflowMode,
 } from '../types';
 
 const emptyFields: PelantikanAgendaFields = {
@@ -24,6 +26,7 @@ type ChoiceState = Record<number, { selected: boolean; modality: PelantikanModal
 type DocumentPreviewGroup = {
   key: string;
   unit: string;
+  sourceSheet: string | null;
   modality: PelantikanModality;
   people: PelantikanAgendaPerson[];
 };
@@ -106,9 +109,16 @@ function lookupClass(status: string): string {
     : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
 }
 
-export default function PelantikanAgendaPage() {
+export default function PelantikanAgendaPage({
+  workflowMode = 'single_sheet',
+}: {
+  workflowMode?: PelantikanWorkflowMode;
+}) {
   const { agendaId } = useParams<{ agendaId: string }>();
   const navigate = useNavigate();
+  const agendaBasePath = workflowMode === 'all_sheets'
+    ? '/undangan-pelantikan-experimental'
+    : '/undangan-pelantikan';
   const { user, logout } = useAuth();
   const [agendas, setAgendas] = useState<PelantikanAgendaSummary[]>([]);
   const [agenda, setAgenda] = useState<PelantikanAgendaDetail | null>(null);
@@ -126,6 +136,8 @@ export default function PelantikanAgendaPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState('');
+  const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
+  const [importStrategy, setImportStrategy] = useState<PelantikanImportStrategy>('all_sheets');
   const [isLoadingSheets, setIsLoadingSheets] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -137,22 +149,31 @@ export default function PelantikanAgendaPage() {
       if (agendaId) {
         const loadedAgenda = await apiClient.getPelantikanAgenda(agendaId);
         if (!active()) return;
+        if (loadedAgenda.workflow_mode !== workflowMode) {
+          const correctBasePath = loadedAgenda.workflow_mode === 'all_sheets'
+            ? '/undangan-pelantikan-experimental'
+            : '/undangan-pelantikan';
+          navigate(`${correctBasePath}/${loadedAgenda.id}`, { replace: true });
+          return;
+        }
         setAgenda(loadedAgenda);
         setFields(agendaFields(loadedAgenda));
         setChoices(choicesFromAgenda(loadedAgenda));
+        setImportStrategy(loadedAgenda.import_strategy);
         setChoicesDirty(loadedAgenda.people.some((person) => isPendamping(person) && person.selected));
       } else {
         const loadedAgendas = await apiClient.listPelantikanAgendas();
         if (!active()) return;
-        setAgendas(loadedAgendas);
+        setAgendas(loadedAgendas.filter((item) => item.workflow_mode === workflowMode));
         setAgenda(null);
+        setImportStrategy(workflowMode === 'all_sheets' ? 'all_sheets' : 'single_sheet');
       }
     } catch (loadError) {
       if (active()) setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
       if (active()) setIsLoading(false);
     }
-  }, [agendaId]);
+  }, [agendaId, navigate, workflowMode]);
 
   useEffect(() => {
     let active = true;
@@ -179,13 +200,19 @@ export default function PelantikanAgendaPage() {
     [choices],
   );
   const selectableCount = agenda?.people.filter(isSelectablePerson).length ?? 0;
+  const selectedSelectableCount = agenda?.people.filter(
+    (person) => isSelectablePerson(person) && choices[person.id]?.selected,
+  ).length ?? 0;
   const previewGroups = useMemo(() => {
     const groups = new Map<string, DocumentPreviewGroup>();
+    const isolateSheets = agenda?.workflow_mode === 'all_sheets'
+      && agenda.import_strategy === 'isolated_sheets';
     for (const person of agenda?.people ?? []) {
       const choice = choices[person.id];
       if (!choice?.selected || !choice.modality || !isSelectablePerson(person)) continue;
       const unit = person.unit_eselon_ii.trim();
-      const key = `${unit.toLowerCase()}\u0000${choice.modality}`;
+      const sourceSheet = isolateSheets ? person.source_sheet ?? 'Sheet' : null;
+      const key = `${sourceSheet ?? ''}\u0000${unit.toLowerCase()}\u0000${choice.modality}`;
       const group = groups.get(key);
       if (group) {
         group.people.push(person);
@@ -193,13 +220,14 @@ export default function PelantikanAgendaPage() {
         groups.set(key, {
           key,
           unit,
+          sourceSheet,
           modality: choice.modality,
           people: [person],
         });
       }
     }
     return Array.from(groups.values());
-  }, [agenda?.people, choices]);
+  }, [agenda?.import_strategy, agenda?.people, agenda?.workflow_mode, choices]);
   const matchedCount = agenda?.people.filter((person) => person.lookup_status === 'matched').length ?? 0;
   const unmatchedCount = (agenda?.people.length ?? 0) - matchedCount;
 
@@ -212,9 +240,9 @@ export default function PelantikanAgendaPage() {
     setError(null);
     setIsSaving(true);
     try {
-      const created = await apiClient.createPelantikanAgenda(fields);
+      const created = await apiClient.createPelantikanAgenda(fields, workflowMode);
       setIsCreateModalOpen(false);
-      navigate(`/undangan-pelantikan/${created.id}`);
+      navigate(`${agendaBasePath}/${created.id}`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
@@ -248,18 +276,39 @@ export default function PelantikanAgendaPage() {
     setIsUploading(true);
     try {
       await apiClient.updatePelantikanAgenda(agendaId, fields);
-      const result = await apiClient.uploadPelantikanExcel(
-        agendaId,
-        selectedFile,
-        selectedSheet || undefined,
-      );
+      const result = workflowMode === 'all_sheets'
+        ? await apiClient.uploadPelantikanExcelWithStrategy(
+          agendaId,
+          selectedFile,
+          importStrategy,
+          importStrategy === 'selected_sheets'
+            ? availableSheets.filter((sheet) => selectedSheets.includes(sheet))
+            : importStrategy === 'single_sheet' && selectedSheet
+              ? [selectedSheet]
+              : [],
+        )
+        : await apiClient.uploadPelantikanExcel(
+          agendaId,
+          selectedFile,
+          selectedSheet || undefined,
+        );
       const refreshed = await apiClient.getPelantikanAgenda(agendaId);
       setAgenda(refreshed);
       setChoices(choicesFromAgenda(refreshed));
+      setImportStrategy(refreshed.import_strategy);
       setChoicesDirty(false);
-      setNotice(
-        `${result.row_count} baris diproses dari sheet “${result.selected_sheet}”.`,
-      );
+      const importedSheets = workflowMode === 'all_sheets'
+        ? `${result.processed_sheets.length} sheet roster ${
+          importStrategy === 'isolated_sheets' ? 'diproses terpisah' : 'diproses'
+        } (${result.processed_sheets.join(', ')})`
+        : `sheet “${result.selected_sheet}” diproses`;
+      const duplicateNotice = result.duplicate_count
+        ? ` ${result.duplicate_count} baris NIP duplikat ditandai; kemunculan pertama yang dapat dipilih.`
+        : '';
+      const skippedNotice = result.skipped_sheets.length
+        ? ` Sheet dilewati: ${result.skipped_sheets.join(', ')}.`
+        : '';
+      setNotice(`${result.row_count} baris pegawai dari ${importedSheets}.${duplicateNotice}${skippedNotice}`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
     } finally {
@@ -273,16 +322,31 @@ export default function PelantikanAgendaPage() {
     setNotice(null);
     setAvailableSheets([]);
     setSelectedSheet('');
+    setSelectedSheets([]);
     setIsLoadingSheets(true);
     try {
       const sheets = await apiClient.listPelantikanWorkbookSheets(agendaId, fileToInspect);
       setAvailableSheets(sheets);
-      setSelectedSheet(sheets.length === 1 ? sheets[0] : '');
-      setNotice(
-        sheets.length === 1
-          ? `Workbook memiliki satu sheet: “${sheets[0]}”.`
-          : `Ditemukan ${sheets.length} sheet. Pilih sheet yang akan diproses.`,
+      setSelectedSheet(
+        workflowMode === 'single_sheet'
+          ? sheets.length === 1 ? sheets[0] : ''
+          : importStrategy === 'single_sheet' && sheets.length === 1
+            ? sheets[0]
+            : '',
       );
+      setNotice(workflowMode === 'all_sheets'
+        ? `${sheets.length} sheet ditemukan. ${
+          importStrategy === 'isolated_sheets'
+            ? 'Masing-masing akan diproses terpisah.'
+            : importStrategy === 'selected_sheets'
+              ? 'Pilih sheet yang ingin digabung.'
+              : importStrategy === 'single_sheet'
+                ? 'Pilih satu sheet untuk diproses.'
+                : 'Semua sheet akan digabung.'
+        }`
+        : sheets.length === 1
+          ? `Workbook memiliki satu sheet: “${sheets[0]}”.`
+          : `Ditemukan ${sheets.length} sheet. Pilih sheet yang akan diproses.`);
     } catch (sheetError) {
       setAvailableSheets([]);
       setSelectedSheet('');
@@ -325,6 +389,18 @@ export default function PelantikanAgendaPage() {
       }
     }
     if (!changed) return;
+    setChoices(next);
+    setChoicesDirty(true);
+    setNotice(null);
+  };
+
+  const deselectAllMatched = () => {
+    if (!agenda || selectedSelectableCount === 0) return;
+    const next = { ...choices };
+    for (const person of agenda.people) {
+      if (!isSelectablePerson(person) || !next[person.id]?.selected) continue;
+      next[person.id] = { selected: false, modality: null };
+    }
     setChoices(next);
     setChoicesDirty(true);
     setNotice(null);
@@ -378,7 +454,7 @@ export default function PelantikanAgendaPage() {
     setIsDeleting(true);
     try {
       await apiClient.deletePelantikanAgenda(agendaId);
-      navigate('/undangan-pelantikan');
+      navigate(agendaBasePath);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
     } finally {
@@ -430,7 +506,7 @@ export default function PelantikanAgendaPage() {
           <p className="mt-2 text-sm text-slate-400">
             {error ?? 'Agenda tidak ditemukan atau bukan milik akun ini.'}
           </p>
-          <button type="button" className="btn-primary mt-5" onClick={() => navigate('/undangan-pelantikan')}>
+          <button type="button" className="btn-primary mt-5" onClick={() => navigate(agendaBasePath)}>
             Kembali ke riwayat
           </button>
         </section>
@@ -453,12 +529,14 @@ export default function PelantikanAgendaPage() {
             Operasional
           </p>
           <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">
-            Generate ND Undangan Pelantikan
+            {workflowMode === 'all_sheets'
+              ? 'Generate ND Menu Experimental'
+              : 'Generate ND Undangan Pelantikan'}
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            Buat agenda, unggah satu workbook Excel, periksa hasil pencocokan NIP, lalu pilih
-            pegawai Daring atau Luring. Dokumen dibuat per Unit Eselon II dan tidak menyimpan
-            file sumber maupun hasil unduhan.
+            {workflowMode === 'all_sheets'
+              ? 'Impor seluruh sheet roster dari workbook, periksa hasil pencocokan NIP dan sumber sheet, lalu pilih pegawai Daring atau Luring. Sheet kosong/tidak valid dilewati dengan pemberitahuan; dokumen tetap dikelompokkan per Unit Eselon II dan moda.'
+              : 'Buat agenda, unggah satu sheet workbook Excel, periksa hasil pencocokan NIP, lalu pilih pegawai Daring atau Luring. Dokumen dibuat per Unit Eselon II dan tidak menyimpan file sumber maupun hasil unduhan.'}
           </p>
         </header>
 
@@ -514,8 +592,41 @@ export default function PelantikanAgendaPage() {
               <p className="mt-1 text-sm leading-6 text-slate-400">
                 Baris ketiga digunakan sebagai header. Baris tanpa isi pada kolom Nama/NIP dilewati,
                 lalu NIP diambil dari baris terakhir kolom tersebut. Kolom No, Nama/NIP,
-                Jabatan Saat ini, dan Usul Jabatan Baru tetap ditampilkan sebagai referensi.
+                Jabatan Saat ini, dan Usul Jabatan Baru hanya menjadi referensi pratinjau; dokumen
+                memakai Jabatan saat ini dari database.
+                {workflowMode === 'all_sheets'
+                  ? ' Semua sheet diperiksa; sheet kosong atau tanpa kolom roster wajib dilewati dan dilaporkan.'
+                  : ''}
               </p>
+              {workflowMode === 'all_sheets' && (
+                <div className="mt-4 max-w-xl">
+                  <label htmlFor="experimental-import-strategy" className="mb-1 block text-sm font-medium text-slate-300">
+                    Cara memproses sheet
+                  </label>
+                  <select
+                    id="experimental-import-strategy"
+                    value={importStrategy}
+                    onChange={(event) => {
+                      const nextStrategy = event.target.value as PelantikanImportStrategy;
+                      setImportStrategy(nextStrategy);
+                      setSelectedSheet(
+                        nextStrategy === 'single_sheet' && availableSheets.length === 1
+                          ? availableSheets[0]
+                          : '',
+                      );
+                      setSelectedSheets([]);
+                      setNotice(null);
+                    }}
+                    disabled={isUploading || isLoadingSheets}
+                    className="input-field w-full"
+                  >
+                    <option value="all_sheets">Gabungkan semua sheet roster</option>
+                    <option value="selected_sheets">Pilih beberapa sheet lalu gabungkan</option>
+                    <option value="isolated_sheets">Proses semua sheet secara terpisah</option>
+                    <option value="single_sheet">Pilih dan proses satu sheet</option>
+                  </select>
+                </div>
+              )}
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <input
                   type="file"
@@ -534,20 +645,28 @@ export default function PelantikanAgendaPage() {
                   }}
                   className="block min-w-0 flex-1 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-200 hover:file:bg-slate-700"
                 />
-                <button
-                  type="button"
-                  disabled={!selectedFile || isLoadingSheets || isUploading || isSaving}
-                  onClick={() => void chooseWorkbookSheet()}
-                  className="btn-secondary shrink-0"
-                >
-                  {isLoadingSheets ? 'Membaca sheet…' : 'Pilih sheet'}
-                </button>
+                {workflowMode === 'single_sheet' && (
+                  <button
+                    type="button"
+                    disabled={!selectedFile || isLoadingSheets || isUploading || isSaving}
+                    onClick={() => void chooseWorkbookSheet()}
+                    className="btn-secondary shrink-0"
+                  >
+                    {isLoadingSheets ? 'Membaca sheet…' : 'Pilih sheet'}
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={
                     !selectedFile
                     || !availableSheets.length
-                    || (availableSheets.length > 1 && !selectedSheet)
+                    || (workflowMode === 'single_sheet' && availableSheets.length > 1 && !selectedSheet)
+                    || (workflowMode === 'all_sheets'
+                      && importStrategy === 'selected_sheets'
+                      && selectedSheets.length === 0)
+                    || (workflowMode === 'all_sheets'
+                      && importStrategy === 'single_sheet'
+                      && !selectedSheet)
                     || isLoadingSheets
                     || isUploading
                     || isSaving
@@ -555,7 +674,17 @@ export default function PelantikanAgendaPage() {
                   onClick={() => void uploadWorkbook()}
                   className="btn-primary shrink-0"
                 >
-                  {isUploading ? 'Memproses…' : 'Unggah dan cocokkan'}
+                  {isUploading
+                    ? 'Memproses…'
+                    : workflowMode === 'single_sheet'
+                      ? 'Unggah dan cocokkan'
+                      : importStrategy === 'selected_sheets'
+                        ? 'Gabungkan sheet pilihan'
+                        : importStrategy === 'isolated_sheets'
+                          ? 'Proses sheet terpisah'
+                          : importStrategy === 'single_sheet'
+                            ? 'Proses satu sheet'
+                            : 'Gabungkan semua sheet'}
                 </button>
               </div>
               {selectedFile && (
@@ -563,7 +692,7 @@ export default function PelantikanAgendaPage() {
                   Workbook dipilih: <span className="text-slate-300">{selectedFile.name}</span>
                 </p>
               )}
-              {availableSheets.length > 0 && (
+              {workflowMode === 'single_sheet' && availableSheets.length > 0 && (
                 <div className="mt-4 max-w-xl">
                   <label htmlFor="pelantikan-sheet" className="mb-1 block text-sm font-medium text-slate-300">
                     Sheet workbook
@@ -581,6 +710,63 @@ export default function PelantikanAgendaPage() {
                     ))}
                   </select>
                 </div>
+              )}
+              {workflowMode === 'all_sheets'
+                && importStrategy === 'selected_sheets'
+                && availableSheets.length > 0 && (
+                <fieldset className="mt-4 max-w-xl">
+                  <legend className="mb-2 block text-sm font-medium text-slate-300">
+                    Sheet yang digabung
+                  </legend>
+                  <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                    {availableSheets.map((sheet) => (
+                      <label key={sheet} className="flex items-center gap-2 text-sm text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={selectedSheets.includes(sheet)}
+                          onChange={(event) => setSelectedSheets((current) => (
+                            event.target.checked
+                              ? [...current, sheet]
+                              : current.filter((selected) => selected !== sheet)
+                          ))}
+                          disabled={isUploading || isLoadingSheets}
+                          className="size-4 accent-cyan-500"
+                        />
+                        <span>{sheet}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              {workflowMode === 'all_sheets'
+                && importStrategy === 'single_sheet'
+                && availableSheets.length > 0 && (
+                <div className="mt-4 max-w-xl">
+                  <label htmlFor="experimental-single-sheet" className="mb-1 block text-sm font-medium text-slate-300">
+                    Sheet workbook
+                  </label>
+                  <select
+                    id="experimental-single-sheet"
+                    value={selectedSheet}
+                    onChange={(event) => setSelectedSheet(event.target.value)}
+                    disabled={isUploading || isLoadingSheets}
+                    className="input-field w-full"
+                  >
+                    {availableSheets.length > 1 && <option value="">Pilih satu sheet</option>}
+                    {availableSheets.map((sheet) => (
+                      <option key={sheet} value={sheet}>{sheet}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {workflowMode === 'all_sheets'
+                && ['all_sheets', 'isolated_sheets'].includes(importStrategy)
+                && availableSheets.length > 0 && (
+                <p className="mt-3 text-xs text-slate-400">
+                  {importStrategy === 'isolated_sheets'
+                    ? `Semua ${availableSheets.length} sheet roster diproses terpisah; peserta dari sheet berbeda tidak digabung dalam dokumen yang sama.`
+                    : `Semua ${availableSheets.length} sheet akan diperiksa dan sheet roster valid digabungkan.`}
+                </p>
               )}
               {agenda?.uploaded_filename && (
                 <p className="mt-3 text-xs text-slate-400">
@@ -622,6 +808,19 @@ export default function PelantikanAgendaPage() {
                     </button>
                     <button
                       type="button"
+                      disabled={selectedSelectableCount === 0 || isSaving}
+                      onClick={deselectAllMatched}
+                      aria-label="Batalkan semua pilihan pegawai cocok"
+                      title="Batalkan semua pilihan pegawai cocok"
+                      className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                        <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+                        <path d="m8 4 8 16" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
                       disabled={!choicesDirty || isSaving}
                       onClick={() => void saveChoices()}
                       aria-label={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
@@ -655,6 +854,7 @@ export default function PelantikanAgendaPage() {
                       <tr>
                         <th className="px-4 py-3">Pilih</th>
                         <th className="px-4 py-3">No</th>
+                        <th className="px-4 py-3">Sheet sumber</th>
                         <th className="px-4 py-3">Nama/NIP</th>
                         <th className="px-4 py-3">Jabatan Saat ini/Grade</th>
                         <th className="px-4 py-3">Usul Jabatan Baru/Grade</th>
@@ -684,6 +884,11 @@ export default function PelantikanAgendaPage() {
                               />
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-slate-300">{person.source_no || '—'}</td>
+                            <td className="whitespace-nowrap px-4 py-3 text-slate-300">
+                              {person.source_sheet
+                                ? `${person.source_sheet} · baris ${person.source_row_number ?? person.row_number}`
+                                : '—'}
+                            </td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-100">{person.source_nama_nip || '—'}</td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.source_jabatan_saat_ini || '—'}</td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.source_usul_jabatan_baru || '—'}</td>
@@ -770,7 +975,11 @@ export default function PelantikanAgendaPage() {
                       <div className="group overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60 transition hover:border-brand-500/50">
                         <button
                           type="button"
-                          onClick={() => navigate(`/undangan-pelantikan/${item.id}`)}
+                          onClick={() => navigate(
+                            `${item.workflow_mode === 'all_sheets'
+                              ? '/undangan-pelantikan-experimental'
+                              : '/undangan-pelantikan'}/${item.id}`,
+                          )}
                           className="w-full p-4 text-left transition group-hover:bg-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                         >
                           <span className="flex flex-wrap items-center justify-between gap-2">
@@ -939,6 +1148,11 @@ export default function PelantikanAgendaPage() {
                       <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 bg-slate-950/70 p-4 text-left transition hover:bg-slate-900">
                         <span className="min-w-0">
                           <span className="block font-semibold text-brand-300">{group.unit}</span>
+                          {group.sourceSheet && (
+                            <span className="mt-1 block text-xs text-slate-400">
+                              Sheet: {group.sourceSheet}
+                            </span>
+                          )}
                           <span className="mt-1 inline-flex rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-200">
                             {group.modality === 'daring' ? 'Daring' : 'Luring'} · {group.people.length} pegawai
                           </span>

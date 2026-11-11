@@ -7,6 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 Modality = Literal["daring", "luring"]
 LookupStatus = Literal["matched", "not_found", "missing_nip", "duplicate"]
+WorkflowMode = Literal["single_sheet", "all_sheets"]
+PelantikanImportStrategy = Literal[
+    "single_sheet",
+    "all_sheets",
+    "selected_sheets",
+    "isolated_sheets",
+]
 
 
 class PelantikanAgendaFields(BaseModel):
@@ -35,7 +42,7 @@ class PelantikanAgendaFields(BaseModel):
 
 
 class PelantikanAgendaCreate(PelantikanAgendaFields):
-    pass
+    workflow_mode: WorkflowMode = "single_sheet"
 
 
 class PelantikanAgendaUpdate(PelantikanAgendaFields):
@@ -48,6 +55,8 @@ class PelantikanAgendaRead(PelantikanAgendaFields):
     id: str
     hari_pelantikan: str
     status: Literal["draft", "ready", "generated"]
+    workflow_mode: WorkflowMode
+    import_strategy: PelantikanImportStrategy
     uploaded_filename: str | None
     uploaded_sheet: str | None
     last_generated_at: datetime | None
@@ -61,6 +70,8 @@ class PelantikanAgendaPersonRead(BaseModel):
     id: int
     row_number: int
     source_no: str | None
+    source_sheet: str | None
+    source_row_number: int | None
     source_nama_nip: str | None
     source_jabatan_saat_ini: str | None
     source_usul_jabatan_baru: str | None
@@ -105,3 +116,6 @@ class PelantikanAgendaUploadRead(BaseModel):
     selected_sheet: str
     row_count: int
     people: list[PelantikanAgendaPersonRead]
+    processed_sheets: list[str] = Field(default_factory=list)
+    skipped_sheets: list[str] = Field(default_factory=list)
+    duplicate_count: int = 0

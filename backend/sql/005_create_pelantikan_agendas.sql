@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS pelantikan_agendas (
   dresscode VARCHAR(1000) NOT NULL,
   level_jabatan VARCHAR(255) NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'draft',
+  workflow_mode VARCHAR(16) NOT NULL DEFAULT 'single_sheet',
+  import_strategy VARCHAR(24) NOT NULL DEFAULT 'single_sheet',
   uploaded_filename VARCHAR(255) NULL,
   uploaded_sheet VARCHAR(255) NULL,
   last_generated_at DATETIME NULL,
@@ -22,6 +24,10 @@ CREATE TABLE IF NOT EXISTS pelantikan_agendas (
   INDEX ix_pelantikan_agendas_created_by (created_by),
   CONSTRAINT chk_pelantikan_agendas_status
     CHECK (status IN ('draft', 'ready', 'generated')),
+  CONSTRAINT chk_pelantikan_agendas_workflow_mode
+    CHECK (workflow_mode IN ('single_sheet', 'all_sheets')),
+  CONSTRAINT chk_pelantikan_agendas_import_strategy
+    CHECK (import_strategy IN ('single_sheet', 'all_sheets', 'selected_sheets', 'isolated_sheets')),
   CONSTRAINT fk_pelantikan_agendas_user
     FOREIGN KEY (created_by) REFERENCES users (`user`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -31,6 +37,8 @@ CREATE TABLE IF NOT EXISTS pelantikan_agenda_people (
   agenda_id VARCHAR(36) NOT NULL,
   row_number INT NOT NULL,
   source_no TEXT NULL,
+  source_sheet VARCHAR(255) NULL,
+  source_row_number INT NULL,
   source_nama_nip TEXT NULL,
   source_jabatan_saat_ini TEXT NULL,
   source_usul_jabatan_baru TEXT NULL,
