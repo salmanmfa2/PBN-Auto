@@ -136,7 +136,7 @@ async def upload_agenda_excel(
     return {
         "selected_sheet": updated.uploaded_sheet or "",
         "row_count": len(updated.people),
-        "people": updated.people,
+        "people": pelantikan_agenda_service.people_to_read(updated.people),
         "processed_sheets": [updated.uploaded_sheet] if updated.uploaded_sheet else [],
         "skipped_sheets": [],
         "duplicate_count": sum(
@@ -195,7 +195,7 @@ async def upload_agenda_excel_sheets(
     return {
         "selected_sheet": updated.uploaded_sheet or "",
         "row_count": len(updated.people),
-        "people": updated.people,
+        "people": pelantikan_agenda_service.people_to_read(updated.people),
         "processed_sheets": processed_sheets,
         "skipped_sheets": skipped_sheets,
         "duplicate_count": duplicate_count,
@@ -309,6 +309,31 @@ def update_people(
         db.rollback()
         raise HTTPException(status_code=503, detail="Pilihan pegawai tidak dapat disimpan.") from exc
     return pelantikan_agenda_service.agenda_to_detail(updated)
+
+
+@router.get("/agendas/{agenda_id}/monitoring-export")
+def export_agenda_monitoring(
+    agenda_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        data = pelantikan_agenda_service.export_monitoring_excel(agenda)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Monitoring pelantikan tidak dapat diekspor.",
+        ) from exc
+
+    filename = f"monitoring_pelantikan_{agenda.tanggal_pelantikan.isoformat()}.xlsx"
+    return StreamingResponse(
+        BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/agendas/{agenda_id}/generate")

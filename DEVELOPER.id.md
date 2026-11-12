@@ -24,11 +24,12 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - Dari `frontend/`, jalankan `npm install`, kemudian `npm run dev` untuk pengembangan atau `npm run build` untuk build produksi.
   - Rute mencakup `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, `/undangan-pelantikan`, dan `/undangan-pelantikan-experimental`.
 - Menjalankan aplikasi lokal dengan satu klik:
-  - Klik dua kali `run-app-testing.bat` dari direktori utama proyek (menjalankan backend dan frontend dengan auto-reload).
+  - Klik dua kali `run-app-testing.bat` dari direktori utama proyek untuk menjalankan backend lokal dan frontend Vite di port terpisah.
+  - Backend pengembangan memakai database dan penyimpanan dataset yang sama dengan aplikasi LAN sesuai konfigurasi. Perubahan data dan migrasi skema saat startup akan berlaku untuk aplikasi aktif; berhati-hatilah saat menguji perubahan.
 - Menjalankan aplikasi di jaringan dengan satu klik:
   - Klik dua kali `run-app.bat` dari direktori utama proyek. Dengan `host: "auto"`, launcher mendeteksi IPv4 Wi-Fi/LAN saat ini, membangun URL API frontend, dan mengatur origin CORS yang sesuai.
   - Isi `host` di `config.json` dengan hostname atau alamat reservasi untuk mengganti deteksi otomatis.
-  - Jika diperlukan, sajikan frontend hasil build dengan `serve-frontend.ps1`.
+  - Jika diperlukan, sajikan frontend hasil build dengan `serve-frontend.ps1`; rute aplikasi seperti `/login` dapat dibuka dan dimuat ulang secara langsung.
 
 ## Struktur Repositori (File Penting)
 

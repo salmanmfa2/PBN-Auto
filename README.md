@@ -6,7 +6,7 @@ The web app is titled **MPK Workspace** in the browser; PBN Cleaner remains the 
 
 ## Release notes
 
-The current web update is **1.2.1**: [Web update notes](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), following [Web update 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). The corresponding desktop requirements are documented separately in [Desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); those notes do not claim a desktop build or release has been produced.
+The current web update is **1.3.0**: [Web update notes](./Update%20Notes/Update%20Notes%201.3.0%20Web.md), following [Web update 1.2.1](./Update%20Notes/Update%20Notes%201.2.1%20Web.md) and [Web update 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). The corresponding desktop requirements are documented separately in [Desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); those notes do not claim a desktop build or release has been produced.
 
 The desktop application's main navigation is limited to **PBN Analytics** and **Insight Hub**, with no login system. Web accounts, Plt./Plh. monitoring, Pelantikan agenda generation, and Analisis Kinerja DJPb are web-only. Bahan Pendukung MPK and Simulasi Mutasi remain web placeholders; version **2.0** is a future milestone for those workflows.
 
@@ -108,6 +108,7 @@ Project PBNCleaner/
 ├── resolve-network-config.ps1     # Resolve current LAN host and CORS origin
 ├── run-app-testing.bat            # Local dev launcher
 ├── run-app.bat                    # Network deployment launcher
+├── setup-developer.bat            # One-time Windows developer setup
 ├── deploy-windows.ps1             # Environment setup
 └── serve-frontend.ps1             # Frontend server for production
 ```
@@ -116,8 +117,15 @@ Project PBNCleaner/
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 18+
+- Python 3.11+ (the Windows setup installs Python 3.12 if needed)
+- Node.js 22.12+ (the Windows setup installs the current LTS if needed)
+- XAMPP MySQL and a current `pbncleaner` schema-and-reference-data dump for local development
+
+### One-time Windows developer setup
+
+After cloning the repository, install XAMPP if it is not already installed and start its MySQL server. Obtain a current `pbncleaner` schema-and-reference-data SQL dump containing the `fetch_pbnopen` and `dt_employee` table definitions, populated employee reference tables, and the `ref_unit_kerja.city` / `ref_unit_kerja.prov` columns. Keep the employee-source tables empty; upload `fetch_pbnopen` and sync `dt_employee` from the Admin page. The SQL files under `backend/sql/` create app tables but do not contain these source schemas or reference rows.
+
+Run `setup-developer.bat` once. It installs Python/Node.js when needed, prepares backend and frontend dependencies, builds the frontend, imports the dump into local MySQL after explicit confirmation, and configures the Git-ignored `backend/.env`. It validates required table schemas and populated reference rows without requiring employee records. After setup succeeds, start the app with `run-app.bat`. To upload employee data, first create a local Super Admin as described in [Accounts and roles](#accounts-and-roles); the dump intentionally contains no user accounts. Importing a dump can replace data in the local `pbncleaner` database; do not point this setup at a production database.
 
 ### 1. Backend
 

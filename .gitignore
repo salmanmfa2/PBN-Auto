@@ -9,6 +9,7 @@ __pycache__/
 *.egg-info/
 venv/
 backend/venv/
+backend/local-data/
 
 # Node
 node_modules/

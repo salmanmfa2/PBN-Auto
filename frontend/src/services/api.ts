@@ -855,11 +855,23 @@ export async function generatePelantikanDocuments(agendaId: string): Promise<Blo
   return data;
 }
 
+export async function exportPelantikanMonitoring(agendaId: string): Promise<Blob> {
+  const { data } = await api.get<Blob>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/monitoring-export`,
+    { responseType: 'blob' },
+  );
+  return data;
+}
+
 export async function deletePelantikanAgenda(agendaId: string): Promise<void> {
   await api.delete(`/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}`);
 }
 
 export function downloadPelantikanDocuments(blob: Blob, filename: string): void {
+  downloadBlob(blob, filename);
+}
+
+export function downloadPelantikanMonitoring(blob: Blob, filename: string): void {
   downloadBlob(blob, filename);
 }
 

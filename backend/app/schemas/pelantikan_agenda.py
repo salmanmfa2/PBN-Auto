@@ -79,6 +79,7 @@ class PelantikanAgendaPersonRead(BaseModel):
     nama: str
     jabatan: str
     unit_eselon_ii: str
+    unit_city: str = ""
     eselon: str | None
     lookup_status: LookupStatus
     selected: bool
@@ -103,8 +104,6 @@ class PelantikanPersonChoice(BaseModel):
     def require_modality_when_selected(self) -> Self:
         if self.selected and self.modality is None:
             raise ValueError("Select Daring or Luring for each included employee.")
-        if not self.selected and self.modality is not None:
-            raise ValueError("An excluded employee cannot have a modality.")
         return self
 
 

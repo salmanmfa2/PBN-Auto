@@ -21,11 +21,12 @@ This file helps new contributors (especially juniors) understand where to make c
   - From `frontend/`: `npm install` then `npm run dev` for development or `npm run build` for production build.
   - Routes include `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, `/undangan-pelantikan`, and `/undangan-pelantikan-experimental`.
 - One-click local launch:
-  - Double-click `run-app-testing.bat` from the repo root (starts both backend & frontend with auto-reload).
+  - Double-click `run-app-testing.bat` from the repo root to start local backend and Vite frontend servers on separate ports.
+  - The development backend uses the same database and dataset storage configured for the LAN app. Development writes and startup schema migrations are shared with the live app; use care when testing changes.
 - One-click network launch:
   - Double-click `run-app.bat` from the repo root. With `host: "auto"`, the launcher detects the current Wi-Fi/LAN IPv4 address, builds the frontend API URL, and configures the matching CORS origin.
   - Set `host` in `config.json` to a hostname or reserved address to override automatic detection.
-  - Serve the built frontend with `serve-frontend.ps1` if needed.
+  - Serve the built frontend with `serve-frontend.ps1` if needed; it supports direct navigation and refreshes on app routes such as `/login`.
 
 **Repository layout (important files)**
 - `backend/` — FastAPI app

@@ -36,5 +36,16 @@ if (-not (Test-Path $distPath)) {
 
 Write-Host "Serving frontend from $distPath"
 Write-Host "Open http://${hostAddress}:${port} from other PCs."
-Set-Location $distPath
-python -m http.server $port --bind 0.0.0.0
+$serverScript = Join-Path $frontendPath "serve_spa.py"
+$pythonExecutable = Join-Path $PSScriptRoot "backend\venv\Scripts\python.exe"
+if (-not (Test-Path $pythonExecutable)) {
+    $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
+    if (-not $pythonCommand) {
+        throw "Python was not found. Run setup-developer.bat first."
+    }
+    $pythonExecutable = $pythonCommand.Source
+}
+& $pythonExecutable $serverScript --directory $distPath --port $port --bind 0.0.0.0
+if ($LASTEXITCODE -ne 0) {
+    throw "Frontend server stopped with exit code $LASTEXITCODE."
+}

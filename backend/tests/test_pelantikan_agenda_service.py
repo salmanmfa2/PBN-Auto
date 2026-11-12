@@ -2,11 +2,11 @@ import unittest
 from datetime import date
 from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
 from lxml import etree
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,86 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             "Kepala Badan Kebijakan Fiskal",
         )
         self.assertEqual(service._format_formal_recipient("Unit Lain"), "Unit Lain")
+
+    def test_people_to_read_includes_unit_city_from_reference_table(self):
+        person = SimpleNamespace(
+            id=1,
+            row_number=1,
+            source_no=None,
+            source_sheet=None,
+            source_row_number=None,
+            source_nama_nip=None,
+            source_jabatan_saat_ini=None,
+            source_usul_jabatan_baru=None,
+            nip="123456789012345678",
+            nama="Nama",
+            jabatan="Jabatan",
+            unit_eselon_ii="Unit A",
+            eselon="III",
+            lookup_status="matched",
+            selected=False,
+            modality=None,
+        )
+        connection = MagicMock()
+        connection.execute.return_value.mappings.return_value = [
+            {"value": "Unit A", "city": "Jakarta"},
+        ]
+
+        with patch.object(service.engine, "connect") as connect:
+            connect.return_value.__enter__.return_value = connection
+            people = service.people_to_read([person])
+
+        self.assertEqual(people[0]["unit_city"], "Jakarta")
+
+    def test_monitoring_export_counts_selected_modes_and_excluded_pendamping_by_unit(self):
+        agenda = SimpleNamespace(
+            people=[
+                SimpleNamespace(
+                    source_no="1",
+                    unit_eselon_ii="Unit A",
+                    selected=True,
+                    modality="daring",
+                ),
+                SimpleNamespace(
+                    source_no="2",
+                    unit_eselon_ii="Unit A",
+                    selected=True,
+                    modality="luring",
+                ),
+                SimpleNamespace(
+                    source_no="Pendamping",
+                    unit_eselon_ii="Unit A",
+                    selected=False,
+                    modality=None,
+                ),
+                SimpleNamespace(
+                    source_no="3",
+                    unit_eselon_ii="Unit B",
+                    selected=False,
+                    modality="daring",
+                ),
+                SimpleNamespace(
+                    source_no="Pendamping",
+                    unit_eselon_ii="",
+                    selected=True,
+                    modality="daring",
+                ),
+            ]
+        )
+
+        workbook = load_workbook(BytesIO(service.export_monitoring_excel(agenda)))
+        worksheet = workbook["Monitoring Pelantikan"]
+        rows = list(worksheet.values)
+
+        self.assertEqual(
+            rows[0],
+            ("Unit Eselon II", "Daring", "Luring", "Pendamping (excluded)"),
+        )
+        self.assertEqual(rows[1], ("Unit A", 1, 1, 1))
+        self.assertEqual(rows[2], ("Unit Eselon II tidak ditemukan", 0, 0, 1))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(worksheet.freeze_panes, "A2")
+        workbook.close()
 
     def test_roster_job_adds_formal_unit_only_for_known_non_eselon_two(self):
         self.assertEqual(
@@ -268,6 +348,14 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                         unit_eselon_ii="",
                         lookup_status="missing_nip",
                     ),
+                    PelantikanAgendaPerson(
+                        row_number=3,
+                        nip="123456789012345678",
+                        nama="Nama Duplikat",
+                        jabatan="Jabatan",
+                        unit_eselon_ii="Unit A",
+                        lookup_status="duplicate",
+                    ),
                 ])
                 db.add(agenda)
                 db.commit()
@@ -283,15 +371,78 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                     [
                         PelantikanPersonChoice(id=person_ids[0], selected=True, modality="luring"),
                         PelantikanPersonChoice(id=person_ids[1], selected=False),
+                        PelantikanPersonChoice(id=person_ids[2], selected=False),
                     ],
                 )
                 self.assertEqual(updated.status, "ready")
                 self.assertTrue(updated.people[0].selected)
                 self.assertEqual(updated.people[0].modality, "luring")
                 self.assertFalse(updated.people[1].selected)
+
+                with self.assertRaisesRegex(ValueError, "NIP duplikat"):
+                    service.save_person_choices(
+                        db,
+                        updated,
+                        [
+                            PelantikanPersonChoice(id=person_ids[0], selected=True, modality="luring"),
+                            PelantikanPersonChoice(id=person_ids[1], selected=False),
+                            PelantikanPersonChoice(id=person_ids[2], selected=True, modality="daring"),
+                        ],
+                    )
+
+                duplicate_selected = service.save_person_choices(
+                    db,
+                    updated,
+                    [
+                        PelantikanPersonChoice(id=person_ids[0], selected=False, modality="luring"),
+                        PelantikanPersonChoice(id=person_ids[1], selected=False),
+                        PelantikanPersonChoice(id=person_ids[2], selected=True, modality="daring"),
+                    ],
+                )
+                self.assertEqual(duplicate_selected.status, "ready")
+                self.assertFalse(duplicate_selected.people[0].selected)
+                self.assertTrue(duplicate_selected.people[2].selected)
+
+                deselected = service.save_person_choices(
+                    db,
+                    duplicate_selected,
+                    [
+                        PelantikanPersonChoice(id=person_ids[0], selected=False, modality="luring"),
+                        PelantikanPersonChoice(id=person_ids[1], selected=False),
+                        PelantikanPersonChoice(id=person_ids[2], selected=False, modality="daring"),
+                    ],
+                )
+                self.assertEqual(deselected.status, "draft")
+                self.assertFalse(deselected.people[0].selected)
+                self.assertEqual(deselected.people[0].modality, "luring")
+                self.assertFalse(deselected.people[2].selected)
         finally:
             Base.metadata.drop_all(test_engine)
             test_engine.dispose()
+
+    def test_generate_rejects_multiple_selected_rows_for_same_nip(self):
+        people = [
+            SimpleNamespace(
+                selected=True,
+                source_no=None,
+                nip="123456789012345678",
+                lookup_status="matched",
+                modality="daring",
+                unit_eselon_ii="Unit A",
+            ),
+            SimpleNamespace(
+                selected=True,
+                source_no=None,
+                nip="123456789012345678",
+                lookup_status="duplicate",
+                modality="luring",
+                unit_eselon_ii="Unit A",
+            ),
+        ]
+        agenda = SimpleNamespace(people=people)
+
+        with self.assertRaisesRegex(ValueError, "NIP duplikat"):
+            service.generate_agenda_zip(SimpleNamespace(), agenda)
 
     def test_upload_uses_third_row_header_filters_blank_nama_nip_and_keeps_source_columns(self):
         workbook = Workbook()
@@ -376,6 +527,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                                 "jabatan": "Jabatan Database",
                                 "unit_eselon_ii": "Unit A",
                                 "eselon": "III",
+                                "default_modality": "luring",
                             }
                         },
                     ),
@@ -392,6 +544,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 self.assertEqual(updated.people[0].nama, "Nama Database")
                 self.assertEqual(updated.people[0].nip, "123456789012345678")
                 self.assertEqual(updated.people[0].eselon, "III")
+                self.assertEqual(updated.people[0].modality, "luring")
                 self.assertEqual(updated.people[0].row_number, 5)
                 self.assertEqual(updated.people[0].source_no, "1")
                 self.assertEqual(

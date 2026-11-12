@@ -41,10 +41,11 @@ export default function LoginPage() {
     }
   };
 
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface-950 px-4 py-10 text-slate-100">
       <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-300">Tim Mutasi Pejabat MPK Workspace</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-300">MPK Workspace Mutasi Pejabat</p>
         <h1 className="mt-2 text-2xl font-semibold">{isRegistering ? 'Buat akun User' : 'Masuk'}</h1>
         <p className="mt-2 text-sm text-slate-400">
           {isRegistering
@@ -118,6 +119,7 @@ export default function LoginPage() {
             Lanjut sebagai Guest
           </button>
         )}
+        
 
         <p className="mt-5 text-center text-sm text-slate-400">
           {isRegistering ? 'Sudah punya akun?' : 'Belum punya akun?'}{' '}

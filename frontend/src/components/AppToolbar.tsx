@@ -20,6 +20,55 @@ const themeOptions: Array<{ value: ThemeName; label: string }> = [
   { value: 'light', label: 'Light' },
 ];
 
+const PATCH_NOTES = [
+  {
+    version: '1.3.0',
+    label: '1.3.0',
+    items: [
+      'Analisis Kinerja DJPb kini dapat dilihat Guest dengan tab Overview, Unit Eselon II, dan Daftar Pegawai, termasuk drilldown Unit Eselon III dan ekspor Excel.',
+      'Unggah/penyesuaian data kinerja dibatasi untuk Super Admin; NIP yang tidak cocok tetap disimpan sebagai Unidentified.',
+      'Generate ND Undangan Pelantikan Experimental mendukung impor semua sheet, sheet terpilih, satu sheet, atau pengelompokan terpisah; menu standar tetap tersedia.',
+      'Employee Data Source mencatat waktu/pelaku penggantian sumber dan menyediakan sinkronisasi terpisah ke dt_employee.',
+      'Sesi kedaluwarsa mengarahkan pengguna ke login. Sitasi Es.III (Lite) dihapus; Sitasi Es.III standar tetap tersedia.',
+    ],
+  },
+  {
+    version: '1.2.1',
+    label: '1.2.1',
+    items: [
+      'Generate ND Undangan Pelantikan dengan agenda tersimpan, pencocokan pegawai, pratinjau peserta, dan pembuatan dokumen.',
+      'Manajemen Plt./Plh. dapat memilih pejabat pengganti dari PBN Open dan menyimpan NIP sebagai snapshot.',
+      'Toolbar jam dapat menempel ke tepi layar terdekat setelah digeser.',
+      'Launcher deployment jaringan mendeteksi alamat Wi-Fi/LAN secara otomatis dan menyesuaikan URL API serta CORS.',
+    ],
+  },
+  {
+    version: '1.2',
+    label: '1.2.0',
+    items: [
+      'Generate Bahan Baperjakat menggabungkan template 4 orang untuk kategori Mutasi dan template 3 orang untuk kategori Promosi.',
+      'Akun web dengan peran Guest, User, Admin, dan Super Admin; sesi login berlaku satu jam dan workspace Admin menyediakan pengelolaan akun.',
+      'Manajemen Plt./Plh. web dengan monitoring, status masa kerja, notifikasi, dan ekspor Excel yang dibatasi berdasarkan peran.',
+      'Menu Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi masih berstatus On development.',
+      'Toolbar memiliki jam WIB yang dapat digeser, pilihan tema Default/Dark/Light tersimpan per pengguna, serta kontrol tampil/sembunyikan untuk tombol utilitas.',
+      'Groq chat web dengan format Markdown, tombol hapus percakapan, dan instruksi agar tidak mengarang fitur yang belum dikonfirmasi.',
+      'Fitur akun, monitoring, menu tambahan, preferensi pengguna, dan chat ini khusus web; desktop tetap hanya memiliki menu PBN Analytics dan Insight Hub tanpa login.',
+    ],
+  },
+  {
+    version: '1.1.0',
+    label: '1.1.0',
+    items: [
+      'Pilihan template PowerPoint 3 baris dan 4 baris untuk Sitasi Es.III.',
+      'Staging dan penggabungan PPTX Sitasi Es.III/Es.IV sesuai urutan dengan layout template masing-masing.',
+      'Perataan kolom PowerPoint, penyempurnaan pembersihan Sitasi Es.III, dan tombol ekspor yang lebih ringkas.',
+      'Pemeriksaan update desktop dan pengunduhan runtime backend secara terpisah.',
+    ],
+  },
+] as const;
+
+type PatchNoteVersion = (typeof PATCH_NOTES)[number]['version'];
+
 function getAuthorityLabel(authLevel: number): string {
   if (authLevel === 3) return 'Super Admin · Level 3';
   if (authLevel === 2) return 'Admin · Level 2';
@@ -37,6 +86,7 @@ export function AppToolbar() {
   const { mode, user, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState(() => dateTimeFormatter.format(new Date()));
   const [activeDialog, setActiveDialog] = useState<ToolbarDialog>(null);
+  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.3.0');
   const [apiTestState, setApiTestState] = useState<ApiTestState>('idle');
   const [apiDiagnostics, setApiDiagnostics] = useState<apiClient.ApiDiagnostic[]>([]);
   const [apiElapsedMs, setApiElapsedMs] = useState<number | null>(null);
@@ -263,6 +313,23 @@ export function AppToolbar() {
     setShowExtraTools((visible) => !visible);
   };
 
+  const handlePatchTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const currentIndex = PATCH_NOTES.findIndex((note) => note.version === selectedPatchVersion);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + PATCH_NOTES.length) % PATCH_NOTES.length;
+    else if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % PATCH_NOTES.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = PATCH_NOTES.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextNote = PATCH_NOTES[nextIndex];
+    setSelectedPatchVersion(nextNote.version);
+    event.currentTarget.parentElement
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]
+      ?.focus();
+  };
+
   const dialogTitle = activeDialog === 'patch'
     ? 'Patch Notes'
     : activeDialog === 'unfixed'
@@ -372,7 +439,10 @@ export function AppToolbar() {
               type="button"
               title="Patch Notes"
               aria-label="Buka Patch Notes"
-              onClick={() => setActiveDialog('patch')}
+              onClick={() => {
+                setSelectedPatchVersion('1.3.0');
+                setActiveDialog('patch');
+              }}
               className="rounded-lg p-2 text-slate-300 transition hover:bg-surface-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-brand-400"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -460,13 +530,17 @@ export function AppToolbar() {
         >
           <section
             className={`w-full rounded-2xl border border-slate-700 bg-slate-900 p-6 text-left shadow-2xl ${
-              activeDialog === 'game' ? 'max-w-3xl' : 'max-w-lg'
+              activeDialog === 'game'
+                ? 'max-w-3xl'
+                : activeDialog === 'patch'
+                  ? 'flex max-h-[75vh] max-w-2xl flex-col'
+                  : 'max-w-lg'
             }`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="app-toolbar-dialog-title"
           >
-            <div className="mb-4 flex items-start justify-between gap-4">
+            <div className="mb-4 flex shrink-0 items-start justify-between gap-4">
               <h2 id="app-toolbar-dialog-title" className="text-xl font-semibold text-white">{dialogTitle}</h2>
               <button
                 ref={closeButtonRef}
@@ -540,37 +614,47 @@ export function AppToolbar() {
                 )}
               </div>
             ) : activeDialog === 'patch' ? (
-              <div className="space-y-5 text-sm leading-relaxed text-slate-300">
-                <section>
-                  <h3 className="font-semibold text-brand-300">Versi 1.1.0 · 2 November 2026</h3>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    <li>Pilihan template PowerPoint 3 baris dan 4 baris untuk Sitasi Es.III.</li>
-                    <li>Staging dan penggabungan PPTX Sitasi Es.III/Es.IV sesuai urutan dengan layout template masing-masing.</li>
-                    <li>Perataan kolom PowerPoint, penyempurnaan pembersihan Sitasi Es.III, dan tombol ekspor yang lebih ringkas.</li>
-                    <li>Pemeriksaan update desktop dan pengunduhan runtime backend secara terpisah.</li>
-                  </ul>
-                </section>
-                <section>
-                  <h3 className="font-semibold text-brand-300">Pembaruan web 1.2.1</h3>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    <li>Generate ND Undangan Pelantikan dengan agenda tersimpan, pencocokan pegawai, pratinjau peserta, dan pembuatan dokumen.</li>
-                    <li>Manajemen Plt./Plh. dapat memilih pejabat pengganti dari PBN Open dan menyimpan NIP sebagai snapshot.</li>
-                    <li>Toolbar jam dapat menempel ke tepi layar terdekat setelah digeser.</li>
-                    <li>Launcher deployment jaringan mendeteksi alamat Wi-Fi/LAN secara otomatis dan menyesuaikan URL API serta CORS.</li>
-                  </ul>
-                </section>
-                <section>
-                  <h3 className="font-semibold text-brand-300">Pembaruan web 1.2</h3>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    <li><strong>Generate Bahan Baperjakat</strong> menggabungkan template 4 orang untuk kategori Mutasi dan template 3 orang untuk kategori Promosi.</li>
-                    <li>Akun web dengan peran Guest, User, Admin, dan Super Admin; sesi login berlaku satu jam dan workspace Admin menyediakan pengelolaan akun.</li>
-                    <li>Manajemen Plt./Plh. web dengan monitoring, status masa kerja, notifikasi, dan ekspor Excel yang dibatasi berdasarkan peran.</li>
-                    <li>Menu Analisis Kinerja DJPb, Bahan Pendukung MPK, dan Simulasi Mutasi masih berstatus “On development”.</li>
-                    <li>Toolbar memiliki jam WIB yang dapat digeser, pilihan tema Default/Dark/Light tersimpan per pengguna, serta kontrol tampil/sembunyikan untuk tombol utilitas.</li>
-                    <li>Groq chat web dengan format Markdown, tombol hapus percakapan, dan instruksi agar tidak mengarang fitur yang belum dikonfirmasi.</li>
-                    <li>Fitur akun, monitoring, menu tambahan, preferensi pengguna, dan chat ini khusus web; desktop tetap hanya memiliki menu PBN Analytics dan Insight Hub tanpa login.</li>
-                  </ul>
-                </section>
+              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden text-sm leading-relaxed text-slate-300">
+                <div
+                  role="tablist"
+                  aria-label="Versi Patch Notes"
+                  className="flex shrink-0 gap-2 overflow-x-auto border-b border-slate-800 pb-2"
+                >
+                  {PATCH_NOTES.map((note) => (
+                    <button
+                      key={note.version}
+                      id={`patch-tab-${note.version}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={selectedPatchVersion === note.version}
+                      aria-controls="patch-version-panel"
+                      tabIndex={selectedPatchVersion === note.version ? 0 : -1}
+                      onClick={() => setSelectedPatchVersion(note.version)}
+                      onKeyDown={handlePatchTabKeyDown}
+                      className={`shrink-0 rounded-lg px-3 py-2 font-medium transition focus:outline-none focus:ring-2 focus:ring-brand-400 ${
+                        selectedPatchVersion === note.version
+                          ? 'bg-brand-500/15 text-brand-200'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      {note.label}
+                    </button>
+                  ))}
+                </div>
+                {PATCH_NOTES.map((note) => note.version === selectedPatchVersion && (
+                  <div
+                    key={note.version}
+                    id="patch-version-panel"
+                    role="tabpanel"
+                    aria-labelledby={`patch-tab-${note.version}`}
+                    tabIndex={0}
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2"
+                  >
+                    <ul className="list-disc space-y-2 pl-5">
+                      {note.items.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+                ))}
               </div>
             ) : (
               <p className="text-sm leading-relaxed text-slate-300">

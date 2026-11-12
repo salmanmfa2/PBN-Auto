@@ -23,12 +23,14 @@ const emptyFields: PelantikanAgendaFields = {
 };
 
 type ChoiceState = Record<number, { selected: boolean; modality: PelantikanModality | null }>;
+type MatchingFilter = 'all' | 'matched' | 'duplicate' | 'not_found' | 'missing_nip' | 'pendamping';
+type ModalityFilter = 'all' | 'daring' | 'luring' | 'unselected';
 type DocumentPreviewGroup = {
   key: string;
   unit: string;
   sourceSheet: string | null;
-  modality: PelantikanModality;
   people: PelantikanAgendaPerson[];
+  modalityCounts: Record<PelantikanModality, number>;
 };
 
 function agendaFields(agenda: PelantikanAgendaDetail): PelantikanAgendaFields {
@@ -57,7 +59,7 @@ function isPendamping(person: Pick<PelantikanAgendaPerson, 'source_no'>): boolea
 }
 
 function isSelectablePerson(person: PelantikanAgendaPerson): boolean {
-  return person.lookup_status === 'matched'
+  return ['matched', 'duplicate'].includes(person.lookup_status)
     && Boolean(person.unit_eselon_ii.trim())
     && !isPendamping(person);
 }
@@ -125,12 +127,15 @@ export default function PelantikanAgendaPage({
   const [fields, setFields] = useState(emptyFields);
   const [choices, setChoices] = useState<ChoiceState>({});
   const [choicesDirty, setChoicesDirty] = useState(false);
+  const [matchingFilter, setMatchingFilter] = useState<MatchingFilter>('all');
+  const [modalityFilter, setModalityFilter] = useState<ModalityFilter>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isExportingMonitoring, setIsExportingMonitoring] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingHistoryAgendaId, setDeletingHistoryAgendaId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -199,10 +204,30 @@ export default function PelantikanAgendaPage({
     () => Object.values(choices).filter((choice) => choice.selected).length,
     [choices],
   );
-  const selectableCount = agenda?.people.filter(isSelectablePerson).length ?? 0;
-  const selectedSelectableCount = agenda?.people.filter(
+  const visiblePeople = useMemo(
+    () => (agenda?.people ?? []).filter((person) => {
+      const choice = choices[person.id] ?? { selected: false, modality: null };
+      if (matchingFilter === 'pendamping') {
+        if (!isPendamping(person)) return false;
+      } else if (
+        matchingFilter !== 'all'
+        && (isPendamping(person) || person.lookup_status !== matchingFilter)
+      ) {
+        return false;
+      }
+
+      if (modalityFilter === 'unselected') return !choice.selected;
+      if (modalityFilter !== 'all') {
+        return choice.selected && choice.modality === modalityFilter;
+      }
+      return true;
+    }),
+    [agenda?.people, choices, matchingFilter, modalityFilter],
+  );
+  const selectableCount = visiblePeople.filter(isSelectablePerson).length;
+  const selectedSelectableCount = visiblePeople.filter(
     (person) => isSelectablePerson(person) && choices[person.id]?.selected,
-  ).length ?? 0;
+  ).length;
   const previewGroups = useMemo(() => {
     const groups = new Map<string, DocumentPreviewGroup>();
     const isolateSheets = agenda?.workflow_mode === 'all_sheets'
@@ -212,24 +237,29 @@ export default function PelantikanAgendaPage({
       if (!choice?.selected || !choice.modality || !isSelectablePerson(person)) continue;
       const unit = person.unit_eselon_ii.trim();
       const sourceSheet = isolateSheets ? person.source_sheet ?? 'Sheet' : null;
-      const key = `${sourceSheet ?? ''}\u0000${unit.toLowerCase()}\u0000${choice.modality}`;
+      const key = `${sourceSheet ?? ''}\u0000${unit.toLowerCase()}`;
       const group = groups.get(key);
       if (group) {
         group.people.push(person);
+        group.modalityCounts[choice.modality] += 1;
       } else {
         groups.set(key, {
           key,
           unit,
           sourceSheet,
-          modality: choice.modality,
           people: [person],
+          modalityCounts: {
+            daring: choice.modality === 'daring' ? 1 : 0,
+            luring: choice.modality === 'luring' ? 1 : 0,
+          },
         });
       }
     }
     return Array.from(groups.values());
   }, [agenda?.import_strategy, agenda?.people, agenda?.workflow_mode, choices]);
   const matchedCount = agenda?.people.filter((person) => person.lookup_status === 'matched').length ?? 0;
-  const unmatchedCount = (agenda?.people.length ?? 0) - matchedCount;
+  const duplicateCount = agenda?.people.filter((person) => person.lookup_status === 'duplicate').length ?? 0;
+  const unmatchedCount = (agenda?.people.length ?? 0) - matchedCount - duplicateCount;
 
   const updateFields = (key: keyof PelantikanAgendaFields, value: string) => {
     setFields((current) => ({ ...current, [key]: value }));
@@ -363,43 +393,74 @@ export default function PelantikanAgendaPage({
   ) => {
     const person = agenda?.people.find((item) => item.id === personId);
     if (selected && (!person || !isSelectablePerson(person))) return;
+    const nip = person?.nip?.trim();
+    if (
+      selected
+      && person
+      && nip
+      && agenda?.people.some((other) => (
+        other.id !== personId
+        && other.nip?.trim() === nip
+        && choices[other.id]?.selected
+      ))
+    ) {
+      window.alert('NIP yang sama sudah dipilih pada baris lain. Pilih salah satu baris saja.');
+      return;
+    }
     setChoices((current) => ({
       ...current,
       [personId]: {
         selected,
         modality: selected
           ? modality ?? current[personId]?.modality ?? 'daring'
-          : null,
+          : current[personId]?.modality ?? null,
       },
     }));
     setChoicesDirty(true);
     setNotice(null);
   };
 
-  const selectAllMatched = () => {
+  const selectAllSelectable = () => {
     if (!agenda) return;
     const next = { ...choices };
     let changed = false;
-    for (const person of agenda.people) {
+    let skippedDuplicateRows = 0;
+    for (const person of visiblePeople) {
       if (!isSelectablePerson(person)) continue;
       const current = next[person.id] ?? { selected: false, modality: null };
       if (!current.selected) {
+        const nip = person.nip?.trim();
+        const duplicateAlreadySelected = Boolean(nip) && agenda.people.some((other) => (
+          other.id !== person.id
+          && other.nip?.trim() === nip
+          && next[other.id]?.selected
+        ));
+        if (duplicateAlreadySelected) {
+          skippedDuplicateRows += 1;
+          continue;
+        }
         next[person.id] = { selected: true, modality: current.modality ?? 'daring' };
         changed = true;
       }
     }
-    if (!changed) return;
-    setChoices(next);
-    setChoicesDirty(true);
-    setNotice(null);
+    if (changed) {
+      setChoices(next);
+      setChoicesDirty(true);
+      setNotice(null);
+    }
+    if (skippedDuplicateRows > 0) {
+      window.alert(
+        `${skippedDuplicateRows} baris tidak dipilih karena NIP yang sama sudah dipilih. Pilih salah satu baris saja.`,
+      );
+    }
   };
 
-  const deselectAllMatched = () => {
+  const deselectAllSelectable = () => {
     if (!agenda || selectedSelectableCount === 0) return;
     const next = { ...choices };
-    for (const person of agenda.people) {
+    for (const person of visiblePeople) {
       if (!isSelectablePerson(person) || !next[person.id]?.selected) continue;
-      next[person.id] = { selected: false, modality: null };
+      next[person.id] = { selected: false, modality: next[person.id]?.modality ?? null };
     }
     setChoices(next);
     setChoicesDirty(true);
@@ -415,7 +476,7 @@ export default function PelantikanAgendaPage({
       const payload: PelantikanPersonChoice[] = Object.entries(choices).map(([id, choice]) => ({
         id: Number(id),
         selected: choice.selected,
-        modality: choice.selected ? choice.modality : null,
+        modality: choice.modality,
       }));
       const updated = await apiClient.savePelantikanPeople(agendaId, payload);
       setAgenda(updated);
@@ -445,6 +506,23 @@ export default function PelantikanAgendaPage({
       setError(generationError instanceof Error ? generationError.message : String(generationError));
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const exportMonitoring = async () => {
+    if (!agendaId || choicesDirty) return;
+    setError(null);
+    setIsExportingMonitoring(true);
+    try {
+      const blob = await apiClient.exportPelantikanMonitoring(agendaId);
+      apiClient.downloadPelantikanMonitoring(
+        blob,
+        `monitoring_pelantikan_${agenda?.tanggal_pelantikan}.xlsx`,
+      );
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : String(exportError));
+    } finally {
+      setIsExportingMonitoring(false);
     }
   };
 
@@ -782,7 +860,9 @@ export default function PelantikanAgendaPage({
                   <div>
                     <h2 className="text-lg font-semibold">Daftar pegawai</h2>
                     <p className="mt-1 text-sm text-slate-400">
-                      {agenda.people.length} baris · {matchedCount} cocok · {unmatchedCount} perlu diperiksa
+                      {visiblePeople.length} dari {agenda.people.length} baris ditampilkan · {matchedCount} cocok
+                      {duplicateCount > 0 && ` · ${duplicateCount} NIP duplikat (pilih salah satu)`}
+                      {unmatchedCount > 0 && ` · ${unmatchedCount} perlu diperiksa`}
                     </p>
                   </div>
                   <div role="group" aria-label="Aksi pegawai" className="inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
@@ -791,10 +871,10 @@ export default function PelantikanAgendaPage({
                     )}
                     <button
                       type="button"
-                      disabled={!selectableCount || selectedCount >= selectableCount || isSaving}
-                      onClick={selectAllMatched}
-                      aria-label="Pilih semua pegawai cocok selain Pendamping"
-                      title="Pilih semua pegawai cocok selain Pendamping"
+                      disabled={!selectableCount || selectedSelectableCount >= selectableCount || isSaving}
+                      onClick={selectAllSelectable}
+                      aria-label="Pilih semua pegawai yang dapat dipilih; satu baris per NIP"
+                      title="Pilih semua pegawai yang dapat dipilih; satu baris per NIP"
                       className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
@@ -809,9 +889,9 @@ export default function PelantikanAgendaPage({
                     <button
                       type="button"
                       disabled={selectedSelectableCount === 0 || isSaving}
-                      onClick={deselectAllMatched}
-                      aria-label="Batalkan semua pilihan pegawai cocok"
-                      title="Batalkan semua pilihan pegawai cocok"
+                      onClick={deselectAllSelectable}
+                      aria-label="Batalkan semua pilihan pegawai"
+                      title="Batalkan semua pilihan pegawai"
                       className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
@@ -846,6 +926,26 @@ export default function PelantikanAgendaPage({
                         <circle cx="12" cy="12" r="3" />
                       </svg>
                     </button>
+                    <button
+                      type="button"
+                      disabled={choicesDirty || isExportingMonitoring}
+                      onClick={() => void exportMonitoring()}
+                      aria-label={isExportingMonitoring ? 'Membuat file monitoring Excel' : 'Unduh monitoring pelantikan Excel'}
+                      title={choicesDirty ? 'Simpan pilihan terlebih dahulu' : 'Unduh monitoring pelantikan'}
+                      className="size-9 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {isExportingMonitoring ? (
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5 animate-pulse">
+                          <path d="M7 3.75h7.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
+                          <path d="M14 4v5h5M8 13h8M8 16h8" />
+                        </svg>
+                      ) : (
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                          <path d="M7 3.75h7.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
+                          <path d="M14 4v5h5M12 12v6m0 0-2.5-2.5M12 18l2.5-2.5" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
                 </div>
                 <div className="max-h-[70vh] overflow-auto">
@@ -862,12 +962,47 @@ export default function PelantikanAgendaPage({
                         <th className="px-4 py-3">Nama database</th>
                         <th className="px-4 py-3">Jabatan database</th>
                         <th className="px-4 py-3">Unit Eselon II</th>
-                        <th className="px-4 py-3">Pencocokan</th>
-                        <th className="px-4 py-3">Pelantikan</th>
+                        <th className="px-4 py-3">Kota</th>
+                        <th className="px-4 py-3">
+                          Pencocokan
+                          <select
+                            aria-label="Filter pencocokan"
+                            value={matchingFilter}
+                            onChange={(event) => setMatchingFilter(event.target.value as MatchingFilter)}
+                            className="mt-2 block w-36 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] normal-case tracking-normal text-slate-200"
+                          >
+                            <option value="all">Semua</option>
+                            <option value="matched">Cocok</option>
+                            <option value="duplicate">NIP duplikat</option>
+                            <option value="not_found">Tidak ditemukan</option>
+                            <option value="missing_nip">NIP kosong</option>
+                            <option value="pendamping">Pendamping</option>
+                          </select>
+                        </th>
+                        <th className="px-4 py-3">
+                          Pelantikan
+                          <select
+                            aria-label="Filter pelantikan"
+                            value={modalityFilter}
+                            onChange={(event) => setModalityFilter(event.target.value as ModalityFilter)}
+                            className="mt-2 block w-36 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] normal-case tracking-normal text-slate-200"
+                          >
+                            <option value="all">Semua</option>
+                            <option value="unselected">Belum dipilih</option>
+                            <option value="daring">Daring</option>
+                            <option value="luring">Luring</option>
+                          </select>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
-                      {agenda.people.map((person) => {
+                      {visiblePeople.length === 0 ? (
+                        <tr>
+                          <td colSpan={13} className="px-4 py-8 text-center text-slate-400">
+                            Tidak ada baris yang sesuai dengan filter.
+                          </td>
+                        </tr>
+                      ) : visiblePeople.map((person) => {
                         const choice = choices[person.id] ?? { selected: false, modality: null };
                         const pendamping = isPendamping(person);
                         const canSelect = isSelectablePerson(person);
@@ -896,6 +1031,7 @@ export default function PelantikanAgendaPage({
                             <td className="max-w-64 whitespace-normal px-4 py-3 text-slate-100">{person.nama || '—'}</td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.jabatan || '—'}</td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.unit_eselon_ii || '—'}</td>
+                            <td className="whitespace-nowrap px-4 py-3 text-slate-300">{person.unit_city || '—'}</td>
                             <td className="px-4 py-3">
                               <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${
                                 pendamping
@@ -1105,7 +1241,7 @@ export default function PelantikanAgendaPage({
                 <div>
                   <h2 id="document-preview-title" className="text-lg font-semibold">Pratinjau dokumen</h2>
                   <p className="mt-1 text-sm leading-6 text-slate-400">
-                    Setiap Unit Eselon II dan moda akan menjadi satu dokumen. Buka grup untuk memeriksa daftar pegawainya.
+                    Setiap moda tetap dibuat sebagai dokumen terpisah. Pratinjau dikelompokkan per Unit Eselon II; buka grup untuk memeriksa pegawainya.
                   </p>
                 </div>
                 <button
@@ -1153,8 +1289,17 @@ export default function PelantikanAgendaPage({
                               Sheet: {group.sourceSheet}
                             </span>
                           )}
-                          <span className="mt-1 inline-flex rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-200">
-                            {group.modality === 'daring' ? 'Daring' : 'Luring'} · {group.people.length} pegawai
+                          <span className="mt-1 flex flex-wrap gap-1.5">
+                            {group.modalityCounts.daring > 0 && (
+                              <span className="inline-flex rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-200">
+                                Daring · {group.modalityCounts.daring} pegawai
+                              </span>
+                            )}
+                            {group.modalityCounts.luring > 0 && (
+                              <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-200">
+                                Luring · {group.modalityCounts.luring} pegawai
+                              </span>
+                            )}
                           </span>
                         </span>
                         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0 text-slate-400">
@@ -1168,7 +1313,16 @@ export default function PelantikanAgendaPage({
                               {person.nama || person.source_nama_nip || `Baris ${person.row_number}`}
                               {person.jabatan && <span className="mt-1 block text-xs text-slate-400">{person.jabatan}</span>}
                             </span>
-                            <span className="whitespace-nowrap font-mono text-xs text-slate-300">{person.nip}</span>
+                            <span className="flex items-center gap-2 whitespace-nowrap">
+                              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                                choices[person.id]?.modality === 'luring'
+                                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                                  : 'border-brand-500/30 bg-brand-500/10 text-brand-200'
+                              }`}>
+                                {choices[person.id]?.modality === 'luring' ? 'Luring' : 'Daring'}
+                              </span>
+                              <span className="font-mono text-xs text-slate-300">{person.nip}</span>
+                            </span>
                           </li>
                         ))}
                       </ul>

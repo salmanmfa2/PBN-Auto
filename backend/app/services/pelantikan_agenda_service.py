@@ -11,6 +11,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from lxml import etree
 import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 from sqlalchemy import bindparam, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
@@ -33,6 +35,7 @@ from app.utils.employee_formatting import format_job_with_unit
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
+SELECTABLE_LOOKUP_STATUSES = {"matched", "duplicate"}
 TEMPLATE_DIRECTORY = (
     Path(__file__).resolve().parents[2] / "templates" / "undangan_pelantikan"
 )
@@ -93,6 +96,17 @@ def normalize_nip(value: object) -> str | None:
 
     digits = re.sub(r"\D", "", raw)
     return digits if len(digits) == 18 else None
+
+
+def _validate_unique_selected_nips(people: list[PelantikanAgendaPerson]) -> None:
+    seen_nips: set[str] = set()
+    for person in people:
+        nip = normalize_nip(getattr(person, "nip", None))
+        if not nip:
+            continue
+        if nip in seen_nips:
+            raise ValueError("Pilih hanya satu baris untuk setiap NIP duplikat.")
+        seen_nips.add(nip)
 
 
 def _extract_nip_from_name_nip(value: object) -> str | None:
@@ -229,7 +243,7 @@ def _match_extracted_rows(
                 eselon=employee.get("eselon") if employee else None,
                 lookup_status=lookup_status,
                 selected=False,
-                modality=None,
+                modality=employee.get("default_modality") if employee else None,
             )
         )
     return people, duplicate_count
@@ -241,9 +255,13 @@ def _lookup_employee_records(nips: set[str]) -> dict[str, dict[str, str]]:
 
     statement = text(
         """
-        SELECT `NIP`, `Nama Gelar`, `Jabatan`, `Unit Eselon II`, `eselon` AS eselon
-        FROM pbncleaner.fetch_pbnopen
-        WHERE TRIM(CAST(`NIP` AS CHAR)) IN :nips
+        SELECT employee.`NIP`, employee.`Nama Gelar`, employee.`Jabatan`,
+               employee.`Unit Eselon II`, employee.`eselon` AS eselon,
+               unit.prov AS unit_province
+        FROM pbncleaner.fetch_pbnopen AS employee
+        LEFT JOIN pbncleaner.ref_unit_kerja AS unit
+          ON TRIM(employee.`Unit Eselon II`) = TRIM(unit.value)
+        WHERE TRIM(CAST(employee.`NIP` AS CHAR)) IN :nips
         """
     ).bindparams(bindparam("nips", expanding=True))
 
@@ -252,9 +270,10 @@ def _lookup_employee_records(nips: set[str]) -> dict[str, dict[str, str]]:
             rows = connection.execute(statement, {"nips": sorted(nips)}).mappings().all()
     except SQLAlchemyError as exc:
         raise RuntimeError(
-            "Could not look up employees in 'pbncleaner.fetch_pbnopen'. "
-            "Check database connectivity and the NIP column."
-        ) from exc
+                "Could not look up employees and unit locations in "
+                "'pbncleaner.fetch_pbnopen' and 'pbncleaner.ref_unit_kerja'. "
+                "Check database connectivity and the reference columns."
+            ) from exc
 
     matches: dict[str, dict[str, str]] = {}
     for row in rows:
@@ -271,6 +290,11 @@ def _lookup_employee_records(nips: set[str]) -> dict[str, dict[str, str]]:
             "jabatan": _display_text(row["Jabatan"]),
             "unit_eselon_ii": _display_text(row["Unit Eselon II"]),
             "eselon": _display_text(row["eselon"]),
+            "default_modality": (
+                "luring"
+                if _display_text(row["unit_province"]).casefold() == "dki jakarta"
+                else "daring"
+            ),
         }
     return matches
 
@@ -328,14 +352,34 @@ def agenda_to_summary(agenda: PelantikanAgenda) -> PelantikanAgendaSummary:
     )
 
 
+def people_to_read(people: list[PelantikanAgendaPerson]) -> list[dict]:
+    if not people:
+        return []
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text("SELECT `value`, `city` FROM pbncleaner.ref_unit_kerja")
+        ).mappings()
+        city_by_unit = {
+            _display_text(row["value"]).casefold(): _display_text(row["city"])
+            for row in rows
+            if _display_text(row["value"])
+        }
+
+    results = []
+    for person in people:
+        person_read = PelantikanAgendaPersonRead.model_validate(person)
+        unit_key = _display_text(person.unit_eselon_ii).casefold()
+        person_read.unit_city = city_by_unit.get(unit_key, "")
+        results.append(person_read.model_dump())
+    return results
+
+
 def agenda_to_detail(agenda: PelantikanAgenda) -> dict:
     result = agenda_to_read(agenda).model_dump()
     return {
         **result,
-        "people": [
-            PelantikanAgendaPersonRead.model_validate(person).model_dump()
-            for person in agenda.people
-        ],
+        "people": people_to_read(agenda.people),
     }
 
 
@@ -630,6 +674,10 @@ def save_person_choices(
     if len(choice_ids) != len(set(choice_ids)) or set(choice_ids) != set(people_by_id):
         raise ValueError("The employee choices do not match the saved agenda rows.")
 
+    _validate_unique_selected_nips(
+        [people_by_id[choice.id] for choice in choices if choice.selected]
+    )
+
     for choice in choices:
         person = people_by_id[choice.id]
         if choice.selected:
@@ -637,14 +685,14 @@ def save_person_choices(
                 raise ValueError(
                     f"Baris Pendamping pada baris {person.row_number} tidak dapat dipilih."
                 )
-            if person.lookup_status != "matched":
+            if person.lookup_status not in SELECTABLE_LOOKUP_STATUSES or not normalize_nip(person.nip):
                 raise ValueError("Only employees matched to the PBN database can be included.")
             if not person.unit_eselon_ii:
                 raise ValueError(
                     f"Unit Eselon II is missing for the selected employee in row {person.row_number}."
                 )
         person.selected = choice.selected
-        person.modality = choice.modality if choice.selected else None
+        person.modality = choice.modality
 
     agenda.status = "ready" if any(choice.selected for choice in choices) else "draft"
     db.commit()
@@ -905,6 +953,68 @@ def _safe_filename(value: str) -> str:
     return slug[:80] or "unit"
 
 
+def export_monitoring_excel(agenda: PelantikanAgenda) -> bytes:
+    grouped: dict[str, dict[str, int | str]] = {}
+    for person in agenda.people:
+        is_pendamping = _is_pendamping(person)
+        if not is_pendamping and (
+            not person.selected or person.modality not in {"daring", "luring"}
+        ):
+            continue
+
+        unit = _display_text(person.unit_eselon_ii) or "Unit Eselon II tidak ditemukan"
+        unit_key = unit.casefold()
+        row = grouped.setdefault(
+            unit_key,
+            {
+                "unit": unit,
+                "daring": 0,
+                "luring": 0,
+                "pendamping": 0,
+            },
+        )
+        if is_pendamping:
+            row["pendamping"] += 1
+        else:
+            row[person.modality] += 1
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Monitoring Pelantikan"
+    worksheet.append(
+        ["Unit Eselon II", "Daring", "Luring", "Pendamping (excluded)"]
+    )
+    for row in sorted(grouped.values(), key=lambda item: str(item["unit"]).casefold()):
+        worksheet.append(
+            [
+                row["unit"],
+                row["daring"],
+                row["luring"],
+                row["pendamping"],
+            ]
+        )
+
+    header_fill = PatternFill(fill_type="solid", fgColor="17365D")
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for row in worksheet.iter_rows(min_row=2, min_col=2, max_col=4):
+        for cell in row:
+            cell.alignment = Alignment(horizontal="center")
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    worksheet.column_dimensions["A"].width = 55
+    for column in ("B", "C", "D"):
+        worksheet.column_dimensions[column].width = 24
+
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
 def generate_agenda_zip(db: Session, agenda: PelantikanAgenda) -> tuple[bytes, int]:
     included = [
         person
@@ -914,10 +1024,12 @@ def generate_agenda_zip(db: Session, agenda: PelantikanAgenda) -> tuple[bytes, i
     if not included:
         raise ValueError("Pilih setidaknya satu pegawai untuk membuat ND.")
 
+    _validate_unique_selected_nips(included)
+
     invalid = [
         person
         for person in included
-        if person.lookup_status != "matched"
+        if person.lookup_status not in SELECTABLE_LOOKUP_STATUSES
         or person.modality not in {"daring", "luring"}
         or not person.unit_eselon_ii.strip()
     ]

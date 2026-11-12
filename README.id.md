@@ -6,7 +6,7 @@ Nama aplikasi web pada tab browser adalah **MPK Workspace**; PBN Cleaner tetap m
 
 ## Catatan Rilis
 
-Pembaruan web saat ini adalah **1.2.1**: [Catatan pembaruan Web](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), setelah [pembaruan Web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). Persyaratan desktop terkait didokumentasikan terpisah di [Catatan pembaruan Desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); catatan desktop tersebut tidak menyatakan build atau rilis desktop telah dibuat.
+Pembaruan web saat ini adalah **1.3.0**: [Catatan pembaruan Web](./Update%20Notes/Update%20Notes%201.3.0%20Web.md), setelah [pembaruan Web 1.2.1](./Update%20Notes/Update%20Notes%201.2.1%20Web.md) dan [pembaruan Web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). Persyaratan desktop terkait didokumentasikan terpisah di [Catatan pembaruan Desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); catatan desktop tersebut tidak menyatakan build atau rilis desktop telah dibuat.
 
 Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub**, tanpa sistem login. Akun web, monitoring Plt./Plh., pembuatan agenda Pelantikan, dan Analisis Kinerja DJPb hanya tersedia di web. Bahan Pendukung MPK dan Simulasi Mutasi masih berupa placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
 
@@ -106,6 +106,7 @@ Project PBNCleaner/
 ├── resolve-network-config.ps1     # Mendeteksi host LAN aktif dan origin CORS
 ├── run-app-testing.bat            # Local dev launcher
 ├── run-app.bat                    # Network deployment launcher
+├── setup-developer.bat            # Penyiapan pengembang Windows satu kali
 ├── deploy-windows.ps1             # Environment setup
 └── serve-frontend.ps1             # Frontend server for production
 ```
@@ -114,8 +115,15 @@ Project PBNCleaner/
 
 ### Prasyarat
 
-- Python 3.11+
-- Node.js 18+
+- Python 3.11+ (penyiapan Windows memasang Python 3.12 jika diperlukan)
+- Node.js 22.12+ (penyiapan Windows memasang rilis LTS saat ini jika diperlukan)
+- XAMPP MySQL dan dump skema serta data referensi `pbncleaner` terbaru untuk pengembangan lokal
+
+### Penyiapan pengembang Windows satu kali
+
+Setelah meng-clone repositori, pasang XAMPP jika belum tersedia dan jalankan server MySQL-nya. Siapkan dump skema dan data referensi SQL `pbncleaner` terbaru yang berisi definisi tabel `fetch_pbnopen` dan `dt_employee`, tabel referensi pegawai yang sudah terisi, serta kolom `ref_unit_kerja.city` dan `ref_unit_kerja.prov`. Biarkan tabel sumber pegawai kosong; unggah `fetch_pbnopen` dan sinkronkan `dt_employee` dari halaman Admin. Berkas SQL di `backend/sql/` membuat tabel milik aplikasi, tetapi tidak berisi skema sumber dan data referensi tersebut.
+
+Jalankan `setup-developer.bat` satu kali. Skrip memasang Python/Node.js bila diperlukan, menyiapkan dependensi backend dan frontend, membangun frontend, mengimpor dump setelah konfirmasi eksplisit, dan mengatur `backend/.env` yang diabaikan Git. Skrip memvalidasi skema tabel dan data referensi terisi tanpa mensyaratkan data pegawai. Setelah penyiapan berhasil, jalankan aplikasi dengan `run-app.bat`. Untuk mengunggah data pegawai, buat Super Admin lokal terlebih dahulu sesuai bagian [Akun dan peran](#akun-dan-peran); dump ini memang tidak berisi akun pengguna. Impor dump dapat mengganti data pada database lokal `pbncleaner`; jangan arahkan penyiapan ini ke database produksi.
 
 ### 1. Backend
 

@@ -196,7 +196,7 @@ Uses **Tailwind CSS v3** with custom theme variables:
    npm run build
    ```
 
-2. The `dist/` folder is served by `serve-frontend.ps1` on port 8081 in production.
+2. The `dist/` folder is served by `serve-frontend.ps1` on port 8081 in production. Its SPA fallback serves `index.html` for app routes such as `/login`, so they work when opened or refreshed directly; missing assets still return 404.
 
 3. For network deployment, `run-app.bat` detects the active LAN address automatically. Set `host` in the root `config.json` only if you need to override it with a DNS name or reserved address:
    ```bash

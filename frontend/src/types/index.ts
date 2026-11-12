@@ -438,6 +438,7 @@ export interface PelantikanAgendaPerson {
   nama: string;
   jabatan: string;
   unit_eselon_ii: string;
+  unit_city: string;
   eselon: string | null;
   lookup_status: PelantikanLookupStatus;
   selected: boolean;
