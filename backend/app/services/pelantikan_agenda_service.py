@@ -356,23 +356,35 @@ def people_to_read(people: list[PelantikanAgendaPerson]) -> list[dict]:
     if not people:
         return []
 
-    with engine.connect() as connection:
-        rows = connection.execute(
-            text("SELECT `value`, `city` FROM pbncleaner.ref_unit_kerja")
-        ).mappings()
-        city_by_unit = {
-            _display_text(row["value"]).casefold(): _display_text(row["city"])
-            for row in rows
-            if _display_text(row["value"])
-        }
-
+    unit_reference_by_name = _unit_reference_by_name()
     results = []
     for person in people:
         person_read = PelantikanAgendaPersonRead.model_validate(person)
-        unit_key = _display_text(person.unit_eselon_ii).casefold()
-        person_read.unit_city = city_by_unit.get(unit_key, "")
+        reference = unit_reference_by_name.get(
+            _display_text(person.unit_eselon_ii).casefold()
+        )
+        person_read.unit_kerja_id = reference[0] if reference else None
+        person_read.unit_city = reference[1] if reference else ""
         results.append(person_read.model_dump())
     return results
+
+
+def _unit_reference_by_name() -> dict[str, tuple[int, str]]:
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT `unit_kerja_id`, `value`, `city` "
+                "FROM pbncleaner.ref_unit_kerja"
+            )
+        ).mappings()
+        return {
+            _display_text(row["value"]).casefold(): (
+                int(row["unit_kerja_id"]),
+                _display_text(row["city"]),
+            )
+            for row in rows
+            if _display_text(row["value"])
+        }
 
 
 def agenda_to_detail(agenda: PelantikanAgenda) -> dict:
@@ -897,6 +909,123 @@ def _populate_roster(table: etree._Element, people: list[PelantikanAgendaPerson]
         _set_cell_lines(cells[2], [_format_job_with_unit(person)])
 
 
+def _populate_appendix_roster(
+    table: etree._Element,
+    people: list[PelantikanAgendaPerson],
+) -> None:
+    rows = table.findall("./w:tr", NS)
+    if len(rows) < 2:
+        raise ValueError("The appendix template's employee-list table has no data row.")
+
+    header = [
+        _normalize_column_name(_cell_text(cell))
+        for cell in rows[0].findall("./w:tc", NS)
+    ]
+    if header[:4] != ["no", "namanip", "jabatansaatini", "keterangan"]:
+        raise ValueError(
+            "The appendix template must have No, Nama/NIP, Jabatan Saat Ini, "
+            "and Keterangan columns."
+        )
+
+    header_properties = rows[0].find("./w:trPr", NS)
+    if header_properties is None:
+        header_properties = etree.Element(f"{W}trPr")
+        rows[0].insert(0, header_properties)
+    if header_properties.find("./w:tblHeader", NS) is None:
+        etree.SubElement(header_properties, f"{W}tblHeader").set(f"{W}val", "true")
+
+    data_rows = rows[1:]
+    template_row = data_rows[-1]
+    while len(data_rows) > len(people):
+        table.remove(data_rows.pop())
+    while len(data_rows) < len(people):
+        clone = deepcopy(template_row)
+        table.append(clone)
+        data_rows.append(clone)
+
+    for number, (row, person) in enumerate(zip(data_rows, people), start=1):
+        cells = row.findall("./w:tc", NS)
+        if len(cells) < 4:
+            raise ValueError("The appendix employee-list table must have four columns.")
+        _set_cell_lines(cells[0], [str(number)])
+        _set_cell_lines(cells[1], [person.nama, person.nip or ""])
+        _set_cell_lines(cells[2], [person.jabatan])
+        _set_cell_lines(
+            cells[3],
+            ["Fisik" if person.modality == "luring" else "Virtual"],
+        )
+
+
+def _selected_people_for_generation(
+    agenda: PelantikanAgenda,
+) -> list[PelantikanAgendaPerson]:
+    included = [
+        person
+        for person in agenda.people
+        if person.selected and not _is_pendamping(person)
+    ]
+    if not included:
+        raise ValueError("Pilih setidaknya satu pegawai untuk membuat ND.")
+
+    _validate_unique_selected_nips(included)
+
+    invalid = [
+        person
+        for person in included
+        if person.lookup_status not in SELECTABLE_LOOKUP_STATUSES
+        or person.modality not in {"daring", "luring"}
+        or not person.unit_eselon_ii.strip()
+    ]
+    if invalid:
+        raise ValueError(
+            "Setiap pegawai terpilih harus cocok dengan database, memiliki Unit Eselon II, "
+            "dan memiliki pilihan Daring atau Luring."
+        )
+    return included
+
+
+def generate_lampiran_pengantar_docx(agenda: PelantikanAgenda) -> bytes:
+    included = _selected_people_for_generation(agenda)
+    unit_reference_by_name = _unit_reference_by_name()
+
+    def sort_key(person: PelantikanAgendaPerson) -> tuple[int, bool, int, str, int]:
+        reference = unit_reference_by_name.get(
+            _display_text(person.unit_eselon_ii).casefold()
+        )
+        return (
+            0 if person.modality == "luring" else 1,
+            reference is None,
+            reference[0] if reference else 0,
+            _display_text(person.unit_eselon_ii).casefold(),
+            person.row_number,
+        )
+
+    included.sort(
+        key=sort_key
+    )
+
+    template_path = TEMPLATE_DIRECTORY / "template_lampiran_pengantar.docx"
+    if not template_path.is_file():
+        raise FileNotFoundError(f"Pelantikan appendix template not found: {template_path}")
+
+    output = BytesIO()
+    with ZipFile(template_path, "r") as source:
+        document_root = etree.fromstring(source.read("word/document.xml"))
+        roster_table = _find_roster_table(document_root)
+        _populate_appendix_roster(roster_table, included)
+        document_xml = etree.tostring(
+            document_root,
+            xml_declaration=True,
+            encoding="UTF-8",
+            standalone=True,
+        )
+        with ZipFile(output, "w", compression=ZIP_DEFLATED) as destination:
+            for item in source.infolist():
+                contents = document_xml if item.filename == "word/document.xml" else source.read(item)
+                destination.writestr(item, contents)
+    return output.getvalue()
+
+
 def build_agenda_docx(
     agenda: PelantikanAgenda,
     people: list[PelantikanAgendaPerson],
@@ -1015,30 +1144,13 @@ def export_monitoring_excel(agenda: PelantikanAgenda) -> bytes:
     return output.getvalue()
 
 
-def generate_agenda_zip(db: Session, agenda: PelantikanAgenda) -> tuple[bytes, int]:
-    included = [
-        person
-        for person in agenda.people
-        if person.selected and not _is_pendamping(person)
-    ]
-    if not included:
-        raise ValueError("Pilih setidaknya satu pegawai untuk membuat ND.")
-
-    _validate_unique_selected_nips(included)
-
-    invalid = [
-        person
-        for person in included
-        if person.lookup_status not in SELECTABLE_LOOKUP_STATUSES
-        or person.modality not in {"daring", "luring"}
-        or not person.unit_eselon_ii.strip()
-    ]
-    if invalid:
-        raise ValueError(
-            "Setiap pegawai terpilih harus cocok dengan database, memiliki Unit Eselon II, "
-            "dan memiliki pilihan Daring atau Luring."
-        )
-
+def _group_people_for_agenda_documents(
+    agenda: PelantikanAgenda,
+    included: list[PelantikanAgendaPerson],
+) -> tuple[
+    dict[tuple[str | None, str, str], list[PelantikanAgendaPerson]],
+    dict[tuple[str | None, str, str], str],
+]:
     isolate_sheets = (
         getattr(agenda, "workflow_mode", "single_sheet") == "all_sheets"
         and getattr(agenda, "import_strategy", "all_sheets") == "isolated_sheets"
@@ -1052,25 +1164,118 @@ def generate_agenda_zip(db: Session, agenda: PelantikanAgenda) -> tuple[bytes, i
         key = (source_sheet, unit_name.casefold(), modality)
         grouped.setdefault(key, []).append(person)
         display_names.setdefault(key, unit_name)
+    return grouped, display_names
+
+
+def _agenda_document_entry_name(
+    index: int,
+    key: tuple[str | None, str, str],
+    display_names: dict[tuple[str | None, str, str], str],
+) -> str:
+    source_sheet, _, modality = key
+    mode_label = "daring" if modality == "daring" else "luring"
+    source_label = (
+        f"_{_safe_filename(source_sheet)}"
+        if source_sheet is not None
+        else ""
+    )
+    return (
+        f"{index:02d}_{_safe_filename(display_names[key])}{source_label}_{mode_label}.docx"
+    )
+
+
+def _mark_agenda_generated(db: Session, agenda: PelantikanAgenda) -> None:
+    agenda.last_generated_at = datetime.now(timezone.utc)
+    agenda.status = "generated"
+    db.commit()
+
+
+def generate_agenda_zip(db: Session, agenda: PelantikanAgenda) -> tuple[bytes, int]:
+    included = _selected_people_for_generation(agenda)
+    grouped, display_names = _group_people_for_agenda_documents(agenda, included)
 
     output = BytesIO()
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
         for index, (key, people) in enumerate(grouped.items(), start=1):
             unit_name = display_names[key]
-            source_sheet, _, modality = key
+            _, _, modality = key
             document = build_agenda_docx(agenda, people, modality, unit_name)
-            mode_label = "daring" if modality == "daring" else "luring"
-            source_label = (
-                f"_{_safe_filename(source_sheet)}"
-                if source_sheet is not None
-                else ""
-            )
-            entry_name = (
-                f"{index:02d}_{_safe_filename(unit_name)}{source_label}_{mode_label}.docx"
-            )
+            entry_name = _agenda_document_entry_name(index, key, display_names)
             archive.writestr(entry_name, document)
 
-    agenda.last_generated_at = datetime.now(timezone.utc)
-    agenda.status = "generated"
-    db.commit()
+    _mark_agenda_generated(db, agenda)
     return output.getvalue(), len(grouped)
+
+
+def generate_selected_agenda_documents(
+    db: Session,
+    agenda: PelantikanAgenda,
+    selected_person_ids: list[int],
+) -> tuple[bytes, str, str, int]:
+    if len(selected_person_ids) != len(set(selected_person_ids)):
+        raise ValueError("Daftar dokumen berisi pegawai yang sama lebih dari satu kali.")
+
+    included = _selected_people_for_generation(agenda)
+    selected_ids = set(selected_person_ids)
+    available_ids = {person.id for person in included}
+    if not selected_ids.issubset(available_ids):
+        raise ValueError("Pilih dokumen yang berisi pegawai terpilih pada agenda ini.")
+
+    all_groups, display_names = _group_people_for_agenda_documents(agenda, included)
+    selected_groups = []
+    for key, people in all_groups.items():
+        group_ids = {person.id for person in people}
+        overlap = group_ids & selected_ids
+        if overlap and overlap != group_ids:
+            raise ValueError("Pilih seluruh peserta dalam satu dokumen.")
+        if overlap:
+            selected_groups.append((key, people))
+
+    if not selected_groups:
+        raise ValueError("Pilih setidaknya satu dokumen untuk diunduh.")
+
+    if len(selected_groups) == 1:
+        key, people = selected_groups[0]
+        _, _, modality = key
+        document = build_agenda_docx(
+            agenda,
+            people,
+            modality,
+            display_names[key],
+        )
+        source_sheet, _, _ = key
+        source_label = (
+            f"_{_safe_filename(source_sheet)}"
+            if source_sheet is not None
+            else ""
+        )
+        mode_label = "daring" if modality == "daring" else "luring"
+        filename = (
+            f"undangan_pelantikan_{agenda.tanggal_pelantikan.isoformat()}_"
+            f"{_safe_filename(display_names[key])}{source_label}_{mode_label}.docx"
+        )
+        media_type = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        data = document
+    else:
+        output = BytesIO()
+        with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
+            for index, (key, people) in enumerate(selected_groups, start=1):
+                _, _, modality = key
+                document = build_agenda_docx(
+                    agenda,
+                    people,
+                    modality,
+                    display_names[key],
+                )
+                archive.writestr(
+                    _agenda_document_entry_name(index, key, display_names),
+                    document,
+                )
+        filename = f"undangan_pelantikan_{agenda.tanggal_pelantikan.isoformat()}.zip"
+        media_type = "application/zip"
+        data = output.getvalue()
+
+    _mark_agenda_generated(db, agenda)
+    return data, filename, media_type, len(selected_groups)

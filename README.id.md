@@ -22,7 +22,7 @@ Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub
 | **Insight Hub Beta (web)** | ✅ Beta | Filter, grafik, dan tabel pegawai yang sama dari `pbncleaner.fetch_pbnopen`; Super Admin dapat mengganti sumber melalui CSV yang divalidasi kolomnya |
 | **Analisis Kinerja DJPb (web)** | ✅ Aktif | Analisis dan tabel data dapat diakses semua pengguna termasuk Guest; hanya Super Admin yang dapat mengunggah atau menyesuaikan data |
 | **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, memilih pejabat pengganti dari PBN Open, dan mengekspor data |
-| **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Mengelola agenda pribadi, memilih sheet dari workbook Excel, mencocokkan pegawai dengan PBN Open, meninjau peserta terpilih, dan membuat dokumen undangan dalam ZIP |
+| **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Mengelola agenda pribadi, memproses satu atau beberapa sheet workbook, memakai Lite View dan lebar kolom yang dapat diatur, mencocokkan pegawai dengan PBN Open, meninjau peserta terpilih, serta mengunduh dokumen undangan atau lampiran ND Pengantar |
 | **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, dan Super Admin; sesi pengguna berlaku satu jam |
 | **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin dan administrasi monitoring Plt./Plh. |
 | **Feedback pengguna (web)** | ✅ Aktif | Mengirim masukan untuk menu tertentu atau keseluruhan aplikasi; Admin dan Super Admin dapat melihat, menghapus satu masukan, atau menghapus semuanya |
@@ -188,10 +188,9 @@ Aplikasi menggunakan **React Router v7** untuk navigasi berbasis URL:
 | `/insights` | InsightHubPage | Dashboard analitik PBN Open + Edu + HB |
 | `/insights-beta` | InsightHubPage | Analitik PBN Open dari database |
 | `/manajemen-plt-plh` | PltPlhManagementPage | Tabel monitoring Plt./Plh., notifikasi, dan ekspor |
-| `/undangan-pelantikan` | PelantikanAgendaPage | Membuat dan mengelola agenda Pelantikan |
-| `/undangan-pelantikan/:agendaId` | PelantikanAgendaPage | Membuka kembali agenda milik pengguna |
-| `/undangan-pelantikan-experimental` | PelantikanAgendaPage | Impor eksperimental untuk menggabungkan semua/pilihan sheet, memisahkan sheet, atau memproses satu sheet |
-| `/undangan-pelantikan-experimental/:agendaId` | PelantikanAgendaPage | Membuka kembali agenda eksperimental semua sheet |
+| `/undangan-pelantikan` | PelantikanAgendaPage | Alur semua sheet utama dan riwayat agenda |
+| `/undangan-pelantikan/:agendaId` | PelantikanAgendaPage | Membuka kembali agenda, termasuk agenda lama satu sheet |
+| `/undangan-pelantikan-experimental` | Redirect | Rute lama diarahkan ke alur utama |
 | `/admin` | AdminPage | Workspace Admin; pengelolaan akun khusus Super Admin |
 | `/login` | LoginPage | Masuk, mendaftar, atau melanjutkan sebagai Guest |
 
@@ -239,10 +238,12 @@ VITE_API_URL=http://localhost:8000
 | `GET` / `PUT` / `DELETE` | `/undangan-pelantikan/agendas/{agenda_id}` | Membaca, memperbarui, atau menghapus agenda milik pengguna |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/sheets` | Menampilkan nama sheet dari workbook Excel yang diunggah |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload` | Mengunggah roster Excel dan mencocokkan NIP dengan PBN Open |
-| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-sheets` | Mengimpor semua, sheet pilihan, sheet terpisah, atau satu sheet pada alur eksperimental |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-sheets` | Mengimpor semua, sheet pilihan, sheet terpisah, atau satu sheet pada alur utama |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-all-sheets` | Menggabungkan sheet roster valid, melaporkan sheet yang dilewati dan NIP duplikat, lalu mencocokkan NIP dengan PBN Open |
 | `PUT` | `/undangan-pelantikan/agendas/{agenda_id}/people` | Menyimpan pilihan peserta dan moda |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate` | Membuat dokumen undangan berkelompok dalam ZIP |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate-selected` | Membuat dokumen unit/moda terpilih yang lengkap sebagai DOCX atau ZIP |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/appendix` | Membuat DOCX lampiran ND Pengantar dari peserta terpilih |
 
 ### Akun dan peran
 

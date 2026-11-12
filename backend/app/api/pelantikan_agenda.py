@@ -14,6 +14,7 @@ from app.schemas.pelantikan_agenda import (
     PelantikanAgendaFields,
     PelantikanAgendaPeopleUpdate,
     PelantikanAgendaRead,
+    PelantikanSelectedDocumentsRequest,
     PelantikanAgendaSummary,
     PelantikanAgendaUploadRead,
     PelantikanAgendaUpdate,
@@ -368,6 +369,76 @@ def generate_agenda_documents(
             "Content-Disposition": f'attachment; filename="{filename}"',
             "X-Pelantikan-Document-Count": str(group_count),
         },
+    )
+
+
+@router.post("/agendas/{agenda_id}/generate-selected")
+def generate_selected_agenda_documents(
+    agenda_id: str,
+    request: PelantikanSelectedDocumentsRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        data, filename, media_type, group_count = (
+            pelantikan_agenda_service.generate_selected_agenda_documents(
+                db,
+                agenda,
+                request.person_ids,
+            )
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Dokumen berhasil disiapkan, tetapi riwayat pembuatan tidak dapat disimpan.",
+        ) from exc
+
+    return StreamingResponse(
+        BytesIO(data),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Pelantikan-Document-Count": str(group_count),
+        },
+    )
+
+
+@router.post("/agendas/{agenda_id}/appendix")
+def generate_agenda_appendix(
+    agenda_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        data = pelantikan_agenda_service.generate_lampiran_pengantar_docx(agenda)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Referensi Unit Eselon II tidak dapat dibaca untuk lampiran.",
+        ) from exc
+
+    filename = f"lampiran_nd_pengantar_{agenda.tanggal_pelantikan.isoformat()}.docx"
+    return StreamingResponse(
+        BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

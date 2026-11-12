@@ -79,21 +79,11 @@ const features: Feature[] = [
   {
     key: 'nd-undangan',
     title: 'Generate ND Undangan Pelantikan',
-    subtitle: 'Buat nota dinas undangan pelantikan',
+    subtitle: 'Proses satu atau beberapa sheet roster dalam satu workbook',
     group: 'Operasional',
     status: 'ready',
     icon: 'document',
     path: '/undangan-pelantikan',
-    userOnly: true,
-  },
-  {
-    key: 'nd-undangan-experimental',
-    title: 'Generate ND Menu Experimental',
-    subtitle: 'Gabungkan sheet roster dari satu workbook',
-    group: 'Operasional',
-    status: 'beta',
-    icon: 'document',
-    path: '/undangan-pelantikan-experimental',
     userOnly: true,
   },
   {
@@ -154,9 +144,10 @@ function readStoredKeys(storageKey: string): { keys: string[]; error: string | n
       throw new Error('Format preferensi tidak valid.');
     }
 
-    const keys = parsed.filter(
-      (key): key is string => typeof key === 'string' && featureKeys.has(key),
-    );
+    const keys = parsed
+      .filter((key): key is string => typeof key === 'string')
+      .map((key) => key === 'nd-undangan-experimental' ? 'nd-undangan' : key)
+      .filter((key) => featureKeys.has(key));
     return { keys: [...new Set(keys)], error: null };
   } catch (error) {
     return {

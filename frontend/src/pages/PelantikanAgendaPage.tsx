@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import * as apiClient from '../services/api';
@@ -28,10 +37,75 @@ type ModalityFilter = 'all' | 'daring' | 'luring' | 'unselected';
 type DocumentPreviewGroup = {
   key: string;
   unit: string;
+  unitKerjaId: number | null;
   sourceSheet: string | null;
   people: PelantikanAgendaPerson[];
   modalityCounts: Record<PelantikanModality, number>;
 };
+type DownloadableDocumentGroup = {
+  key: string;
+  unit: string;
+  modality: PelantikanModality;
+  personIds: number[];
+  count: number;
+};
+const rosterColumnWidths = {
+  select: 72,
+  number: 72,
+  source: 140,
+  sourceName: 200,
+  sourcePosition: 190,
+  proposedPosition: 190,
+  nip: 130,
+  name: 190,
+  databasePosition: 220,
+  unit: 220,
+  city: 110,
+  matching: 180,
+  modality: 176,
+} as const;
+type RosterColumnKey = keyof typeof rosterColumnWidths;
+type RosterColumnWidths = Record<RosterColumnKey, number>;
+const rosterColumnKeys = Object.keys(rosterColumnWidths) as RosterColumnKey[];
+const rosterColumnMinWidths: RosterColumnWidths = {
+  select: 56,
+  number: 56,
+  source: 80,
+  sourceName: 90,
+  sourcePosition: 100,
+  proposedPosition: 100,
+  nip: 120,
+  name: 90,
+  databasePosition: 100,
+  unit: 100,
+  city: 64,
+  matching: 176,
+  modality: 176,
+};
+const liteRosterColumns = new Set<RosterColumnKey>([
+  'select',
+  'number',
+  'sourceName',
+  'sourcePosition',
+  'proposedPosition',
+  'city',
+  'matching',
+  'modality',
+]);
+const rosterColumnWidthsStorageKey = 'pbn.pelantikan.roster-column-widths';
+const maxRosterColumnWidth = 640;
+
+function isRosterColumnWidths(value: unknown): value is RosterColumnWidths {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const widths = value as Partial<Record<RosterColumnKey, unknown>>;
+  return rosterColumnKeys.every((key) => {
+    const width = widths[key];
+    return typeof width === 'number'
+      && Number.isFinite(width)
+      && width >= rosterColumnMinWidths[key]
+      && width <= maxRosterColumnWidth;
+  });
+}
 
 function agendaFields(agenda: PelantikanAgendaDetail): PelantikanAgendaFields {
   return {
@@ -112,21 +186,23 @@ function lookupClass(status: string): string {
 }
 
 export default function PelantikanAgendaPage({
-  workflowMode = 'single_sheet',
+  workflowMode = 'all_sheets',
 }: {
   workflowMode?: PelantikanWorkflowMode;
 }) {
   const { agendaId } = useParams<{ agendaId: string }>();
   const navigate = useNavigate();
-  const agendaBasePath = workflowMode === 'all_sheets'
-    ? '/undangan-pelantikan-experimental'
-    : '/undangan-pelantikan';
+  const agendaBasePath = '/undangan-pelantikan';
   const { user, logout } = useAuth();
   const [agendas, setAgendas] = useState<PelantikanAgendaSummary[]>([]);
   const [agenda, setAgenda] = useState<PelantikanAgendaDetail | null>(null);
   const [fields, setFields] = useState(emptyFields);
   const [choices, setChoices] = useState<ChoiceState>({});
+  const [excludedDocumentKeys, setExcludedDocumentKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [choicesDirty, setChoicesDirty] = useState(false);
+  const [isLiteView, setIsLiteView] = useState(false);
   const [matchingFilter, setMatchingFilter] = useState<MatchingFilter>('all');
   const [modalityFilter, setModalityFilter] = useState<ModalityFilter>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -135,8 +211,10 @@ export default function PelantikanAgendaPage({
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingAppendix, setIsGeneratingAppendix] = useState(false);
   const [isExportingMonitoring, setIsExportingMonitoring] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isEditingAgenda, setIsEditingAgenda] = useState(false);
   const [deletingHistoryAgendaId, setDeletingHistoryAgendaId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [availableSheets, setAvailableSheets] = useState<string[]>([]);
@@ -146,6 +224,118 @@ export default function PelantikanAgendaPage({
   const [isLoadingSheets, setIsLoadingSheets] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [columnWidthError, setColumnWidthError] = useState<string | null>(null);
+  const [columnWidths, setColumnWidths] = useState<RosterColumnWidths>(() => ({ ...rosterColumnWidths }));
+  const columnWidthsRef = useRef<RosterColumnWidths>({ ...rosterColumnWidths });
+  const columnResizeRef = useRef<{
+    column: RosterColumnKey;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const activeWorkflowMode = agenda?.workflow_mode ?? workflowMode;
+
+  useEffect(() => {
+    try {
+      const storedWidths = window.localStorage.getItem(rosterColumnWidthsStorageKey);
+      if (!storedWidths) return;
+      const parsed: unknown = JSON.parse(storedWidths);
+      if (!isRosterColumnWidths(parsed)) {
+        throw new Error('Format lebar kolom tidak valid.');
+      }
+      columnWidthsRef.current = parsed;
+      setColumnWidths(parsed);
+    } catch (storageError) {
+      setColumnWidthError(
+        `Lebar kolom tersimpan tidak dapat dimuat: ${
+          storageError instanceof Error ? storageError.message : String(storageError)
+        }`,
+      );
+    }
+  }, []);
+
+  const persistColumnWidths = (widths: RosterColumnWidths) => {
+    try {
+      window.localStorage.setItem(rosterColumnWidthsStorageKey, JSON.stringify(widths));
+      setColumnWidthError(null);
+    } catch (storageError) {
+      setColumnWidthError(
+        `Lebar kolom tidak dapat disimpan: ${
+          storageError instanceof Error ? storageError.message : String(storageError)
+        }`,
+      );
+    }
+  };
+
+  const startColumnResize = (
+    column: RosterColumnKey,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    columnResizeRef.current = {
+      column,
+      startX: event.clientX,
+      startWidth: columnWidthsRef.current[column],
+    };
+  };
+
+  const moveColumnResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resize = columnResizeRef.current;
+    if (!resize) return;
+    const width = Math.min(
+      maxRosterColumnWidth,
+      Math.max(
+        rosterColumnMinWidths[resize.column],
+        resize.startWidth + event.clientX - resize.startX,
+      ),
+    );
+    const nextWidths = { ...columnWidthsRef.current, [resize.column]: width };
+    columnWidthsRef.current = nextWidths;
+    setColumnWidths(nextWidths);
+  };
+
+  const finishColumnResize = () => {
+    if (!columnResizeRef.current) return;
+    columnResizeRef.current = null;
+    persistColumnWidths(columnWidthsRef.current);
+  };
+
+  const handleColumnResizeKeyDown = (
+    column: RosterColumnKey,
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 12 : -12;
+    const width = Math.min(
+      maxRosterColumnWidth,
+      Math.max(rosterColumnMinWidths[column], columnWidthsRef.current[column] + delta),
+    );
+    const nextWidths = { ...columnWidthsRef.current, [column]: width };
+    columnWidthsRef.current = nextWidths;
+    setColumnWidths(nextWidths);
+    persistColumnWidths(nextWidths);
+  };
+
+  const columnResizeHandle = (column: RosterColumnKey, label: string) => (
+    <div
+      role="separator"
+      aria-label={`Ubah lebar kolom ${label}`}
+      aria-orientation="vertical"
+      aria-valuemin={rosterColumnMinWidths[column]}
+      aria-valuemax={maxRosterColumnWidth}
+      aria-valuenow={columnWidths[column]}
+      tabIndex={0}
+      title={`Tarik untuk mengubah lebar kolom ${label}; gunakan tombol panah kiri/kanan.`}
+      onPointerDown={(event) => startColumnResize(column, event)}
+      onPointerMove={moveColumnResize}
+      onPointerUp={finishColumnResize}
+      onPointerCancel={finishColumnResize}
+      onLostPointerCapture={finishColumnResize}
+      onKeyDown={(event) => handleColumnResizeKeyDown(column, event)}
+      className="absolute right-0 top-0 z-10 h-full w-2 touch-none cursor-col-resize border-r-2 border-transparent hover:border-brand-400 focus-visible:border-brand-400 focus-visible:outline-none"
+    />
+  );
 
   const loadPage = useCallback(async (active: () => boolean) => {
     setIsLoading(true);
@@ -154,31 +344,27 @@ export default function PelantikanAgendaPage({
       if (agendaId) {
         const loadedAgenda = await apiClient.getPelantikanAgenda(agendaId);
         if (!active()) return;
-        if (loadedAgenda.workflow_mode !== workflowMode) {
-          const correctBasePath = loadedAgenda.workflow_mode === 'all_sheets'
-            ? '/undangan-pelantikan-experimental'
-            : '/undangan-pelantikan';
-          navigate(`${correctBasePath}/${loadedAgenda.id}`, { replace: true });
-          return;
-        }
         setAgenda(loadedAgenda);
         setFields(agendaFields(loadedAgenda));
         setChoices(choicesFromAgenda(loadedAgenda));
+        setExcludedDocumentKeys(new Set());
         setImportStrategy(loadedAgenda.import_strategy);
         setChoicesDirty(loadedAgenda.people.some((person) => isPendamping(person) && person.selected));
+        setIsEditingAgenda(false);
       } else {
         const loadedAgendas = await apiClient.listPelantikanAgendas();
         if (!active()) return;
-        setAgendas(loadedAgendas.filter((item) => item.workflow_mode === workflowMode));
+        setAgendas(loadedAgendas);
         setAgenda(null);
-        setImportStrategy(workflowMode === 'all_sheets' ? 'all_sheets' : 'single_sheet');
+        setImportStrategy('all_sheets');
+        setIsEditingAgenda(false);
       }
     } catch (loadError) {
       if (active()) setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
       if (active()) setIsLoading(false);
     }
-  }, [agendaId, navigate, workflowMode]);
+  }, [agendaId]);
 
   useEffect(() => {
     let active = true;
@@ -203,6 +389,10 @@ export default function PelantikanAgendaPage({
   const selectedCount = useMemo(
     () => Object.values(choices).filter((choice) => choice.selected).length,
     [choices],
+  );
+  const visibleRosterColumnKeys = useMemo(
+    () => rosterColumnKeys.filter((key) => !isLiteView || liteRosterColumns.has(key)),
+    [isLiteView],
   );
   const visiblePeople = useMemo(
     () => (agenda?.people ?? []).filter((person) => {
@@ -246,6 +436,7 @@ export default function PelantikanAgendaPage({
         groups.set(key, {
           key,
           unit,
+          unitKerjaId: person.unit_kerja_id,
           sourceSheet,
           people: [person],
           modalityCounts: {
@@ -255,11 +446,42 @@ export default function PelantikanAgendaPage({
         });
       }
     }
-    return Array.from(groups.values());
+    return Array.from(groups.values()).sort((left, right) => (
+      (left.unitKerjaId ?? Number.MAX_SAFE_INTEGER)
+        - (right.unitKerjaId ?? Number.MAX_SAFE_INTEGER)
+      || left.unit.localeCompare(right.unit, 'id')
+      || (left.sourceSheet ?? '').localeCompare(right.sourceSheet ?? '', 'id')
+    ));
   }, [agenda?.import_strategy, agenda?.people, agenda?.workflow_mode, choices]);
+  const downloadableDocumentGroups = useMemo(() => {
+    const groups: DownloadableDocumentGroup[] = [];
+    for (const group of previewGroups) {
+      for (const modality of ['daring', 'luring'] as const) {
+        const people = group.people.filter(
+          (person) => choices[person.id]?.modality === modality,
+        );
+        if (people.length === 0) continue;
+        groups.push({
+          key: `${group.key}\u0000${modality}`,
+          unit: group.unit,
+          modality,
+          personIds: people.map((person) => person.id),
+          count: people.length,
+        });
+      }
+    }
+    return groups;
+  }, [choices, previewGroups]);
+  const selectedDownloadGroups = downloadableDocumentGroups.filter(
+    (group) => !excludedDocumentKeys.has(group.key),
+  );
+  const selectedDownloadPersonIds = selectedDownloadGroups.flatMap(
+    (group) => group.personIds,
+  );
   const matchedCount = agenda?.people.filter((person) => person.lookup_status === 'matched').length ?? 0;
   const duplicateCount = agenda?.people.filter((person) => person.lookup_status === 'duplicate').length ?? 0;
   const unmatchedCount = (agenda?.people.length ?? 0) - matchedCount - duplicateCount;
+  const visibleError = error ?? columnWidthError;
 
   const updateFields = (key: keyof PelantikanAgendaFields, value: string) => {
     setFields((current) => ({ ...current, [key]: value }));
@@ -291,6 +513,7 @@ export default function PelantikanAgendaPage({
       const refreshed = await apiClient.getPelantikanAgenda(agendaId);
       setAgenda(refreshed);
       setFields(agendaFields(refreshed));
+      setIsEditingAgenda(false);
       setNotice('Detail agenda berhasil disimpan.');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -300,13 +523,13 @@ export default function PelantikanAgendaPage({
   };
 
   const uploadWorkbook = async () => {
-    if (!agendaId || !selectedFile) return;
+    if (!agendaId || !selectedFile || isEditingAgenda) return;
     setError(null);
     setNotice(null);
     setIsUploading(true);
     try {
       await apiClient.updatePelantikanAgenda(agendaId, fields);
-      const result = workflowMode === 'all_sheets'
+      const result = activeWorkflowMode === 'all_sheets'
         ? await apiClient.uploadPelantikanExcelWithStrategy(
           agendaId,
           selectedFile,
@@ -325,9 +548,10 @@ export default function PelantikanAgendaPage({
       const refreshed = await apiClient.getPelantikanAgenda(agendaId);
       setAgenda(refreshed);
       setChoices(choicesFromAgenda(refreshed));
+      setExcludedDocumentKeys(new Set());
       setImportStrategy(refreshed.import_strategy);
       setChoicesDirty(false);
-      const importedSheets = workflowMode === 'all_sheets'
+      const importedSheets = activeWorkflowMode === 'all_sheets'
         ? `${result.processed_sheets.length} sheet roster ${
           importStrategy === 'isolated_sheets' ? 'diproses terpisah' : 'diproses'
         } (${result.processed_sheets.join(', ')})`
@@ -347,7 +571,7 @@ export default function PelantikanAgendaPage({
   };
 
   const chooseWorkbookSheet = async (fileToInspect = selectedFile) => {
-    if (!agendaId || !fileToInspect) return;
+    if (!agendaId || !fileToInspect || isEditingAgenda) return;
     setError(null);
     setNotice(null);
     setAvailableSheets([]);
@@ -358,13 +582,13 @@ export default function PelantikanAgendaPage({
       const sheets = await apiClient.listPelantikanWorkbookSheets(agendaId, fileToInspect);
       setAvailableSheets(sheets);
       setSelectedSheet(
-        workflowMode === 'single_sheet'
+        activeWorkflowMode === 'single_sheet'
           ? sheets.length === 1 ? sheets[0] : ''
           : importStrategy === 'single_sheet' && sheets.length === 1
             ? sheets[0]
             : '',
       );
-      setNotice(workflowMode === 'all_sheets'
+      setNotice(activeWorkflowMode === 'all_sheets'
         ? `${sheets.length} sheet ditemukan. ${
           importStrategy === 'isolated_sheets'
             ? 'Masing-masing akan diproses terpisah.'
@@ -418,6 +642,18 @@ export default function PelantikanAgendaPage({
     }));
     setChoicesDirty(true);
     setNotice(null);
+  };
+
+  const toggleDocumentDownload = (key: string) => {
+    setExcludedDocumentKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   };
 
   const selectAllSelectable = () => {
@@ -481,6 +717,7 @@ export default function PelantikanAgendaPage({
       const updated = await apiClient.savePelantikanPeople(agendaId, payload);
       setAgenda(updated);
       setChoices(choicesFromAgenda(updated));
+      setExcludedDocumentKeys(new Set());
       setChoicesDirty(false);
       setNotice('Pilihan pegawai berhasil disimpan.');
     } catch (saveError) {
@@ -491,21 +728,53 @@ export default function PelantikanAgendaPage({
   };
 
   const generateDocuments = async () => {
-    if (!agendaId || choicesDirty) return;
+    if (!agendaId || choicesDirty || selectedDownloadGroups.length === 0) return;
     setError(null);
     setNotice(null);
     setIsGenerating(true);
     try {
-      const blob = await apiClient.generatePelantikanDocuments(agendaId);
-      apiClient.downloadPelantikanDocuments(blob, `undangan_pelantikan_${agenda?.tanggal_pelantikan}.zip`);
+      const blob = await apiClient.generateSelectedPelantikanDocuments(
+        agendaId,
+        selectedDownloadPersonIds,
+      );
+      const isSingleDocx = blob.type
+        === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const extension = isSingleDocx ? 'docx' : 'zip';
+      apiClient.downloadPelantikanDocuments(
+        blob,
+        `undangan_pelantikan_${agenda?.tanggal_pelantikan}.${extension}`,
+      );
       setIsPreviewOpen(false);
-      setNotice('Dokumen ND berhasil dibuat dan diunduh.');
+      setNotice(
+        isSingleDocx
+          ? 'Dokumen ND berhasil dibuat dan diunduh.'
+          : 'Dokumen ND berhasil dibuat sebagai ZIP dan diunduh.',
+      );
       const refreshed = await apiClient.getPelantikanAgenda(agendaId);
       setAgenda(refreshed);
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : String(generationError));
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const generateAppendix = async () => {
+    if (!agendaId || choicesDirty || isGeneratingAppendix) return;
+    setError(null);
+    setNotice(null);
+    setIsGeneratingAppendix(true);
+    try {
+      const blob = await apiClient.generatePelantikanAppendix(agendaId);
+      apiClient.downloadPelantikanAppendix(
+        blob,
+        `lampiran_nd_pengantar_${agenda?.tanggal_pelantikan}.docx`,
+      );
+      setNotice('Lampiran ND Pengantar berhasil dibuat dan diunduh.');
+    } catch (generationError) {
+      setError(generationError instanceof Error ? generationError.message : String(generationError));
+    } finally {
+      setIsGeneratingAppendix(false);
     }
   };
 
@@ -556,6 +825,15 @@ export default function PelantikanAgendaPage({
     }
   };
 
+  const navigateBack = () => {
+    if (agendaId) {
+      if (isEditingAgenda && !window.confirm('Batalkan perubahan detail agenda yang belum disimpan?')) return;
+      navigate(agendaBasePath);
+      return;
+    }
+    navigate('/');
+  };
+
   if (!user) {
     return (
       <main className="min-h-screen bg-surface-950 px-4 pb-12 pt-28 text-slate-100">
@@ -584,8 +862,16 @@ export default function PelantikanAgendaPage({
           <p className="mt-2 text-sm text-slate-400">
             {error ?? 'Agenda tidak ditemukan atau bukan milik akun ini.'}
           </p>
-          <button type="button" className="btn-primary mt-5" onClick={() => navigate(agendaBasePath)}>
-            Kembali ke riwayat
+          <button
+            type="button"
+            className="mt-5 inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            onClick={() => navigate(agendaBasePath)}
+            aria-label="Kembali ke riwayat agenda"
+            title="Kembali ke riwayat agenda"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+              <path d="M19 12H5m0 0 6 6m-6-6 6-6" />
+            </svg>
           </button>
         </section>
       </main>
@@ -594,40 +880,42 @@ export default function PelantikanAgendaPage({
 
   return (
     <main className="min-h-screen bg-surface-950 px-4 pb-12 pt-24 text-slate-100 sm:px-6 lg:pt-28">
-      <div className="w-full max-w-[1800px]">
+      <div className="mx-auto w-full max-w-[1800px]">
         <button
           type="button"
-          onClick={() => navigate('/')}
-          className="mb-5 text-sm text-brand-300 transition hover:text-brand-200"
+          onClick={navigateBack}
+          aria-label={agendaId ? 'Kembali ke riwayat agenda' : 'Kembali ke menu utama'}
+          title={agendaId ? 'Kembali ke riwayat agenda' : 'Kembali ke menu utama'}
+          className="mb-5 inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-brand-300 transition hover:bg-slate-800 hover:text-brand-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
         >
-          ← Kembali ke menu utama
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+            <path d="M19 12H5m0 0 6 6m-6-6 6-6" />
+          </svg>
         </button>
         <header className="mb-7">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
             Operasional
           </p>
           <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">
-            {workflowMode === 'all_sheets'
-              ? 'Generate ND Menu Experimental'
-              : 'Generate ND Undangan Pelantikan'}
+            Generate ND Undangan Pelantikan
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            {workflowMode === 'all_sheets'
+            {activeWorkflowMode === 'all_sheets'
               ? 'Impor seluruh sheet roster dari workbook, periksa hasil pencocokan NIP dan sumber sheet, lalu pilih pegawai Daring atau Luring. Sheet kosong/tidak valid dilewati dengan pemberitahuan; dokumen tetap dikelompokkan per Unit Eselon II dan moda.'
               : 'Buat agenda, unggah satu sheet workbook Excel, periksa hasil pencocokan NIP, lalu pilih pegawai Daring atau Luring. Dokumen dibuat per Unit Eselon II dan tidak menyimpan file sumber maupun hasil unduhan.'}
           </p>
         </header>
 
-        {(error || notice) && (
+        {(visibleError || notice) && (
           <div
-            role={error ? 'alert' : 'status'}
+            role={visibleError ? 'alert' : 'status'}
             className={`mb-5 rounded-xl border px-4 py-3 text-sm ${
-              error
+              visibleError
                 ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
                 : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
             }`}
           >
-            {error ?? notice}
+            {visibleError ?? notice}
           </div>
         )}
 
@@ -640,29 +928,103 @@ export default function PelantikanAgendaPage({
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold">Agenda pelantikan</h2>
-                  <p className="mt-1 text-sm text-slate-400">
-                    Hari pelantikan: <span className="font-medium text-slate-200">{agenda?.hari_pelantikan}</span>
-                    {agenda?.tanggal_pelantikan ? `, ${formatDate(agenda.tanggal_pelantikan)}` : ''}
-                  </p>
+                  <h2 className="text-lg font-semibold">Detail agenda</h2>
                 </div>
-                <button
-                  type="button"
-                  disabled={isDeleting}
-                  onClick={() => void deleteAgenda()}
-                  className="btn-secondary text-rose-300 hover:border-rose-500/50 hover:text-rose-200"
-                >
-                  {isDeleting ? 'Menghapus…' : 'Hapus agenda'}
-                </button>
-              </div>
-              <form onSubmit={(event) => void (agenda ? saveAgenda(event) : createAgenda(event))}>
-                <AgendaFields fields={fields} onChange={updateFields} />
-                <div className="mt-5 flex justify-end">
-                  <button type="submit" disabled={isSaving} className="btn-primary">
-                    {isSaving ? 'Menyimpan…' : 'Simpan detail agenda'}
+                <div className="flex items-center gap-2">
+                  {!isEditingAgenda && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingAgenda(true)}
+                      aria-label="Edit detail agenda"
+                      title="Edit detail agenda"
+                      className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                        <path d="m14 5 5 5M4 20l4.5-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z" />
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => void deleteAgenda()}
+                    aria-label={isDeleting ? 'Menghapus agenda' : 'Hapus agenda'}
+                    title={isDeleting ? 'Menghapus agenda' : 'Hapus agenda'}
+                    className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/10 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                      <path d="M4 7h16m-10 4v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" />
+                    </svg>
                   </button>
                 </div>
-              </form>
+              </div>
+              {isEditingAgenda ? (
+                <form onSubmit={(event) => void saveAgenda(event)}>
+                  <AgendaFields fields={fields} onChange={updateFields} />
+                  <div className="mt-5 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => {
+                        if (agenda) setFields(agendaFields(agenda));
+                        setIsEditingAgenda(false);
+                        setColumnWidthError(null);
+                        setNotice(null);
+                      }}
+                      aria-label="Batalkan edit agenda"
+                      title="Batalkan edit agenda"
+                      className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="size-5">
+                        <path d="m6 6 12 12M18 6 6 18" />
+                      </svg>
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      aria-label={isSaving ? 'Menyimpan detail agenda' : 'Simpan detail agenda'}
+                      title={isSaving ? 'Menyimpan detail agenda' : 'Simpan detail agenda'}
+                      className="inline-flex size-10 items-center justify-center rounded-lg border border-emerald-500/30 text-emerald-300 transition hover:bg-emerald-500/10 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isSaving ? (
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="size-5 animate-spin">
+                          <path d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.36-6.36-2.12 2.12M7.76 16.24l-2.12 2.12m12.72 0-2.12-2.12M7.76 7.76 5.64 5.64" />
+                        </svg>
+                      ) : (
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                          <path d="m5 12 4 4L19 6" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    {
+                      label: 'Hari dan tanggal pelantikan',
+                      value: agenda?.tanggal_pelantikan
+                        ? `${agenda.hari_pelantikan}, ${formatDate(agenda.tanggal_pelantikan)}`
+                        : '—',
+                    },
+                    { label: 'Nomor ND undangan', value: agenda?.nd_undangan_pelantikan || '—' },
+                    {
+                      label: 'Tanggal ND undangan',
+                      value: agenda?.tanggal_nd_undangan_pelantikan
+                        ? formatDate(agenda.tanggal_nd_undangan_pelantikan)
+                        : '—',
+                    },
+                    { label: 'Jam pelantikan', value: agenda?.jam_pelantikan || '—' },
+                    { label: 'Dresscode', value: agenda?.dresscode || '—' },
+                    { label: 'Level jabatan', value: agenda?.level_jabatan || '—' },
+                  ].map((detail) => (
+                    <div key={detail.label}>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{detail.label}</dt>
+                      <dd className="mt-1 text-sm text-slate-100">{detail.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </section>
 
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
@@ -672,11 +1034,11 @@ export default function PelantikanAgendaPage({
                 lalu NIP diambil dari baris terakhir kolom tersebut. Kolom No, Nama/NIP,
                 Jabatan Saat ini, dan Usul Jabatan Baru hanya menjadi referensi pratinjau; dokumen
                 memakai Jabatan saat ini dari database.
-                {workflowMode === 'all_sheets'
+                {activeWorkflowMode === 'all_sheets'
                   ? ' Semua sheet diperiksa; sheet kosong atau tanpa kolom roster wajib dilewati dan dilaporkan.'
                   : ''}
               </p>
-              {workflowMode === 'all_sheets' && (
+              {activeWorkflowMode === 'all_sheets' && (
                 <div className="mt-4 max-w-xl">
                   <label htmlFor="experimental-import-strategy" className="mb-1 block text-sm font-medium text-slate-300">
                     Cara memproses sheet
@@ -695,7 +1057,7 @@ export default function PelantikanAgendaPage({
                       setSelectedSheets([]);
                       setNotice(null);
                     }}
-                    disabled={isUploading || isLoadingSheets}
+                    disabled={isUploading || isLoadingSheets || isEditingAgenda}
                     className="input-field w-full"
                   >
                     <option value="all_sheets">Gabungkan semua sheet roster</option>
@@ -710,7 +1072,7 @@ export default function PelantikanAgendaPage({
                   type="file"
                   accept=".xlsx,.xls"
                   aria-label="Pilih workbook Excel"
-                  disabled={isLoadingSheets || isUploading}
+                  disabled={isLoadingSheets || isUploading || isEditingAgenda}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
                     event.currentTarget.value = '';
@@ -723,10 +1085,10 @@ export default function PelantikanAgendaPage({
                   }}
                   className="block min-w-0 flex-1 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-200 hover:file:bg-slate-700"
                 />
-                {workflowMode === 'single_sheet' && (
+                {activeWorkflowMode === 'single_sheet' && (
                   <button
                     type="button"
-                    disabled={!selectedFile || isLoadingSheets || isUploading || isSaving}
+                    disabled={!selectedFile || isLoadingSheets || isUploading || isSaving || isEditingAgenda}
                     onClick={() => void chooseWorkbookSheet()}
                     className="btn-secondary shrink-0"
                   >
@@ -738,23 +1100,24 @@ export default function PelantikanAgendaPage({
                   disabled={
                     !selectedFile
                     || !availableSheets.length
-                    || (workflowMode === 'single_sheet' && availableSheets.length > 1 && !selectedSheet)
-                    || (workflowMode === 'all_sheets'
+                    || (activeWorkflowMode === 'single_sheet' && availableSheets.length > 1 && !selectedSheet)
+                    || (activeWorkflowMode === 'all_sheets'
                       && importStrategy === 'selected_sheets'
                       && selectedSheets.length === 0)
-                    || (workflowMode === 'all_sheets'
+                    || (activeWorkflowMode === 'all_sheets'
                       && importStrategy === 'single_sheet'
                       && !selectedSheet)
                     || isLoadingSheets
                     || isUploading
                     || isSaving
+                    || isEditingAgenda
                   }
                   onClick={() => void uploadWorkbook()}
                   className="btn-primary shrink-0"
                 >
                   {isUploading
                     ? 'Memproses…'
-                    : workflowMode === 'single_sheet'
+                    : activeWorkflowMode === 'single_sheet'
                       ? 'Unggah dan cocokkan'
                       : importStrategy === 'selected_sheets'
                         ? 'Gabungkan sheet pilihan'
@@ -770,7 +1133,7 @@ export default function PelantikanAgendaPage({
                   Workbook dipilih: <span className="text-slate-300">{selectedFile.name}</span>
                 </p>
               )}
-              {workflowMode === 'single_sheet' && availableSheets.length > 0 && (
+              {activeWorkflowMode === 'single_sheet' && availableSheets.length > 0 && (
                 <div className="mt-4 max-w-xl">
                   <label htmlFor="pelantikan-sheet" className="mb-1 block text-sm font-medium text-slate-300">
                     Sheet workbook
@@ -779,7 +1142,7 @@ export default function PelantikanAgendaPage({
                     id="pelantikan-sheet"
                     value={selectedSheet}
                     onChange={(event) => setSelectedSheet(event.target.value)}
-                    disabled={isUploading || isLoadingSheets}
+                    disabled={isUploading || isLoadingSheets || isEditingAgenda}
                     className="input-field w-full"
                   >
                     {availableSheets.length > 1 && <option value="">Pilih sheet yang akan diproses</option>}
@@ -789,7 +1152,7 @@ export default function PelantikanAgendaPage({
                   </select>
                 </div>
               )}
-              {workflowMode === 'all_sheets'
+              {activeWorkflowMode === 'all_sheets'
                 && importStrategy === 'selected_sheets'
                 && availableSheets.length > 0 && (
                 <fieldset className="mt-4 max-w-xl">
@@ -816,7 +1179,7 @@ export default function PelantikanAgendaPage({
                   </div>
                 </fieldset>
               )}
-              {workflowMode === 'all_sheets'
+              {activeWorkflowMode === 'all_sheets'
                 && importStrategy === 'single_sheet'
                 && availableSheets.length > 0 && (
                 <div className="mt-4 max-w-xl">
@@ -837,7 +1200,7 @@ export default function PelantikanAgendaPage({
                   </select>
                 </div>
               )}
-              {workflowMode === 'all_sheets'
+              {activeWorkflowMode === 'all_sheets'
                 && ['all_sheets', 'isolated_sheets'].includes(importStrategy)
                 && availableSheets.length > 0 && (
                 <p className="mt-3 text-xs text-slate-400">
@@ -864,8 +1227,47 @@ export default function PelantikanAgendaPage({
                       {duplicateCount > 0 && ` · ${duplicateCount} NIP duplikat (pilih salah satu)`}
                       {unmatchedCount > 0 && ` · ${unmatchedCount} perlu diperiksa`}
                     </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Tarik batas kanan judul kolom untuk mengatur lebarnya.
+                    </p>
                   </div>
                   <div role="group" aria-label="Aksi pegawai" className="inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
+                    <button
+                      type="button"
+                      aria-pressed={isLiteView}
+                      onClick={() => setIsLiteView((current) => !current)}
+                      title={isLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
+                      className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                        isLiteView
+                          ? 'bg-brand-500/20 text-brand-200'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                        <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                      <span>Lite View</span>
+                      <span className="sr-only">{isLiteView ? 'aktif' : 'nonaktif'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaults = { ...rosterColumnWidths };
+                        columnWidthsRef.current = defaults;
+                        setColumnWidths(defaults);
+                        setError(null);
+                        persistColumnWidths(defaults);
+                      }}
+                      aria-label="Atur ulang lebar kolom"
+                      title="Atur ulang lebar kolom"
+                      className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                        <path d="M4 7v5h5M20 17v-5h-5" />
+                        <path d="M5.5 12a7 7 0 0 1 12-4.9L20 9m-1.5 3a7 7 0 0 1-12 4.9L4 15" />
+                      </svg>
+                    </button>
                     {choicesDirty && (
                       <span className="self-center text-xs text-amber-300">Ada pilihan yang belum disimpan</span>
                     )}
@@ -949,21 +1351,37 @@ export default function PelantikanAgendaPage({
                   </div>
                 </div>
                 <div className="max-h-[70vh] overflow-auto">
-                  <table className="min-w-[900px] w-full border-collapse text-left text-sm">
-                    <thead className="sticky top-0 bg-slate-950 text-xs uppercase tracking-wide text-slate-400">
+                  <table
+                    className="table-fixed border-collapse text-left text-sm"
+                    style={{
+                      width: `${visibleRosterColumnKeys.reduce((total, key) => total + columnWidths[key], 0)}px`,
+                    }}
+                  >
+                    <colgroup>
+                      {visibleRosterColumnKeys.map((key) => (
+                        <col key={key} style={{ width: `${columnWidths[key]}px` }} />
+                      ))}
+                    </colgroup>
+                    <thead className="bg-slate-950 text-xs uppercase tracking-wide text-slate-400">
                       <tr>
-                        <th className="px-4 py-3">Pilih</th>
-                        <th className="px-4 py-3">No</th>
-                        <th className="px-4 py-3">Sheet sumber</th>
-                        <th className="px-4 py-3">Nama/NIP</th>
-                        <th className="px-4 py-3">Jabatan Saat ini/Grade</th>
-                        <th className="px-4 py-3">Usul Jabatan Baru/Grade</th>
-                        <th className="px-4 py-3">NIP database</th>
-                        <th className="px-4 py-3">Nama database</th>
-                        <th className="px-4 py-3">Jabatan database</th>
-                        <th className="px-4 py-3">Unit Eselon II</th>
-                        <th className="px-4 py-3">Kota</th>
-                        <th className="px-4 py-3">
+                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Pilih{columnResizeHandle('select', 'Pilih')}</th>
+                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">No{columnResizeHandle('number', 'No')}</th>
+                        {!isLiteView && (
+                          <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Sheet sumber{columnResizeHandle('source', 'Sheet sumber')}</th>
+                        )}
+                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Nama/NIP{columnResizeHandle('sourceName', 'Nama/NIP')}</th>
+                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Jabatan Saat ini/Grade{columnResizeHandle('sourcePosition', 'Jabatan Saat ini/Grade')}</th>
+                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Usul Jabatan Baru/Grade{columnResizeHandle('proposedPosition', 'Usul Jabatan Baru/Grade')}</th>
+                        {!isLiteView && (
+                          <>
+                            <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">NIP database{columnResizeHandle('nip', 'NIP database')}</th>
+                            <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Nama database{columnResizeHandle('name', 'Nama database')}</th>
+                            <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Jabatan database{columnResizeHandle('databasePosition', 'Jabatan database')}</th>
+                            <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Unit Eselon II{columnResizeHandle('unit', 'Unit Eselon II')}</th>
+                          </>
+                        )}
+                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Kota{columnResizeHandle('city', 'Kota')}</th>
+                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">
                           Pencocokan
                           <select
                             aria-label="Filter pencocokan"
@@ -978,8 +1396,9 @@ export default function PelantikanAgendaPage({
                             <option value="missing_nip">NIP kosong</option>
                             <option value="pendamping">Pendamping</option>
                           </select>
+                          {columnResizeHandle('matching', 'Pencocokan')}
                         </th>
-                        <th className="px-4 py-3">
+                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">
                           Pelantikan
                           <select
                             aria-label="Filter pelantikan"
@@ -992,13 +1411,14 @@ export default function PelantikanAgendaPage({
                             <option value="daring">Daring</option>
                             <option value="luring">Luring</option>
                           </select>
+                          {columnResizeHandle('modality', 'Pelantikan')}
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
                       {visiblePeople.length === 0 ? (
                         <tr>
-                          <td colSpan={13} className="px-4 py-8 text-center text-slate-400">
+                          <td colSpan={visibleRosterColumnKeys.length} className="px-4 py-8 text-center text-slate-400">
                             Tidak ada baris yang sesuai dengan filter.
                           </td>
                         </tr>
@@ -1019,18 +1439,24 @@ export default function PelantikanAgendaPage({
                               />
                             </td>
                             <td className="whitespace-nowrap px-4 py-3 text-slate-300">{person.source_no || '—'}</td>
-                            <td className="whitespace-nowrap px-4 py-3 text-slate-300">
-                              {person.source_sheet
-                                ? `${person.source_sheet} · baris ${person.source_row_number ?? person.row_number}`
-                                : '—'}
-                            </td>
+                            {!isLiteView && (
+                              <td className="whitespace-nowrap px-4 py-3 text-slate-300">
+                                {person.source_sheet
+                                  ? `${person.source_sheet} · baris ${person.source_row_number ?? person.row_number}`
+                                  : '—'}
+                              </td>
+                            )}
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-100">{person.source_nama_nip || '—'}</td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.source_jabatan_saat_ini || '—'}</td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.source_usul_jabatan_baru || '—'}</td>
-                            <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-300">{person.nip || '—'}</td>
-                            <td className="max-w-64 whitespace-normal px-4 py-3 text-slate-100">{person.nama || '—'}</td>
-                            <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.jabatan || '—'}</td>
-                            <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.unit_eselon_ii || '—'}</td>
+                            {!isLiteView && (
+                              <>
+                                <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-300">{person.nip || '—'}</td>
+                                <td className="max-w-64 whitespace-normal px-4 py-3 text-slate-100">{person.nama || '—'}</td>
+                                <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.jabatan || '—'}</td>
+                                <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.unit_eselon_ii || '—'}</td>
+                              </>
+                            )}
                             <td className="whitespace-nowrap px-4 py-3 text-slate-300">{person.unit_city || '—'}</td>
                             <td className="px-4 py-3">
                               <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${
@@ -1112,9 +1538,7 @@ export default function PelantikanAgendaPage({
                         <button
                           type="button"
                           onClick={() => navigate(
-                            `${item.workflow_mode === 'all_sheets'
-                              ? '/undangan-pelantikan-experimental'
-                              : '/undangan-pelantikan'}/${item.id}`,
+                            `${agendaBasePath}/${item.id}`,
                           )}
                           className="w-full p-4 text-left transition group-hover:bg-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                         >
@@ -1241,7 +1665,7 @@ export default function PelantikanAgendaPage({
                 <div>
                   <h2 id="document-preview-title" className="text-lg font-semibold">Pratinjau dokumen</h2>
                   <p className="mt-1 text-sm leading-6 text-slate-400">
-                    Setiap moda tetap dibuat sebagai dokumen terpisah. Pratinjau dikelompokkan per Unit Eselon II; buka grup untuk memeriksa pegawainya.
+                    Pilih dokumen per Unit Eselon II dan moda. Satu dokumen diunduh sebagai DOCX; beberapa dokumen digabung dalam ZIP.
                   </p>
                 </div>
                 <button
@@ -1259,7 +1683,7 @@ export default function PelantikanAgendaPage({
 
               {choicesDirty && (
                 <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                  Pilihan belum disimpan. Simpan pilihan sebelum membuat ZIP.
+                  Pilihan belum disimpan. Simpan pilihan sebelum membuat dokumen.
                 </div>
               )}
               {error && (
@@ -1280,53 +1704,77 @@ export default function PelantikanAgendaPage({
                   </p>
                 ) : (
                   previewGroups.map((group) => (
-                    <details key={group.key} className="overflow-hidden rounded-xl border border-slate-700 bg-slate-950/60">
-                      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 bg-slate-950/70 p-4 text-left transition hover:bg-slate-900">
-                        <span className="min-w-0">
-                          <span className="block font-semibold text-brand-300">{group.unit}</span>
-                          {group.sourceSheet && (
-                            <span className="mt-1 block text-xs text-slate-400">
-                              Sheet: {group.sourceSheet}
+                    <div key={group.key} className="overflow-hidden rounded-xl border border-slate-700 bg-slate-950/60">
+                      <details>
+                        <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 bg-slate-950/70 p-4 text-left transition hover:bg-slate-900">
+                          <span className="min-w-0">
+                            <span className="block font-semibold text-brand-300">{group.unit}</span>
+                            {group.sourceSheet && (
+                              <span className="mt-1 block text-xs text-slate-400">
+                                Sheet: {group.sourceSheet}
+                              </span>
+                            )}
+                            <span className="mt-1 flex flex-wrap gap-1.5">
+                              {group.modalityCounts.daring > 0 && (
+                                <span className="inline-flex rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-200">
+                                  Daring · {group.modalityCounts.daring} pegawai
+                                </span>
+                              )}
+                              {group.modalityCounts.luring > 0 && (
+                                <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-200">
+                                  Luring · {group.modalityCounts.luring} pegawai
+                                </span>
+                              )}
                             </span>
-                          )}
-                          <span className="mt-1 flex flex-wrap gap-1.5">
-                            {group.modalityCounts.daring > 0 && (
-                              <span className="inline-flex rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-200">
-                                Daring · {group.modalityCounts.daring} pegawai
-                              </span>
-                            )}
-                            {group.modalityCounts.luring > 0 && (
-                              <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-200">
-                                Luring · {group.modalityCounts.luring} pegawai
-                              </span>
-                            )}
                           </span>
-                        </span>
-                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0 text-slate-400">
-                          <path d="m6 9 6 6 6-6" />
-                        </svg>
-                      </summary>
-                      <ul className="divide-y divide-slate-800 border-t border-slate-800">
-                        {group.people.map((person) => (
-                          <li key={person.id} className="flex flex-wrap items-start justify-between gap-2 border-l-2 border-brand-500/40 bg-slate-900/40 px-4 py-3 text-sm">
-                            <span className="min-w-0 font-medium text-slate-100">
-                              {person.nama || person.source_nama_nip || `Baris ${person.row_number}`}
-                              {person.jabatan && <span className="mt-1 block text-xs text-slate-400">{person.jabatan}</span>}
-                            </span>
-                            <span className="flex items-center gap-2 whitespace-nowrap">
-                              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                                choices[person.id]?.modality === 'luring'
-                                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
-                                  : 'border-brand-500/30 bg-brand-500/10 text-brand-200'
-                              }`}>
-                                {choices[person.id]?.modality === 'luring' ? 'Luring' : 'Daring'}
+                          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0 text-slate-400">
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        </summary>
+                        <ul className="divide-y divide-slate-800 border-t border-slate-800">
+                          {group.people.map((person) => (
+                            <li key={person.id} className="flex flex-wrap items-start justify-between gap-2 border-l-2 border-brand-500/40 bg-slate-900/40 px-4 py-3 text-sm">
+                              <span className="min-w-0 font-medium text-slate-100">
+                                {person.nama || person.source_nama_nip || `Baris ${person.row_number}`}
+                                {person.jabatan && <span className="mt-1 block text-xs text-slate-400">{person.jabatan}</span>}
                               </span>
-                              <span className="font-mono text-xs text-slate-300">{person.nip}</span>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
+                              <span className="flex items-center gap-2 whitespace-nowrap">
+                                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                                  choices[person.id]?.modality === 'luring'
+                                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                                    : 'border-brand-500/30 bg-brand-500/10 text-brand-200'
+                                }`}>
+                                  {choices[person.id]?.modality === 'luring' ? 'Luring' : 'Daring'}
+                                </span>
+                                <span className="font-mono text-xs text-slate-300">{person.nip}</span>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                      <div className="flex flex-wrap items-center gap-3 border-t border-slate-800 px-4 py-3">
+                        <span className="text-xs font-medium text-slate-400">Dokumen:</span>
+                        {(['daring', 'luring'] as const).map((modality) => {
+                          const count = group.modalityCounts[modality];
+                          if (count === 0) return null;
+                          const key = `${group.key}\u0000${modality}`;
+                          const label = modality === 'daring' ? 'Daring' : 'Luring';
+                          return (
+                            <label key={key} className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-200">
+                              <input
+                                type="checkbox"
+                                checked={!excludedDocumentKeys.has(key)}
+                                disabled={choicesDirty || isGenerating}
+                                onChange={() => toggleDocumentDownload(key)}
+                                aria-label={`Sertakan dokumen ${label} untuk ${group.unit}`}
+                                className="size-4 rounded border-slate-600 bg-slate-900 accent-brand-400"
+                              />
+                              <span>{label} · {count} pegawai</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))
                 )}
               </div>
@@ -1348,16 +1796,56 @@ export default function PelantikanAgendaPage({
                 </button>
                 <button
                   type="button"
-                  disabled={previewGroups.length === 0 || choicesDirty || isGenerating}
+                  disabled={
+                    selectedDownloadGroups.length === 0
+                    || choicesDirty
+                    || isGenerating
+                    || isGeneratingAppendix
+                  }
                   onClick={() => void generateDocuments()}
-                  aria-label={isGenerating ? 'Membuat dan mengunduh ZIP' : 'Buat dan unduh ZIP'}
-                  title={isGenerating ? 'Membuat dan mengunduh ZIP' : 'Buat dan unduh ZIP'}
+                  aria-label={isGenerating
+                    ? 'Membuat dan mengunduh dokumen'
+                    : `Buat dan unduh ${selectedDownloadGroups.length} dokumen`}
+                  title={isGenerating
+                    ? 'Membuat dan mengunduh dokumen'
+                    : `Buat dan unduh ${selectedDownloadGroups.length} dokumen`}
                   className="size-9 rounded-lg border border-brand-500/40 bg-brand-500/15 text-brand-200 transition hover:bg-brand-500/25 hover:text-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
                     <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
                     <path d="M5 16v4h14v-4" />
                   </svg>
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    previewGroups.length === 0
+                    || choicesDirty
+                    || isGenerating
+                    || isGeneratingAppendix
+                  }
+                  onClick={() => void generateAppendix()}
+                  aria-label={isGeneratingAppendix ? 'Membuat Lampiran ND Pengantar' : 'Cetak Lampiran ND Pengantar'}
+                  title={
+                    choicesDirty
+                      ? 'Simpan pilihan terlebih dahulu'
+                      : isGeneratingAppendix
+                        ? 'Membuat Lampiran ND Pengantar'
+                        : 'Cetak Lampiran ND Pengantar'
+                  }
+                  className="size-9 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 transition hover:bg-emerald-500/20 hover:text-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isGeneratingAppendix ? (
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5 animate-pulse">
+                      <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                      <path d="M7 14h10v7H7zM17 11h.01" />
+                    </svg>
+                  ) : (
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                      <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                      <path d="M7 14h10v7H7zM17 11h.01" />
+                    </svg>
+                  )}
                 </button>
               </footer>
             </section>

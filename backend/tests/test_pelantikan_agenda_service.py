@@ -60,7 +60,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         )
         connection = MagicMock()
         connection.execute.return_value.mappings.return_value = [
-            {"value": "Unit A", "city": "Jakarta"},
+            {"unit_kerja_id": 12, "value": "Unit A", "city": "Jakarta"},
         ]
 
         with patch.object(service.engine, "connect") as connect:
@@ -68,6 +68,87 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             people = service.people_to_read([person])
 
         self.assertEqual(people[0]["unit_city"], "Jakarta")
+        self.assertEqual(people[0]["unit_kerja_id"], 12)
+
+    def test_appendix_docx_sorts_luring_first_then_by_unit_reference_id(self):
+        people = [
+            SimpleNamespace(
+                row_number=1,
+                selected=True,
+                source_no="1",
+                nip="123456789012345671",
+                nama="Daring Unit A",
+                jabatan="Jabatan Daring A",
+                unit_eselon_ii="Unit A",
+                lookup_status="matched",
+                modality="daring",
+            ),
+            SimpleNamespace(
+                row_number=2,
+                selected=True,
+                source_no="2",
+                nip="123456789012345672",
+                nama="Luring Unit C",
+                jabatan="Jabatan Luring C",
+                unit_eselon_ii="Unit C",
+                lookup_status="matched",
+                modality="luring",
+            ),
+            SimpleNamespace(
+                row_number=3,
+                selected=True,
+                source_no="3",
+                nip="123456789012345673",
+                nama="Luring Unit B",
+                jabatan="Jabatan Luring B",
+                unit_eselon_ii="Unit B",
+                lookup_status="matched",
+                modality="luring",
+            ),
+            SimpleNamespace(
+                row_number=4,
+                selected=True,
+                source_no="4",
+                nip="123456789012345674",
+                nama="Luring Unit A",
+                jabatan="Jabatan Luring A",
+                unit_eselon_ii="Unit A",
+                lookup_status="matched",
+                modality="luring",
+            ),
+        ]
+        agenda = SimpleNamespace(people=people)
+        unit_references = {
+            "unit a": (10, ""),
+            "unit b": (20, ""),
+            "unit c": (30, ""),
+        }
+
+        with patch.object(service, "_unit_reference_by_name", return_value=unit_references):
+            document = service.generate_lampiran_pengantar_docx(agenda)
+
+        with ZipFile(BytesIO(document)) as archive:
+            root = etree.fromstring(archive.read("word/document.xml"))
+        roster = service._find_roster_table(root)
+        rows = roster.findall("./w:tr", service.NS)
+        rendered_rows = [
+            (
+                service._cell_text(row.findall("./w:tc", service.NS)[1]),
+                service._cell_text(row.findall("./w:tc", service.NS)[3]),
+            )
+            for row in rows[1:]
+        ]
+
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(
+            rendered_rows,
+            [
+                ("Luring Unit A123456789012345674", "Fisik"),
+                ("Luring Unit B123456789012345673", "Fisik"),
+                ("Luring Unit C123456789012345672", "Fisik"),
+                ("Daring Unit A123456789012345671", "Virtual"),
+            ],
+        )
 
     def test_monitoring_export_counts_selected_modes_and_excluded_pendamping_by_unit(self):
         agenda = SimpleNamespace(
@@ -314,6 +395,134 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         self.assertTrue(any("unit_a_luring.docx" in name for name in filenames))
         self.assertTrue(any("unit_b_daring.docx" in name for name in filenames))
         self.assertFalse(any("unit_c_luring.docx" in name for name in filenames))
+
+    def test_selective_generation_returns_docx_for_one_complete_group(self):
+        agenda = SimpleNamespace(
+            tanggal_pelantikan=date(2026, 9, 20),
+            people=[
+                SimpleNamespace(
+                    id=1,
+                    row_number=1,
+                    source_no=None,
+                    source_sheet=None,
+                    selected=True,
+                    lookup_status="matched",
+                    modality="daring",
+                    unit_eselon_ii="Unit A",
+                    nip="123456789012345671",
+                ),
+                SimpleNamespace(
+                    id=2,
+                    row_number=2,
+                    source_no=None,
+                    source_sheet=None,
+                    selected=True,
+                    lookup_status="matched",
+                    modality="daring",
+                    unit_eselon_ii="Unit A",
+                    nip="123456789012345672",
+                ),
+            ],
+            last_generated_at=None,
+            status="ready",
+        )
+        db = SimpleNamespace(commit=lambda: None)
+
+        with patch.object(service, "build_agenda_docx", return_value=b"docx") as build:
+            data, filename, media_type, group_count = (
+                service.generate_selected_agenda_documents(db, agenda, [1, 2])
+            )
+
+        self.assertEqual(data, b"docx")
+        self.assertTrue(filename.endswith(".docx"))
+        self.assertEqual(
+            media_type,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        self.assertEqual(group_count, 1)
+        self.assertEqual(len(build.call_args.args[1]), 2)
+
+    def test_selective_generation_returns_zip_for_multiple_groups(self):
+        agenda = SimpleNamespace(
+            tanggal_pelantikan=date(2026, 9, 20),
+            people=[
+                SimpleNamespace(
+                    id=1,
+                    row_number=1,
+                    source_no=None,
+                    source_sheet=None,
+                    selected=True,
+                    lookup_status="matched",
+                    modality="daring",
+                    unit_eselon_ii="Unit A",
+                    nip="123456789012345671",
+                ),
+                SimpleNamespace(
+                    id=2,
+                    row_number=2,
+                    source_no=None,
+                    source_sheet=None,
+                    selected=True,
+                    lookup_status="matched",
+                    modality="luring",
+                    unit_eselon_ii="Unit B",
+                    nip="123456789012345672",
+                ),
+            ],
+            last_generated_at=None,
+            status="ready",
+        )
+        db = SimpleNamespace(commit=lambda: None)
+
+        with patch.object(service, "build_agenda_docx", return_value=b"docx"):
+            data, filename, media_type, group_count = (
+                service.generate_selected_agenda_documents(db, agenda, [1, 2])
+            )
+
+        with ZipFile(BytesIO(data)) as archive:
+            filenames = archive.namelist()
+        self.assertTrue(filename.endswith(".zip"))
+        self.assertEqual(media_type, "application/zip")
+        self.assertEqual(group_count, 2)
+        self.assertEqual(len(filenames), 2)
+
+    def test_selective_generation_rejects_partial_document_group(self):
+        agenda = SimpleNamespace(
+            tanggal_pelantikan=date(2026, 9, 20),
+            people=[
+                SimpleNamespace(
+                    id=1,
+                    row_number=1,
+                    source_no=None,
+                    source_sheet=None,
+                    selected=True,
+                    lookup_status="matched",
+                    modality="daring",
+                    unit_eselon_ii="Unit A",
+                    nip="123456789012345671",
+                ),
+                SimpleNamespace(
+                    id=2,
+                    row_number=2,
+                    source_no=None,
+                    source_sheet=None,
+                    selected=True,
+                    lookup_status="matched",
+                    modality="daring",
+                    unit_eselon_ii="Unit A",
+                    nip="123456789012345672",
+                ),
+            ],
+            last_generated_at=None,
+            status="ready",
+        )
+
+        with self.assertRaisesRegex(ValueError, "Pilih seluruh peserta"):
+            service.generate_selected_agenda_documents(
+                SimpleNamespace(commit=lambda: None),
+                agenda,
+                [1],
+            )
 
     def test_choices_persist_and_agenda_is_scoped_to_creator(self):
         test_engine = create_engine("sqlite:///:memory:")

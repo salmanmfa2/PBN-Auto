@@ -79,6 +79,7 @@ class PelantikanAgendaPersonRead(BaseModel):
     nama: str
     jabatan: str
     unit_eselon_ii: str
+    unit_kerja_id: int | None = None
     unit_city: str = ""
     eselon: str | None
     lookup_status: LookupStatus
@@ -109,6 +110,10 @@ class PelantikanPersonChoice(BaseModel):
 
 class PelantikanAgendaPeopleUpdate(BaseModel):
     people: list[PelantikanPersonChoice] = Field(min_length=1)
+
+
+class PelantikanSelectedDocumentsRequest(BaseModel):
+    person_ids: list[int] = Field(min_length=1)
 
 
 class PelantikanAgendaUploadRead(BaseModel):

@@ -600,6 +600,7 @@ export async function runApiDiagnostics(): Promise<ApiDiagnostic[]> {
         { path: '/undangan-pelantikan/agendas/{agenda_id}/sheets', method: 'post' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/people', method: 'put' },
         { path: '/undangan-pelantikan/agendas/{agenda_id}/generate', method: 'post' },
+        { path: '/undangan-pelantikan/agendas/{agenda_id}/generate-selected', method: 'post' },
       ],
     },
     {
@@ -855,6 +856,27 @@ export async function generatePelantikanDocuments(agendaId: string): Promise<Blo
   return data;
 }
 
+export async function generateSelectedPelantikanDocuments(
+  agendaId: string,
+  personIds: number[],
+): Promise<Blob> {
+  const { data } = await api.post<Blob>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/generate-selected`,
+    { person_ids: personIds },
+    { responseType: 'blob' },
+  );
+  return data;
+}
+
+export async function generatePelantikanAppendix(agendaId: string): Promise<Blob> {
+  const { data } = await api.post<Blob>(
+    `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/appendix`,
+    undefined,
+    { responseType: 'blob' },
+  );
+  return data;
+}
+
 export async function exportPelantikanMonitoring(agendaId: string): Promise<Blob> {
   const { data } = await api.get<Blob>(
     `/undangan-pelantikan/agendas/${encodeURIComponent(agendaId)}/monitoring-export`,
@@ -868,6 +890,10 @@ export async function deletePelantikanAgenda(agendaId: string): Promise<void> {
 }
 
 export function downloadPelantikanDocuments(blob: Blob, filename: string): void {
+  downloadBlob(blob, filename);
+}
+
+export function downloadPelantikanAppendix(blob: Blob, filename: string): void {
   downloadBlob(blob, filename);
 }
 

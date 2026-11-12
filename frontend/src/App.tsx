@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import AdminPage from './pages/AdminPage';
 import LandingPage from './pages/LandingPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -22,6 +22,14 @@ function RequireSession() {
 function RequireAdmin() {
   const { user } = useAuth();
   return user && user.auth_level >= 2 ? <Outlet /> : <Navigate to="/" replace />;
+}
+
+function RedirectExperimentalPelantikanRoute() {
+  const { agendaId } = useParams<{ agendaId: string }>();
+  const target = agendaId
+    ? `/undangan-pelantikan/${agendaId}`
+    : '/undangan-pelantikan';
+  return <Navigate to={target} replace />;
 }
 
 function AppRoutes() {
@@ -68,15 +76,15 @@ function AppRoutes() {
           <Route element={<RequireAdmin />}>
             <Route path="/admin" element={<AdminPage />} />
           </Route>
-          <Route path="/undangan-pelantikan" element={<PelantikanAgendaPage />} />
+          <Route path="/undangan-pelantikan" element={<PelantikanAgendaPage workflowMode="all_sheets" />} />
           <Route path="/undangan-pelantikan/:agendaId" element={<PelantikanAgendaPage />} />
           <Route
             path="/undangan-pelantikan-experimental"
-            element={<PelantikanAgendaPage workflowMode="all_sheets" />}
+            element={<RedirectExperimentalPelantikanRoute />}
           />
           <Route
             path="/undangan-pelantikan-experimental/:agendaId"
-            element={<PelantikanAgendaPage workflowMode="all_sheets" />}
+            element={<RedirectExperimentalPelantikanRoute />}
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

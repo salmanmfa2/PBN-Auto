@@ -22,7 +22,7 @@ The desktop application's main navigation is limited to **PBN Analytics** and **
 | **Insight Hub Beta (web)** | ✅ Beta | Same filters, charts, and employee table sourced from `pbncleaner.fetch_pbnopen`; Super Admin can replace the source CSV and separately sync `pbncleaner.dt_employee` from it |
 | **Analisis Kinerja DJPb (web)** | ✅ Live | Public analysis and extracted-data table, including Guest access; only Super Admin can upload or adjust data |
 | **Manajemen Plt./Plh.** | ✅ Live | Monitor acting assignments, calculate tenure/status, receive dashboard notices, select replacement employees from PBN Open, and export records |
-| **Generate ND Undangan Pelantikan (web)** | ✅ Live | Manage personal agendas, choose a worksheet from uploaded Excel workbooks, match employees to PBN Open, preview selected participants, and generate grouped invitation documents in a ZIP |
+| **Generate ND Undangan Pelantikan (web)** | ✅ Live | Manage personal agendas, process one or more workbook worksheets, use Lite View and resizable roster columns, match employees to PBN Open, preview selected participants, and download grouped invitation documents or the cover-letter appendix |
 | **Web accounts and roles** | ✅ Live | Guest, User, Admin, and Super Admin access; one-hour authenticated sessions |
 | **Admin workspace** | ✅ Live | Super Admin account management and shared Plt./Plh. administration |
 | **User feedback (web)** | ✅ Live | Submit menu-specific or overall feedback; Admin and Super Admin can review, delete individual entries, or clear all feedback |
@@ -190,10 +190,9 @@ The app uses **React Router v7** for URL-based navigation:
 | `/insights` | InsightHubPage | PBN Open + Edu + HB analytics dashboard |
 | `/insights-beta` | InsightHubPage | Database-backed PBN Open analytics |
 | `/manajemen-plt-plh` | PltPlhManagementPage | Plt./Plh. assignment register, notifications, and export |
-| `/undangan-pelantikan` | PelantikanAgendaPage | Create and manage Pelantikan agendas |
-| `/undangan-pelantikan/:agendaId` | PelantikanAgendaPage | Resume an owned agenda |
-| `/undangan-pelantikan-experimental` | PelantikanAgendaPage | Experimental import with combine-all, selected-sheet, isolated-sheet, or single-sheet options |
-| `/undangan-pelantikan-experimental/:agendaId` | PelantikanAgendaPage | Resume an experimental all-sheets agenda |
+| `/undangan-pelantikan` | PelantikanAgendaPage | Main all-sheets workflow and agenda history |
+| `/undangan-pelantikan/:agendaId` | PelantikanAgendaPage | Resume an owned agenda, including older single-sheet agendas |
+| `/undangan-pelantikan-experimental` | Redirect | Legacy route redirects to the main workflow |
 | `/admin` | AdminPage | Admin workspace; account management is Super Admin-only |
 | `/login` | LoginPage | Sign in, register, or continue as Guest |
 
@@ -245,10 +244,12 @@ VITE_API_URL=http://localhost:8000
 | `GET` / `PUT` / `DELETE` | `/undangan-pelantikan/agendas/{agenda_id}` | Read, update, or delete an agenda owned by the signed-in user |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/sheets` | List worksheet names from an uploaded Excel workbook |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload` | Upload an Excel roster and match its NIPs against PBN Open |
-| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-sheets` | Import all, selected, isolated, or one workbook sheet in the experimental workflow |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-sheets` | Import all, selected, isolated, or one workbook sheet in the main workflow |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/upload-all-sheets` | Combine valid roster sheets, report skipped sheets and duplicate NIPs, and match NIPs against PBN Open |
 | `PUT` | `/undangan-pelantikan/agendas/{agenda_id}/people` | Save participant selection and modality |
 | `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate` | Generate grouped invitation documents as a ZIP |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/generate-selected` | Generate selected complete unit/modality documents as a DOCX or ZIP |
+| `POST` | `/undangan-pelantikan/agendas/{agenda_id}/appendix` | Generate the selected-participant cover-letter appendix DOCX |
 
 ### Accounts and roles
 
