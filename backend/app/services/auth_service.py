@@ -111,7 +111,7 @@ def active_superuser_count(db: Session) -> int:
     return db.scalar(
         select(func.count())
         .select_from(User)
-        .where(User.auth_level == 3, User.is_active.is_(True))
+        .where(User.auth_level >= 3, User.is_active.is_(True))
     ) or 0
 
 

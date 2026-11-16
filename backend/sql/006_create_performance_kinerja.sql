@@ -1,25 +1,29 @@
--- Active quarterly employee performance dataset and its imported values.
--- Previous quarters are replaced rather than retained.
+-- Fresh-install schema for quarterly employee performance datasets.
+-- Each period is retained; uploading the same period replaces only that period.
+-- Existing installations are upgraded by init_history_db() at application startup.
 
 USE pbncleaner;
 
 CREATE TABLE IF NOT EXISTS performance_kinerja_datasets (
-  id INT NOT NULL,
+  id INT NOT NULL AUTO_INCREMENT,
   period VARCHAR(7) NOT NULL,
   row_count INT NOT NULL DEFAULT 0,
   uploaded_at DATETIME NOT NULL,
   uploaded_by_user VARCHAR(80) NOT NULL,
   uploaded_by_name VARCHAR(200) NOT NULL,
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_performance_kinerja_dataset_period (period)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS performance_kinerja_records (
-  nip VARCHAR(18) NOT NULL,
   dataset_id INT NOT NULL,
+  nip VARCHAR(18) NOT NULL,
   nama TEXT NOT NULL,
   unit_eselon_ii VARCHAR(255) NOT NULL DEFAULT 'Unidentified',
-  eselon VARCHAR(255) NOT NULL DEFAULT 'Unidentified',
   unit_eselon_iii VARCHAR(255) NOT NULL DEFAULT 'Unidentified',
+  unit_eselon_iv VARCHAR(255) NOT NULL DEFAULT 'Unidentified',
+  unit_kerja_id INT NULL,
+  eselon VARCHAR(255) NOT NULL DEFAULT 'Unidentified',
   nhk DECIMAL(18,8) NULL,
   npk DECIMAL(18,8) NULL,
   nhk_kalibrasi DECIMAL(18,8) NULL,
@@ -37,8 +41,7 @@ CREATE TABLE IF NOT EXISTS performance_kinerja_records (
   rating_hasil_kerja TEXT NULL,
   rating_perilaku_kerja TEXT NULL,
   predikat_kinerja TEXT NULL,
-  PRIMARY KEY (nip),
-  INDEX ix_performance_kinerja_records_dataset_id (dataset_id)
+  PRIMARY KEY (dataset_id, nip)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS performance_kinerja_insights (

@@ -1,14 +1,14 @@
 from collections import Counter
+from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 import math
 from numbers import Real
-from typing import Any
+from typing import Any, NamedTuple
 
 import pandas as pd
-from sqlalchemy.exc import SQLAlchemyError
 
-from app.history_db import engine
-from app.storage.dataset_store import DatasetStore
+from app.repositories import pbn_dashboard_repository
+from app.schemas.pbn_dashboard import PbnDashboardFilters
 
 
 
@@ -27,26 +27,50 @@ COLUMN_ALIASES = {
 AGE_GROUPS = ("<20 Th", "20 - 30 Th", "31 - 40 Th", "41 - 50 Th", "51+ Th", "Tidak diketahui")
 
 
+class FilteredDashboardData(NamedTuple):
+    source: pd.DataFrame
+    original_source: pd.DataFrame
+    columns: dict[str, Any]
+    ages: pd.Series
+    age_range: dict[str, int]
+    tenure_range: dict[str, int]
+    sheet_name: str
+
+
 def _normalize_column_name(value: Any) -> str:
     return "".join(character for character in str(value).casefold() if character.isalnum())
 
 
-def _resolve_columns(dataframe: pd.DataFrame) -> dict[str, Any]:
+def _resolve_alias_columns(
+    dataframe: pd.DataFrame,
+    aliases_by_name: Mapping[str, tuple[str, ...]],
+) -> tuple[dict[str, Any], list[str]]:
     actual_columns = {_normalize_column_name(column): column for column in dataframe.columns}
     resolved: dict[str, Any] = {}
     missing = []
-    for key, aliases in COLUMN_ALIASES.items():
+    for key, aliases in aliases_by_name.items():
         column = next(
-            (actual_columns[_normalize_column_name(alias)] for alias in aliases
-             if _normalize_column_name(alias) in actual_columns),
+            (
+                actual_columns[normalized_alias]
+                for alias in aliases
+                if (normalized_alias := _normalize_column_name(alias)) in actual_columns
+            ),
             None,
         )
         if column is None:
-            missing.append(aliases[0])
+            missing.append(key)
         else:
             resolved[key] = column
+    return resolved, missing
+
+
+def _resolve_columns(dataframe: pd.DataFrame) -> dict[str, Any]:
+    resolved, missing = _resolve_alias_columns(dataframe, COLUMN_ALIASES)
     if missing:
-        raise ValueError(f"Dashboard requires these columns: {', '.join(missing)}.")
+        missing_aliases = [COLUMN_ALIASES[key][0] for key in missing]
+        raise ValueError(
+            f"Dashboard requires these columns: {', '.join(missing_aliases)}."
+        )
     return resolved
 
 
@@ -133,37 +157,23 @@ def _age_group(value: Any) -> str:
 def _get_filtered_dashboard_data(
     dataset_id: str,
     sheet_name: str | None,
-    filters: Any,
+    filters: PbnDashboardFilters,
     today: date | None = None,
-) -> tuple[pd.DataFrame, dict[str, Any], pd.Series, dict[str, int], dict[str, int], str]:
-    sheets = DatasetStore.get(dataset_id)
-    if sheets is None:
-        raise KeyError(f"Dataset '{dataset_id}' not found. Please upload a file first.")
-    if sheet_name is None:
-        sheet_name = next(iter(sheets))
-    if sheet_name not in sheets:
-        raise KeyError(f"Sheet '{sheet_name}' not found.")
-
-    source = sheets[sheet_name]
+) -> FilteredDashboardData:
+    source, sheet_name = pbn_dashboard_repository.load_dataset_sheet(
+        dataset_id,
+        sheet_name,
+    )
     return _filter_dashboard_data(source, filters, sheet_name, today)
-
-
-def _load_pbnopen_source() -> pd.DataFrame:
-    try:
-        return pd.read_sql_table("fetch_pbnopen", engine, schema="pbncleaner")
-    except (SQLAlchemyError, ValueError) as exc:
-        raise RuntimeError(
-            "Could not read database table 'pbncleaner.fetch_pbnopen'. "
-            "Check database connectivity and table availability."
-        ) from exc
 
 
 def _filter_dashboard_data(
     source: pd.DataFrame,
-    filters: Any,
+    filters: PbnDashboardFilters,
     sheet_name: str,
     today: date | None = None,
-) -> tuple[pd.DataFrame, dict[str, Any], pd.Series, dict[str, int], dict[str, int], str]:
+) -> FilteredDashboardData:
+    original_source = source
     columns = _resolve_columns(source)
     current_date = today or date.today()
     ages = pd.to_numeric(source[columns["age"]], errors="coerce")
@@ -205,7 +215,15 @@ def _filter_dashboard_data(
             ages = ages.loc[source.index]
             tenure = tenure.loc[source.index]
 
-    return source, columns, ages, age_range, tenure_range, sheet_name
+    return FilteredDashboardData(
+        source=source,
+        original_source=original_source,
+        columns=columns,
+        ages=ages,
+        age_range=age_range,
+        tenure_range=tenure_range,
+        sheet_name=sheet_name,
+    )
 
 
 def _available_values(source: pd.DataFrame, column: Any) -> list[str]:
@@ -222,63 +240,37 @@ def _available_values(source: pd.DataFrame, column: Any) -> list[str]:
 def build_pbn_dashboard(
     dataset_id: str,
     sheet_name: str | None,
-    filters: Any,
+    filters: PbnDashboardFilters,
     today: date | None = None,
 ) -> dict[str, Any]:
-    source, columns, ages, age_range, tenure_range, sheet_name = _get_filtered_dashboard_data(
+    data = _get_filtered_dashboard_data(
         dataset_id, sheet_name, filters, today
     )
-    stored_sheets = DatasetStore.get(dataset_id)
-    if stored_sheets is None:
-        raise KeyError(f"Dataset '{dataset_id}' not found. Please upload a file first.")
-    original_source = stored_sheets[sheet_name]
-    return _build_dashboard_result(
-        source,
-        original_source,
-        columns,
-        ages,
-        age_range,
-        tenure_range,
-        dataset_id,
-        sheet_name,
-    )
+    return _build_dashboard_result(data, dataset_id)
 
 
 def build_pbnopen_dashboard(
-    filters: Any,
+    filters: PbnDashboardFilters,
     today: date | None = None,
 ) -> dict[str, Any]:
-    original_source = _load_pbnopen_source()
-    source, columns, ages, age_range, tenure_range, sheet_name = _filter_dashboard_data(
-        original_source,
+    source = pbn_dashboard_repository.load_pbnopen_source()
+    data = _filter_dashboard_data(
+        source,
         filters,
         "fetch_pbnopen",
         today,
     )
-    return _build_dashboard_result(
-        source,
-        original_source,
-        columns,
-        ages,
-        age_range,
-        tenure_range,
-        "pbncleaner.fetch_pbnopen",
-        sheet_name,
-    )
+    return _build_dashboard_result(data, "pbncleaner.fetch_pbnopen")
 
 
 def _build_dashboard_result(
-    source: pd.DataFrame,
-    original_source: pd.DataFrame,
-    columns: dict[str, Any],
-    ages: pd.Series,
-    age_range: dict[str, int],
-    tenure_range: dict[str, int],
+    data: FilteredDashboardData,
     dataset_id: str,
-    sheet_name: str,
 ) -> dict[str, Any]:
+    source = data.source
+    columns = data.columns
     total = len(source)
-    age_counts = Counter(_age_group(value) for value in ages.tolist())
+    age_counts = Counter(_age_group(value) for value in data.ages.tolist())
     age_distribution = [
         {
             "label": group,
@@ -290,7 +282,7 @@ def _build_dashboard_result(
 
     return {
         "dataset_id": dataset_id,
-        "sheet_name": sheet_name,
+        "sheet_name": data.sheet_name,
         "total_employees": total,
         "sex_distribution": _distribution(
             source[columns["sex"]].map(_display_category).tolist(), total
@@ -312,13 +304,16 @@ def _build_dashboard_result(
             source[columns["religion"]].map(_display_category).tolist(), total
         ),
         "available_filters": {
-            "age": age_range,
-            "tenure": tenure_range,
-            "eselon": _available_values(original_source, columns["eselon"]),
-            "education": _available_values(original_source, columns["education"]),
-            "region": _available_values(original_source, columns["region"]),
-            "unit": _available_values(original_source, columns["unit"]),
-            "rumpun": _available_values(original_source, columns["education_group"]),
+            "age": data.age_range,
+            "tenure": data.tenure_range,
+            "eselon": _available_values(data.original_source, columns["eselon"]),
+            "education": _available_values(data.original_source, columns["education"]),
+            "region": _available_values(data.original_source, columns["region"]),
+            "unit": _available_values(data.original_source, columns["unit"]),
+            "rumpun": _available_values(
+                data.original_source,
+                columns["education_group"],
+            ),
         },
     }
 
@@ -338,22 +333,7 @@ PEOPLE_COLUMN_ALIASES = {
 
 
 def _resolve_people_columns(source: pd.DataFrame) -> dict[str, Any]:
-    actual_columns = {_normalize_column_name(column): column for column in source.columns}
-    resolved = {}
-    missing = []
-    for output_name, aliases in PEOPLE_COLUMN_ALIASES.items():
-        column = next(
-            (
-                actual_columns[_normalize_column_name(alias)]
-                for alias in aliases
-                if _normalize_column_name(alias) in actual_columns
-            ),
-            None,
-        )
-        if column is None:
-            missing.append(output_name)
-        else:
-            resolved[output_name] = column
+    resolved, missing = _resolve_alias_columns(source, PEOPLE_COLUMN_ALIASES)
     if missing:
         raise ValueError(f"People table requires these columns: {', '.join(missing)}.")
     return resolved
@@ -362,27 +342,31 @@ def _resolve_people_columns(source: pd.DataFrame) -> dict[str, Any]:
 def get_pbn_dashboard_people(
     dataset_id: str,
     sheet_name: str | None,
-    filters: Any,
+    filters: PbnDashboardFilters,
     today: date | None = None,
 ) -> dict[str, Any]:
-    source, _, _, _, _, sheet_name = _get_filtered_dashboard_data(
+    data = _get_filtered_dashboard_data(
         dataset_id, sheet_name, filters, today
     )
-    return _build_dashboard_people_result(source, dataset_id, sheet_name)
+    return _build_dashboard_people_result(data.source, dataset_id, data.sheet_name)
 
 
 def get_pbnopen_dashboard_people(
-    filters: Any,
+    filters: PbnDashboardFilters,
     today: date | None = None,
 ) -> dict[str, Any]:
-    original_source = _load_pbnopen_source()
-    source, _, _, _, _, sheet_name = _filter_dashboard_data(
+    original_source = pbn_dashboard_repository.load_pbnopen_source()
+    data = _filter_dashboard_data(
         original_source,
         filters,
         "fetch_pbnopen",
         today,
     )
-    return _build_dashboard_people_result(source, "pbncleaner.fetch_pbnopen", sheet_name)
+    return _build_dashboard_people_result(
+        data.source,
+        "pbncleaner.fetch_pbnopen",
+        data.sheet_name,
+    )
 
 
 def _build_dashboard_people_result(

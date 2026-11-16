@@ -6,10 +6,10 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_super_admin, update_managed_user
+from app.api.auth import create_managed_user, get_god_user, get_super_admin, update_managed_user
 from app.history_db import Base
 from app.models.auth import User, UserPreference, UserSession
-from app.schemas.auth import AdminUserUpdate, ThemePreferenceUpdate
+from app.schemas.auth import AdminUserCreate, AdminUserUpdate, ThemePreferenceUpdate
 from app.services import auth_service
 
 
@@ -87,24 +87,71 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertIsNone(auth_service.get_user_by_token(self.db, token))
 
-    def test_super_admin_count_includes_only_active_level_three_accounts(self):
+    def test_super_admin_count_includes_active_super_admin_and_god_user_accounts(self):
         auth_service.create_user(self.db, "super", "Super Admin", "pw", auth_level=3)
+        auth_service.create_user(self.db, "salmanmfa", "God User", "pw", auth_level=4)
         auth_service.create_user(self.db, "admin", "Admin", "pw", auth_level=2)
-        self.assertEqual(auth_service.active_superuser_count(self.db), 1)
+        self.assertEqual(auth_service.active_superuser_count(self.db), 2)
 
         super_admin = self.db.get(User, "super")
         super_admin.is_active = False
         self.db.commit()
-        self.assertEqual(auth_service.active_superuser_count(self.db), 0)
+        self.assertEqual(auth_service.active_superuser_count(self.db), 1)
 
-    def test_only_super_admin_passes_super_admin_dependency(self):
+    def test_super_admin_and_any_level_four_account_pass_role_dependencies(self):
         admin = auth_service.create_user(self.db, "admin", "Admin", "pw", auth_level=2)
         super_admin = auth_service.create_user(self.db, "super", "Super Admin", "pw", auth_level=3)
+        god_user = auth_service.create_user(
+            self.db,
+            "salmanmfa",
+            "God User",
+            "pw",
+            auth_level=4,
+        )
 
         with self.assertRaises(HTTPException) as error:
             get_super_admin(admin)
         self.assertEqual(error.exception.status_code, 403)
         self.assertIs(get_super_admin(super_admin), super_admin)
+        self.assertIs(get_super_admin(god_user), god_user)
+        with self.assertRaises(HTTPException) as error:
+            get_god_user(super_admin)
+        self.assertEqual(error.exception.status_code, 403)
+
+        another_level_four = type("User", (), {"auth_level": 4, "user": "another"})()
+        self.assertIs(get_super_admin(another_level_four), another_level_four)
+        self.assertIs(get_god_user(another_level_four), another_level_four)
+
+    def test_auth_level_four_is_available_for_any_username(self):
+        account = auth_service.create_user(self.db, "another", "Another", "pw", auth_level=4)
+        self.assertEqual(account.auth_level, 4)
+
+    def test_managed_user_creation_accepts_level_four(self):
+        request = AdminUserCreate(
+                user="another",
+                name="Another",
+                password="password",
+                auth_level=4,
+            )
+
+        self.assertEqual(request.auth_level, 4)
+
+    def test_only_level_four_admin_can_assign_level_four(self):
+        super_admin = auth_service.create_user(self.db, "super", "Super Admin", "pw", auth_level=3)
+        god_user = auth_service.create_user(self.db, "god", "God User", "pw", auth_level=4)
+        request = AdminUserCreate(
+            user="another",
+            name="Another",
+            password="pass",
+            auth_level=4,
+        )
+
+        with self.assertRaises(HTTPException) as error:
+            create_managed_user(request, super_admin, self.db)
+        self.assertEqual(error.exception.status_code, 403)
+
+        created = create_managed_user(request, god_user, self.db)
+        self.assertEqual(created.auth_level, 4)
 
     def test_super_admin_cannot_demote_or_deactivate_their_own_account(self):
         super_admin = auth_service.create_user(self.db, "super", "Super Admin", "pw", auth_level=3)
@@ -118,6 +165,31 @@ class AuthServiceTests(unittest.TestCase):
             )
         self.assertEqual(error.exception.status_code, 409)
         self.assertEqual(self.db.get(User, "super").auth_level, 3)
+
+    def test_only_level_four_admin_can_manage_level_four_account(self):
+        auth_service.create_user(self.db, "super", "Super Admin", "pw", auth_level=3)
+        god_user = auth_service.create_user(
+            self.db,
+            "god",
+            "God User",
+            "pw",
+            auth_level=4,
+        )
+        request = AdminUserUpdate(name="God User", auth_level=4, is_active=True)
+
+        with self.assertRaises(HTTPException) as error:
+            update_managed_user("god", request, self.db.get(User, "super"), self.db)
+        self.assertEqual(error.exception.status_code, 403)
+
+        with self.assertRaises(HTTPException) as error:
+            update_managed_user(
+                "god",
+                AdminUserUpdate(name="God User", auth_level=3, is_active=True),
+                god_user,
+                self.db,
+            )
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertEqual(self.db.get(User, "god").auth_level, 4)
 
     def test_theme_preference_is_per_user_and_defaults_to_default(self):
         auth_service.create_user(self.db, "alice", "Alice", "pw")

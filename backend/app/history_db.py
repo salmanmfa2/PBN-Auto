@@ -1,9 +1,12 @@
+import logging
 import os
+import re
 from pathlib import Path
 from typing import Generator
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import MetaData, Table, create_engine, inspect, insert, select, text, update
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 
@@ -30,6 +33,7 @@ DATABASE_URL = _build_connection_url()
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+logger = logging.getLogger(__name__)
 
 
 def get_history_db() -> Generator[Session, None, None]:
@@ -38,6 +42,240 @@ def get_history_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def _migrate_performance_schema(database_engine: Engine | None = None) -> None:
+    from app.models.performance_kinerja import PerformanceKinerjaRecord
+
+    if database_engine is None:
+        database_engine = engine
+    record_table = PerformanceKinerjaRecord.__table__
+    record_columns = {
+        column["name"]
+        for column in inspect(database_engine).get_columns(record_table.name)
+    }
+    if "unit_eselon_iv" not in record_columns:
+        if database_engine.dialect.name not in {"mysql", "mariadb", "sqlite"}:
+            raise RuntimeError(
+                f"Cannot add Unit Eselon IV data on {database_engine.dialect.name}."
+            )
+        with database_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE performance_kinerja_records "
+                    "ADD COLUMN unit_eselon_iv VARCHAR(255) "
+                    "NOT NULL DEFAULT 'Unidentified'"
+                )
+            )
+    if "unit_kerja_id" not in record_columns:
+        if database_engine.dialect.name not in {"mysql", "mariadb", "sqlite"}:
+            raise RuntimeError(
+                f"Cannot add Unit Kerja ID data on {database_engine.dialect.name}."
+            )
+        with database_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE performance_kinerja_records "
+                    "ADD COLUMN unit_kerja_id INT NULL"
+                )
+            )
+    primary_key = inspect(database_engine).get_pk_constraint(record_table.name).get(
+        "constrained_columns",
+        [],
+    ) or []
+    expected_primary_key = ["dataset_id", "nip"]
+    if set(primary_key) != set(expected_primary_key):
+        if set(primary_key) != {"nip"}:
+            raise RuntimeError(
+                "The performance records table has an unsupported primary key; "
+                "cannot safely preserve its data."
+            )
+        if database_engine.dialect.name in {"mysql", "mariadb"}:
+            with database_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE performance_kinerja_records "
+                        "DROP PRIMARY KEY, ADD PRIMARY KEY (dataset_id, nip)"
+                    )
+                )
+        elif database_engine.dialect.name == "sqlite":
+            legacy_name = "performance_kinerja_records__pk_migration"
+            with database_engine.begin() as connection:
+                if legacy_name in inspect(connection).get_table_names():
+                    raise RuntimeError(
+                        f"Found {legacy_name}; inspect the interrupted migration before retrying."
+                    )
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {record_table.name} RENAME TO {legacy_name}"
+                )
+                legacy_table = Table(
+                    legacy_name,
+                    MetaData(),
+                    autoload_with=connection,
+                )
+                record_table.create(connection)
+                column_names = [
+                    column.name
+                    for column in record_table.columns
+                    if column.name in legacy_table.c
+                ]
+                connection.execute(
+                    record_table.insert().from_select(
+                        column_names,
+                        select(*(legacy_table.c[name] for name in column_names)),
+                    )
+                )
+                legacy_table.drop(connection)
+        else:
+            raise RuntimeError(
+                f"Cannot migrate performance records on {database_engine.dialect.name}."
+            )
+
+    inspector = inspect(database_engine)
+    has_unique_period = any(
+        constraint.get("column_names") == ["period"]
+        for constraint in inspector.get_unique_constraints(
+            "performance_kinerja_datasets"
+        )
+    ) or any(
+        index.get("unique")
+        and index.get("column_names") == ["period"]
+        for index in inspector.get_indexes("performance_kinerja_datasets")
+    )
+    if not has_unique_period:
+        with database_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX uq_performance_kinerja_dataset_period "
+                    "ON performance_kinerja_datasets (period)"
+                )
+            )
+
+
+def _auth_level_constraint_is_current(expression: str) -> bool:
+    normalized = re.sub(r"[`\"()\s]", "", expression.casefold())
+    return normalized == "auth_levelin1,2,3,4"
+
+
+def _rebuild_sqlite_users_table_for_god_user(database_engine: Engine) -> None:
+    from app.models.auth import User
+
+    with database_engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys = OFF")
+        connection.commit()
+        try:
+            with connection.begin():
+                legacy_table = Table("users", MetaData(), autoload_with=connection)
+                migrated_metadata = MetaData()
+                migrated_table = User.__table__.to_metadata(
+                    migrated_metadata,
+                    name="users__god_user_migration",
+                )
+                legacy_columns = set(legacy_table.c.keys())
+                migrated_columns = set(migrated_table.c.keys())
+                if legacy_columns != migrated_columns:
+                    missing_columns = sorted(migrated_columns - legacy_columns)
+                    unexpected_columns = sorted(legacy_columns - migrated_columns)
+                    details = []
+                    if missing_columns:
+                        details.append(f"missing columns: {', '.join(missing_columns)}")
+                    if unexpected_columns:
+                        details.append(f"unexpected columns: {', '.join(unexpected_columns)}")
+                    raise RuntimeError(
+                        "Cannot rebuild the users table without risking data loss; "
+                        + "; ".join(details)
+                        + "."
+                    )
+
+                migrated_table.create(connection)
+                copied_columns = [column.name for column in migrated_table.columns]
+                connection.execute(
+                    insert(migrated_table).from_select(
+                        copied_columns,
+                        select(*(legacy_table.c[name] for name in copied_columns)),
+                    )
+                )
+                connection.exec_driver_sql("DROP TABLE users")
+                connection.exec_driver_sql(
+                    "ALTER TABLE users__god_user_migration RENAME TO users"
+                )
+                violations = connection.exec_driver_sql("PRAGMA foreign_key_check").all()
+                if violations:
+                    raise RuntimeError(
+                        "The users role migration found broken foreign-key references."
+                    )
+        finally:
+            if connection.in_transaction():
+                connection.rollback()
+            connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+            connection.commit()
+
+
+def _migrate_auth_level_role(database_engine: Engine | None = None) -> None:
+    from app.models.auth import User
+
+    if database_engine is None:
+        database_engine = engine
+    checks = inspect(database_engine).get_check_constraints("users")
+    auth_checks = [
+        check
+        for check in checks
+        if "auth_level" in (check.get("sqltext") or "").casefold()
+    ]
+    if len(auth_checks) > 1:
+        raise RuntimeError("The users table has multiple auth-level checks; inspect them before migration.")
+    if auth_checks and _auth_level_constraint_is_current(auth_checks[0].get("sqltext") or ""):
+        constraint_is_current = True
+    else:
+        constraint_is_current = False
+
+    if not constraint_is_current:
+        if database_engine.dialect.name == "sqlite":
+            _rebuild_sqlite_users_table_for_god_user(database_engine)
+        elif database_engine.dialect.name in {"mysql", "mariadb"}:
+            with database_engine.begin() as connection:
+                actions = []
+                if auth_checks:
+                    constraint_name = auth_checks[0].get("name")
+                    if not constraint_name:
+                        raise RuntimeError(
+                            "The users auth-level check has no name; inspect it before migration."
+                        )
+                    quoted_name = connection.dialect.identifier_preparer.quote(
+                        constraint_name
+                    )
+                    drop_keyword = (
+                        "DROP CONSTRAINT"
+                        if getattr(connection.dialect, "is_mariadb", False)
+                        else "DROP CHECK"
+                    )
+                    actions.append(f"{drop_keyword} {quoted_name}")
+                actions.append(
+                    "ADD CONSTRAINT chk_users_auth_level "
+                    "CHECK (auth_level IN (1, 2, 3, 4))"
+                )
+                connection.execute(
+                    text(f"ALTER TABLE users {', '.join(actions)}")
+                )
+        else:
+            raise RuntimeError(
+                f"Cannot migrate the Level 4 role on {database_engine.dialect.name}."
+            )
+
+    with database_engine.begin() as connection:
+        owner_exists = connection.execute(
+            select(User.user).where(User.user == "salmanmfa")
+        ).first()
+        if owner_exists is None:
+            logger.warning(
+                "The Level 4 role is enabled, but account 'salmanmfa' does not exist yet."
+            )
+            return
+        connection.execute(
+            update(User)
+            .where(User.user == "salmanmfa")
+            .values(auth_level=4)
+        )
 
 
 def init_history_db() -> None:
@@ -59,6 +297,7 @@ def init_history_db() -> None:
     from app.models.user_feedback import UserFeedback  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _migrate_auth_level_role(engine)
 
     performance_columns = {
         column["name"]
@@ -83,6 +322,8 @@ def init_history_db() -> None:
                         f"ADD COLUMN {name} {column_type}"
                     )
                 )
+
+    _migrate_performance_schema()
 
     columns = {column["name"]: column for column in inspect(engine).get_columns("dataset_files")}
     if "google_drive_file_id" in columns and not columns["google_drive_file_id"]["nullable"]:

@@ -20,9 +20,9 @@ def get_pbn_dashboard(
     try:
         return build_pbn_dashboard(dataset_id, sheet_name, filters)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(
@@ -37,6 +37,6 @@ def get_pbn_dashboard_people_endpoint(
     try:
         return get_pbn_dashboard_people(dataset_id, sheet_name, filters)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc).strip("'\""))
+        raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

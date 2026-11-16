@@ -4,7 +4,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-AuthLevel = Literal[1, 2, 3]
+AuthLevel = Literal[1, 2, 3, 4]
+AssignableAuthLevel = Literal[1, 2, 3, 4]
 ThemeName = Literal["default", "dark", "light"]
 
 
@@ -38,7 +39,7 @@ class LoginRequest(BaseModel):
 
 
 class AdminUserCreate(RegisterRequest):
-    auth_level: AuthLevel = 1
+    auth_level: AssignableAuthLevel = 1
 
 
 class AdminUserUpdate(BaseModel):

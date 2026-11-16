@@ -23,12 +23,16 @@ import type {
   AuthUser,
   PbnOpenCsvValidation,
   PbnOpenDataSourceSyncStatus,
+  DatabaseMaintenanceTarget,
+  DatabaseMaintenancePreview,
+  DatabaseMaintenanceResult,
   PerformanceAnalysisResponse,
   PerformanceDashboardResponse,
   PerformanceGroupBy,
   PerformanceInsight,
   PerformanceRecord,
   PerformanceRecordsResponse,
+  PerformanceEmployeeSource,
   PerformanceUploadValidation,
   ThemeName,
   ChatMessage,
@@ -229,6 +233,87 @@ export async function syncDtEmployeeFromPbnOpen(): Promise<{ message: string; ro
   }
 }
 
+function getAdminDatabaseError(error: unknown): Error {
+  if (axios.isAxiosError<{ detail?: unknown }>(error)) {
+    const detail = error.response?.data.detail;
+    if (typeof detail === 'string') return new Error(detail);
+  }
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+export async function getDatabaseMaintenanceTargets(): Promise<DatabaseMaintenanceTarget[]> {
+  try {
+    const { data } = await api.get<{ tables: DatabaseMaintenanceTarget[] }>(
+      '/admin/database/tables',
+    );
+    return data.tables;
+  } catch (error) {
+    throw getAdminDatabaseError(error);
+  }
+}
+
+export async function previewDatabaseMaintenanceCsv(
+  targetKey: string,
+  file: File,
+): Promise<DatabaseMaintenancePreview> {
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const { data } = await api.post<DatabaseMaintenancePreview>(
+      `/admin/database/${encodeURIComponent(targetKey)}/preview`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getAdminDatabaseError(error);
+  }
+}
+
+export async function applyDatabaseMaintenanceCsv(
+  targetKey: string,
+  file: File,
+): Promise<DatabaseMaintenanceResult> {
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const { data } = await api.post<DatabaseMaintenanceResult>(
+      `/admin/database/${encodeURIComponent(targetKey)}/apply`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getAdminDatabaseError(error);
+  }
+}
+
+export async function previewDatabaseEmployeeSync(
+  targetKey: string,
+): Promise<DatabaseMaintenancePreview> {
+  try {
+    const { data } = await api.post<DatabaseMaintenancePreview>(
+      `/admin/database/${encodeURIComponent(targetKey)}/sync/preview`,
+    );
+    return data;
+  } catch (error) {
+    throw getAdminDatabaseError(error);
+  }
+}
+
+export async function syncDatabaseEmployeeTable(
+  targetKey: string,
+): Promise<DatabaseMaintenanceResult> {
+  try {
+    const { data } = await api.post<DatabaseMaintenanceResult>(
+      `/admin/database/${encodeURIComponent(targetKey)}/sync`,
+    );
+    return data;
+  } catch (error) {
+    throw getAdminDatabaseError(error);
+  }
+}
+
 function getPerformanceRequestError(error: unknown): Error {
   if (axios.isAxiosError<{ detail?: unknown }>(error)) {
     const detail = error.response?.data.detail;
@@ -237,20 +322,28 @@ function getPerformanceRequestError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-function createPerformanceUpload(file: File, period: string): FormData {
+function createPerformanceUpload(
+  file: File,
+  period: string,
+  employeeSource?: PerformanceEmployeeSource,
+): FormData {
   const form = new FormData();
   form.append('file', file);
   form.append('period', period);
+  if (employeeSource !== undefined) {
+    form.append('employee_source', employeeSource);
+  }
   return form;
 }
 
 export async function getPerformanceAnalysis(
   groupBy: PerformanceGroupBy,
+  period?: string,
 ): Promise<PerformanceAnalysisResponse> {
   try {
     const { data } = await api.get<PerformanceAnalysisResponse>(
       '/performance/analysis',
-      { params: { group_by: groupBy } },
+      { params: { group_by: groupBy, period } },
     );
     return data;
   } catch (error) {
@@ -261,6 +354,7 @@ export async function getPerformanceAnalysis(
 export async function getPerformanceDashboard(
   unitEselonII: string,
   eselons: string[],
+  period?: string,
 ): Promise<PerformanceDashboardResponse> {
   try {
     const { data } = await api.get<PerformanceDashboardResponse>(
@@ -269,6 +363,7 @@ export async function getPerformanceDashboard(
         params: {
           unit_eselon_ii: unitEselonII || undefined,
           eselon: eselons,
+          period,
         },
         paramsSerializer: { indexes: null },
       },
@@ -297,11 +392,11 @@ export async function updatePerformanceInsight(content: string): Promise<Perform
   }
 }
 
-export async function downloadPerformanceUnitAnalysis(): Promise<Blob> {
+export async function downloadPerformanceUnitAnalysis(period?: string): Promise<Blob> {
   try {
     const { data } = await api.get<Blob>(
       '/performance/exports/unit-eselon-ii',
-      { responseType: 'blob' },
+      { params: { period }, responseType: 'blob' },
     );
     return data;
   } catch (error) {
@@ -311,9 +406,10 @@ export async function downloadPerformanceUnitAnalysis(): Promise<Blob> {
 
 export async function downloadPerformanceRecordsExcel(
   search: string,
-  filters: Partial<Record<keyof PerformanceRecord, string>> = {},
+  filters: Record<string, string> = {},
   sortBy: keyof PerformanceRecord = 'nama',
   sortOrder: 'asc' | 'desc' = 'asc',
+  period?: string,
 ): Promise<Blob> {
   try {
     const { data } = await api.get<Blob>(
@@ -324,6 +420,7 @@ export async function downloadPerformanceRecordsExcel(
           filters: JSON.stringify(filters),
           sort_by: sortBy,
           sort_order: sortOrder,
+          period,
         },
         responseType: 'blob',
       },
@@ -338,9 +435,10 @@ export async function getPerformanceRecords(
   page: number,
   pageSize: number,
   search: string,
-  filters: Partial<Record<keyof PerformanceRecord, string>> = {},
+  filters: Record<string, string> = {},
   sortBy: keyof PerformanceRecord = 'nama',
   sortOrder: 'asc' | 'desc' = 'asc',
+  period?: string,
 ): Promise<PerformanceRecordsResponse> {
   try {
     const { data } = await api.get<PerformanceRecordsResponse>(
@@ -353,6 +451,7 @@ export async function getPerformanceRecords(
           filters: JSON.stringify(filters),
           sort_by: sortBy,
           sort_order: sortOrder,
+          period,
         },
       },
     );
@@ -365,11 +464,12 @@ export async function getPerformanceRecords(
 export async function validatePerformanceFullData(
   file: File,
   period: string,
+  employeeSource: PerformanceEmployeeSource,
 ): Promise<PerformanceUploadValidation> {
   try {
     const { data } = await api.post<PerformanceUploadValidation>(
       '/performance/full-data/validate',
-      createPerformanceUpload(file, period),
+      createPerformanceUpload(file, period, employeeSource),
       { headers: { 'Content-Type': 'multipart/form-data' } },
     );
     return data;
@@ -381,11 +481,12 @@ export async function validatePerformanceFullData(
 export async function replacePerformanceFullData(
   file: File,
   period: string,
+  employeeSource: PerformanceEmployeeSource,
 ): Promise<PerformanceUploadValidation> {
   try {
     const { data } = await api.post<PerformanceUploadValidation>(
       '/performance/full-data/replace',
-      createPerformanceUpload(file, period),
+      createPerformanceUpload(file, period, employeeSource),
       { headers: { 'Content-Type': 'multipart/form-data' } },
     );
     return data;

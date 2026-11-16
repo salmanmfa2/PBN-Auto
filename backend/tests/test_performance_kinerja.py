@@ -6,12 +6,12 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.api.auth import get_current_user
-from app.history_db import Base, get_history_db
+from app.history_db import Base, _migrate_performance_schema, get_history_db
 from app.models.performance_kinerja import (
     PerformanceKinerjaDataset,
     PerformanceKinerjaInsight,
@@ -27,7 +27,9 @@ EMPLOYEE = {
         "nama": "Pegawai Contoh",
         "unit_eselon_ii": "Direktorat Contoh",
         "unit_eselon_iii": "Subdirektorat Contoh",
+        "unit_eselon_iv": "Seksi Contoh",
         "eselon": "III",
+        "unit_kerja_id": 10,
     }
 }
 
@@ -96,13 +98,13 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             ],
         )
         self.session = Session(self.engine)
-        self.employee_lookup = patch.object(
+        self.employee_lookup_patcher = patch.object(
             service,
             "_lookup_employee_records",
             return_value=EMPLOYEE,
         )
-        self.employee_lookup.start()
-        self.addCleanup(self.employee_lookup.stop)
+        self.employee_lookup = self.employee_lookup_patcher.start()
+        self.addCleanup(self.employee_lookup_patcher.stop)
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.session.close)
 
@@ -114,6 +116,31 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             uploaded_by_user="admin",
             uploaded_by_name="Admin",
         )
+
+    def get_dataset(self, period: str) -> PerformanceKinerjaDataset | None:
+        return self.session.scalar(
+            select(PerformanceKinerjaDataset).where(
+                PerformanceKinerjaDataset.period == period
+            )
+        )
+
+    def get_record(
+        self,
+        nip: str,
+        period: str | None = None,
+    ) -> PerformanceKinerjaRecord | None:
+        dataset = (
+            self.get_dataset(period)
+            if period is not None
+            else self.session.scalar(
+                select(PerformanceKinerjaDataset).order_by(
+                    PerformanceKinerjaDataset.id.desc()
+                )
+            )
+        )
+        if dataset is None:
+            return None
+        return self.session.get(PerformanceKinerjaRecord, (dataset.id, nip))
 
     def test_full_import_normalizes_nip_and_preserves_source_scores(self) -> None:
         content = full_csv(
@@ -142,10 +169,11 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             uploaded_by_user="admin",
             uploaded_by_name="Admin",
         )
-        record = self.session.get(PerformanceKinerjaRecord, NIP)
+        record = self.get_record(NIP, "Q3-2026")
         self.assertEqual(record.nkp_awal, 84)
         self.assertEqual(record.nkp_akhir, 119)
         self.assertEqual(record.unit_eselon_iii, "Subdirektorat Contoh")
+        self.assertEqual(record.unit_eselon_iv, "Seksi Contoh")
         self.assertEqual(record.nko, 90)
         self.assertEqual(record.rating_hasil_kerja, "Di atas Ekspektasi")
 
@@ -167,7 +195,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
     def test_full_import_rejects_duplicate_nips_without_replacing_data(self) -> None:
         self.import_active_dataset()
-        existing = self.session.get(PerformanceKinerjaRecord, NIP)
+        existing = self.get_record(NIP, "Q3-2026")
         self.assertEqual(existing.nama, "Pegawai Contoh")
 
         duplicate_csv = full_csv() + full_csv().split(b"\n", 1)[1]
@@ -180,7 +208,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     uploaded_by_user="admin",
                     uploaded_by_name="Admin",
                 )
-        self.assertEqual(self.session.get(PerformanceKinerjaDataset, 1).period, "Q3-2026")
+        self.assertEqual(self.get_dataset("Q3-2026").period, "Q3-2026")
 
         with patch.object(service, "_lookup_employee_records", return_value={}):
             result = service.replace_full_upload(
@@ -191,11 +219,342 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 uploaded_by_name="Admin",
             )
         self.assertEqual(result["unidentified_count"], 1)
-        unmatched = self.session.get(PerformanceKinerjaRecord, "1234567890123456")
+        unmatched = self.get_record("1234567890123456", "Q4-2026")
         self.assertEqual(unmatched.unit_eselon_ii, "Unidentified")
         self.assertEqual(unmatched.eselon, "Unidentified")
         self.assertEqual(unmatched.nilai_hukuman_disiplin, -26)
-        self.assertEqual(self.session.get(PerformanceKinerjaDataset, 1).period, "Q4-2026")
+        self.assertEqual(self.get_dataset("Q4-2026").period, "Q4-2026")
+        self.assertEqual(self.get_dataset("Q3-2026").period, "Q3-2026")
+
+    def test_quarter_uploads_are_retained_and_same_period_replacement_is_isolated(self) -> None:
+        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+            service.replace_full_upload(
+                self.session,
+                full_csv(npk="80", nkp_akhir="89"),
+                "Q2-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+            )
+            service.replace_full_upload(
+                self.session,
+                full_csv(npk="100", nkp_akhir="100"),
+                "Q3-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+            )
+
+        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE) as lookup:
+            dashboard = service.get_dashboard(self.session, None, [], "Q3-2026")
+            unit = dashboard["units"][0]
+            comparison = unit["comparison"]
+
+            self.assertEqual(dashboard["previous_period"], "Q2-2026")
+            self.assertEqual(comparison["average_npk"]["current"], 100)
+            self.assertEqual(comparison["average_npk"]["previous"], 80)
+            self.assertEqual(comparison["average_npk"]["delta"], 20)
+            self.assertEqual(comparison["average_npk"]["percentage_change"], 25)
+            self.assertEqual(
+                dashboard["overview_comparison"]["average_npk"]["current"],
+                100,
+            )
+            self.assertEqual(
+                dashboard["overview_comparison"]["average_npk"]["previous"],
+                80,
+            )
+            self.assertEqual(
+                dashboard["overview_previous"]["employee_count"],
+                1,
+            )
+            unit_iii = dashboard["units"][0]["children"][0]
+            unit_iv = unit_iii["children"][0]
+            self.assertEqual(unit_iii["comparison"]["average_npk"]["delta"], 20)
+            self.assertEqual(unit_iv["comparison"]["average_npk"]["delta"], 20)
+            self.assertEqual(
+                comparison["nkp_akhir_status_counts.Rendah"]["delta"],
+                -1,
+            )
+            self.assertEqual(
+                comparison["nkp_akhir_status_counts.Rendah"]["percentage_change"],
+                -100,
+            )
+            service.get_dashboard(self.session, None, [], "Q3-2026")
+            self.assertEqual(lookup.call_count, 0)
+
+            service.replace_full_upload(
+                self.session,
+                full_csv(npk="90", nkp_akhir="90"),
+                "Q2-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+            )
+
+            updated = service.get_dashboard(self.session, None, [], "Q3-2026")
+            self.assertEqual(updated["available_periods"][0]["period"], "Q2-2026")
+            self.assertEqual(updated["available_periods"][1]["period"], "Q3-2026")
+            self.assertEqual(updated["units"][0]["comparison"]["average_npk"]["previous"], 90)
+            self.assertEqual(self.get_record(NIP, "Q3-2026").npk, 100)
+            self.assertEqual(self.get_record(NIP, "Q2-2026").npk, 90)
+            self.assertEqual(lookup.call_count, 1)
+
+    def test_comparison_requires_the_immediately_previous_calendar_quarter(self) -> None:
+        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+            for period in ("Q1-2026", "Q3-2026"):
+                service.replace_full_upload(
+                    self.session,
+                    full_csv(),
+                    period,
+                    uploaded_by_user="admin",
+                    uploaded_by_name="Admin",
+                )
+
+            dashboard = service.get_dashboard(self.session, None, [])
+
+        self.assertEqual(dashboard["dataset"]["period"], "Q3-2026")
+        self.assertIsNone(dashboard["previous_period"])
+        self.assertIsNone(dashboard["overview_previous"])
+        self.assertEqual(dashboard["overview_comparison"], {})
+        self.assertEqual(dashboard["units"][0]["comparison"], {})
+
+    def test_overview_comparison_applies_selected_filters_to_both_periods(self) -> None:
+        self.import_active_dataset()
+        current_record = self.get_record(NIP, "Q3-2026")
+        current_record.unit_eselon_ii = "Unit A"
+        current_record.eselon = "III"
+        current_record.npk = service.Decimal("100")
+        current_record.nkp_akhir = service.Decimal("115")
+        current_record.nilai_koreksi = service.Decimal("0")
+        self.session.commit()
+
+        service.replace_full_upload(
+            self.session,
+            full_csv(npk="80", nkp_akhir="90", koreksi="2"),
+            "Q2-2026",
+            uploaded_by_user="admin",
+            uploaded_by_name="Admin",
+        )
+        previous_record = self.get_record(NIP, "Q2-2026")
+        previous_record.unit_eselon_ii = "Unit A"
+        previous_record.eselon = "III"
+        previous_dataset = self.get_dataset("Q2-2026")
+        self.session.add(
+            PerformanceKinerjaRecord(
+                nip="123456789012345679",
+                dataset_id=previous_dataset.id,
+                nama="Pegawai Unit B",
+                unit_eselon_ii="Unit B",
+                eselon="IV",
+                npk=service.Decimal("120"),
+                nkp_akhir=service.Decimal("89"),
+                nilai_koreksi=service.Decimal("3"),
+            )
+        )
+        previous_dataset.row_count = 2
+        self.session.commit()
+
+        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+            dashboard = service.get_dashboard(
+                self.session,
+                "Unit A",
+                ["III"],
+                "Q3-2026",
+            )
+
+        self.assertEqual(dashboard["overview"]["employee_count"], 1)
+        self.assertEqual(dashboard["overview_previous"]["employee_count"], 1)
+        self.assertEqual(
+            dashboard["overview_comparison"]["employee_count"]["current"],
+            1,
+        )
+        self.assertEqual(
+            dashboard["overview_comparison"]["employee_count"]["previous"],
+            1,
+        )
+        self.assertEqual(
+            dashboard["overview_comparison"]["correction.count"]["delta"],
+            -1,
+        )
+        self.assertEqual(
+            dashboard["overview_comparison"]["nkp_akhir_status_counts.Sedang"]["previous"],
+            1,
+        )
+        self.assertEqual(
+            sum(bin_["count"] for bin_ in dashboard["overview_previous"]["histogram"]),
+            1,
+        )
+
+    def test_performance_schema_migration_preserves_existing_period_data(self) -> None:
+        legacy_engine = create_engine("sqlite:///:memory:")
+        self.addCleanup(legacy_engine.dispose)
+        with legacy_engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE performance_kinerja_datasets ("
+                "id INTEGER PRIMARY KEY, period VARCHAR(7) NOT NULL, "
+                "row_count INTEGER NOT NULL, uploaded_at DATETIME NOT NULL, "
+                "uploaded_by_user VARCHAR(80) NOT NULL, uploaded_by_name VARCHAR(200) NOT NULL)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO performance_kinerja_datasets VALUES "
+                "(1, 'Q3-2026', 1, '2026-09-01 00:00:00', 'admin', 'Admin')"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE performance_kinerja_records ("
+                "nip VARCHAR(18) PRIMARY KEY NOT NULL, dataset_id INTEGER NOT NULL, "
+                "nama TEXT NOT NULL)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO performance_kinerja_records VALUES "
+                f"('{NIP}', 1, 'Pegawai Lama')"
+            )
+
+        _migrate_performance_schema(legacy_engine)
+
+        self.assertEqual(
+            inspect(legacy_engine)
+            .get_pk_constraint("performance_kinerja_records")["constrained_columns"],
+            ["dataset_id", "nip"],
+        )
+        unique_period_indexes = inspect(legacy_engine).get_indexes(
+            "performance_kinerja_datasets"
+        )
+        self.assertTrue(
+            any(
+                index["unique"] and index["column_names"] == ["period"]
+                for index in unique_period_indexes
+            )
+        )
+        with Session(legacy_engine) as session:
+            record = session.get(PerformanceKinerjaRecord, (1, NIP))
+            self.assertEqual(record.nama, "Pegawai Lama")
+            self.assertEqual(record.unit_eselon_iv, "Unidentified")
+            self.assertIsNone(record.unit_kerja_id)
+            self.assertEqual(session.get(PerformanceKinerjaDataset, 1).period, "Q3-2026")
+
+    def test_employee_lookup_supports_current_and_q2_sources_with_eselon_iv(self) -> None:
+        self.employee_lookup_patcher.stop()
+        employee_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        self.addCleanup(employee_engine.dispose)
+        with employee_engine.begin() as connection:
+            connection.exec_driver_sql("ATTACH DATABASE ':memory:' AS pbncleaner")
+            connection.exec_driver_sql(
+                'CREATE TABLE pbncleaner.ref_eselon ('
+                '"eselon_id" INTEGER, "value" TEXT)'
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO pbncleaner.ref_eselon VALUES (1, 'IV'), (2, 'III')"
+            )
+            connection.exec_driver_sql(
+                'CREATE TABLE pbncleaner.ref_unit_kerja ('
+                '"unit_kerja_id" INTEGER, "value" TEXT)'
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO pbncleaner.ref_unit_kerja VALUES "
+                "(10, 'Direktorat Utama'), (20, 'Direktorat Q2')"
+            )
+            connection.exec_driver_sql(
+                'CREATE TABLE pbncleaner.fetch_pbnopen ('
+                '"NIP" TEXT, "Nama Gelar" TEXT, "Unit Eselon II" TEXT, '
+                '"Unit Eselon III" TEXT, "Unit Eselon IV" TEXT, "eselon" TEXT, '
+                '"Unit Kerja" TEXT)'
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO pbncleaner.fetch_pbnopen VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    NIP,
+                    "Pegawai Utama",
+                    "Direktorat Utama",
+                    "Subdirektorat Contoh",
+                    "Seksi Utama",
+                    "IV",
+                    "Direktorat Utama",
+                ),
+            )
+            connection.exec_driver_sql(
+                'CREATE TABLE pbncleaner.dt_employee_q2_2026 ('
+                '"NIP" TEXT, "Nama Gelar" TEXT, "Unit Eselon II" TEXT, '
+                '"Unit Eselon III" TEXT, "Unit Eselon IV" TEXT, '
+                '"eselon_id" INTEGER, "unit_kerja_id" INTEGER)'
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO pbncleaner.dt_employee_q2_2026 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    NIP,
+                    "Pegawai Q2",
+                    "Direktorat Q2",
+                    "Subdirektorat Contoh",
+                    "Seksi Q2",
+                    2,
+                    20,
+                ),
+            )
+
+        with patch.object(service, "engine", employee_engine):
+            employees = service._lookup_employee_records({NIP})
+            q2_employees = service._lookup_employee_records(
+                {NIP},
+                employee_source="dt_employee_q2_2026",
+            )
+
+        self.assertEqual(employees[NIP]["unit_eselon_iv"], "Seksi Utama")
+        self.assertEqual(employees[NIP]["nama"], "Pegawai Utama")
+        self.assertEqual(employees[NIP]["eselon"], "IV")
+        self.assertEqual(employees[NIP]["unit_kerja_id"], 10)
+        self.assertEqual(q2_employees[NIP]["nama"], "Pegawai Q2")
+        self.assertEqual(q2_employees[NIP]["unit_eselon_iv"], "Seksi Q2")
+        self.assertEqual(q2_employees[NIP]["eselon"], "III")
+        self.assertEqual(q2_employees[NIP]["unit_kerja_id"], 20)
+
+    def test_employee_lookup_rejects_unallowlisted_reference_source(self) -> None:
+        self.employee_lookup_patcher.stop()
+        with self.assertRaisesRegex(ValueError, "Employee source"):
+            service._lookup_employee_records({NIP}, employee_source="dt_employee")
+
+    def test_full_dataset_replacement_uses_selected_employee_source(self) -> None:
+        q2_employee = {
+            NIP: {
+                **EMPLOYEE[NIP],
+                "nama": "Pegawai Q2 Referensi",
+                "unit_eselon_ii": "Direktorat Q2",
+                "unit_eselon_iii": "Subdirektorat Q2",
+                "unit_eselon_iv": "Seksi Q2",
+            }
+        }
+        with patch.object(
+            service,
+            "_lookup_employee_records",
+            return_value=q2_employee,
+        ) as employee_lookup:
+            result = service.replace_full_upload(
+                self.session,
+                full_csv(),
+                "Q2-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+                employee_source="dt_employee_q2_2026",
+            )
+
+        self.assertEqual(result["period"], "Q2-2026")
+        employee_lookup.assert_called_once_with(
+            {NIP},
+            employee_source="dt_employee_q2_2026",
+        )
+        record = self.get_record(NIP, "Q2-2026")
+        self.assertEqual(record.nama, "Pegawai Q2 Referensi")
+        self.assertEqual(record.unit_eselon_ii, "Direktorat Q2")
+        dashboard = service.get_dashboard(self.session, None, [], "Q2-2026")
+        self.assertEqual(dashboard["units"][0]["label"], "Direktorat Q2")
+        records = service.get_records(
+            self.session,
+            page=1,
+            page_size=50,
+            search="",
+            period="Q2-2026",
+        )
+        self.assertEqual(records["records"][0]["nama"], "Pegawai Q2 Referensi")
+        self.assertEqual(records["records"][0]["unit_eselon_ii"], "Direktorat Q2")
 
     def test_positive_penalty_magnitudes_are_normalized_and_reported(self) -> None:
         content = full_csv(
@@ -226,7 +585,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             adjustment_xlsx([[NIP, -3, None, -4, -1]]),
             "Q3-2026",
         )
-        record = self.session.get(PerformanceKinerjaRecord, NIP)
+        record = self.get_record(NIP, "Q3-2026")
         self.assertEqual(record.nko, 90)
         self.assertEqual(record.nkp_awal, 85)
         self.assertEqual(record.nilai_hukuman_disiplin, -3)
@@ -242,7 +601,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(validation["normalized_penalty_count"], 3)
         result = service.replace_adjustments(self.session, content, "Q3-2026")
         self.assertEqual(result["normalized_penalty_count"], 3)
-        record = self.session.get(PerformanceKinerjaRecord, NIP)
+        record = self.get_record(NIP, "Q3-2026")
         self.assertEqual(record.nilai_hukuman_disiplin, -3)
         self.assertEqual(record.nilai_dampak_pelanggaran_disiplin, -5)
         self.assertEqual(record.nilai_dampak_perilaku, -6)
@@ -250,7 +609,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
     def test_adjustment_unknown_duplicate_and_wrong_period_do_not_change_rows(self) -> None:
         self.import_active_dataset()
-        original = self.session.get(PerformanceKinerjaRecord, NIP).nkp_akhir
+        original = self.get_record(NIP, "Q3-2026").nkp_akhir
         with self.assertRaisesRegex(ValueError, "Unknown NIPs"):
             service.replace_adjustments(
                 self.session,
@@ -260,13 +619,13 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         duplicate_file = adjustment_xlsx([[NIP, -3, None, None, None], [NIP, -4, None, None, None]])
         with self.assertRaisesRegex(ValueError, "Duplicate NIPs"):
             service.replace_adjustments(self.session, duplicate_file, "Q3-2026")
-        with self.assertRaisesRegex(ValueError, "active dataset is Q3-2026"):
+        with self.assertRaisesRegex(ValueError, "There is no performance dataset for Q4-2026"):
             service.replace_adjustments(
                 self.session,
                 adjustment_xlsx([[NIP, -3, None, None, None]]),
                 "Q4-2026",
             )
-        self.assertEqual(self.session.get(PerformanceKinerjaRecord, NIP).nkp_akhir, original)
+        self.assertEqual(self.get_record(NIP, "Q3-2026").nkp_akhir, original)
 
     def test_template_stores_nip_as_text(self) -> None:
         workbook = load_workbook(BytesIO(service.create_adjustment_template()))
@@ -278,10 +637,11 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         self.assertEqual(worksheet["A2"].number_format, "@")
 
-    def test_analysis_groups_by_live_employee_data_and_counts_nonzero_penalties(self) -> None:
+    def test_analysis_uses_employee_reference_snapshot_and_counts_nonzero_penalties(self) -> None:
         self.import_active_dataset()
-        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
-            result = service.get_analysis(self.session, "unit_eselon_ii")
+        self.employee_lookup.reset_mock()
+        result = service.get_analysis(self.session, "unit_eselon_ii")
+        self.employee_lookup.assert_not_called()
         self.assertEqual(result["dataset"]["period"], "Q3-2026")
         self.assertEqual(result["groups"][0]["label"], "Direktorat Contoh")
         self.assertEqual(result["groups"][0]["employee_count"], 1)
@@ -323,7 +683,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     nilai_koreksi=service.Decimal(value),
                 )
             )
-        self.session.get(PerformanceKinerjaRecord, NIP).nilai_koreksi = service.Decimal(values[0])
+        self.get_record(NIP, "Q3-2026").nilai_koreksi = service.Decimal(values[0])
         result = service.get_analysis(self.session, "overall")
         correction = result["groups"][0]["correction"]
         self.assertEqual(correction["count"], 6)
@@ -333,11 +693,45 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(correction["minimum"], -2)
         self.assertEqual(correction["maximum"], 3)
 
+    def test_units_default_order_uses_unit_kerja_id_with_missing_ids_last(self) -> None:
+        self.import_active_dataset()
+        self.session.add_all(
+            [
+                PerformanceKinerjaRecord(
+                    nip="123456789012345679",
+                    dataset_id=1,
+                    nama="Pegawai ID Rendah",
+                    unit_eselon_ii="Unit ID Rendah",
+                    unit_kerja_id=2,
+                ),
+                PerformanceKinerjaRecord(
+                    nip="123456789012345680",
+                    dataset_id=1,
+                    nama="Pegawai tanpa ID",
+                    unit_eselon_ii="Unit tanpa ID",
+                ),
+            ]
+        )
+        self.session.commit()
+
+        with patch.object(service, "_lookup_employee_records", return_value={}):
+            dashboard = service.get_dashboard(self.session, None, [], "Q3-2026")
+
+        self.assertEqual(
+            [unit["label"] for unit in dashboard["units"]],
+            ["Unit ID Rendah", "Direktorat Contoh", "Unit tanpa ID"],
+        )
+        self.assertEqual(
+            [unit["unit_kerja_id"] for unit in dashboard["units"]],
+            [2, 10, None],
+        )
+
     def test_dashboard_applies_overview_filters_and_expands_unit_metrics(self) -> None:
         self.import_active_dataset()
-        first = self.session.get(PerformanceKinerjaRecord, NIP)
+        first = self.get_record(NIP, "Q3-2026")
         first.unit_eselon_ii = "Unit A"
         first.unit_eselon_iii = "Unit A - III"
+        first.unit_eselon_iv = "Unit A - IV"
         first.eselon = "III"
         first.npk = service.Decimal("100")
         first.nhk = service.Decimal("90")
@@ -352,6 +746,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     nama="Pegawai A4",
                     unit_eselon_ii="Unit A",
                     unit_eselon_iii="Unit A - IV",
+                    unit_eselon_iv="Unit A - IV - IV",
                     eselon="IV",
                     nhk=service.Decimal("70"),
                     npk=service.Decimal("80"),
@@ -393,14 +788,29 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             {child["label"] for child in unit_a["children"]},
             {"Unit A - III", "Unit A - IV"},
         )
+        unit_a_iii = next(
+            child for child in unit_a["children"] if child["label"] == "Unit A - III"
+        )
+        self.assertEqual(
+            [child["label"] for child in unit_a_iii["children"]],
+            ["Unit A - IV"],
+        )
+        unit_a_iv = next(
+            child for child in unit_a["children"] if child["label"] == "Unit A - IV"
+        )
+        self.assertEqual(
+            [child["label"] for child in unit_a_iv["children"]],
+            ["Unit A - IV - IV"],
+        )
         unit_b = next(unit for unit in result["units"] if unit["label"] == "Unit B")
         self.assertEqual(unit_b["status_gap_count"], 1)
 
     def test_get_records_filters_and_sorts_across_the_dataset(self) -> None:
         self.import_active_dataset()
-        first = self.session.get(PerformanceKinerjaRecord, NIP)
+        first = self.get_record(NIP, "Q3-2026")
         first.nama = "Zelda"
         first.unit_eselon_ii = "Unit A"
+        first.unit_eselon_iv = "Seksi A"
         first.nhk = service.Decimal("100")
         self.session.add_all(
             [
@@ -409,6 +819,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     dataset_id=1,
                     nama="Alpha",
                     unit_eselon_ii="Unit A",
+                    unit_eselon_iv="Seksi A",
                     nhk=service.Decimal("110"),
                 ),
                 PerformanceKinerjaRecord(
@@ -416,6 +827,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     dataset_id=1,
                     nama="Beta",
                     unit_eselon_ii="Unit B",
+                    unit_eselon_iv="Seksi B",
                     nhk=service.Decimal("120"),
                 ),
             ]
@@ -442,6 +854,15 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 sort_by="nama",
                 sort_order="asc",
             )
+            filtered_by_unit_iv = service.get_records(
+                self.session,
+                page=1,
+                page_size=10,
+                search="",
+                filters={"unit_eselon_iv": "Seksi A"},
+                sort_by="nama",
+                sort_order="asc",
+            )
 
         self.assertEqual(descending["total"], 2)
         self.assertEqual(descending["records"][0]["nip"], "123456789012345679")
@@ -449,24 +870,24 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             [record["nama"] for record in ascending["records"]],
             ["Alpha", "Zelda"],
         )
+        self.assertEqual(filtered_by_unit_iv["total"], 2)
+        self.assertEqual(filtered_by_unit_iv["filter_options"]["unit_eselon_iv"], ["Seksi A", "Seksi B"])
 
-    def test_dashboard_cache_reuses_employee_lookup_and_refreshes_after_adjustments(self) -> None:
-        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE) as lookup:
-            self.import_active_dataset()
-            lookup.reset_mock()
+    def test_dashboard_uses_snapshots_and_refreshes_after_adjustments(self) -> None:
+        self.import_active_dataset()
+        self.employee_lookup.reset_mock()
 
-            service.get_dashboard(self.session, None, [])
-            service.get_dashboard(self.session, None, ["III"])
-            self.assertEqual(lookup.call_count, 1)
+        service.get_dashboard(self.session, None, [])
+        service.get_dashboard(self.session, None, ["III"])
+        self.employee_lookup.assert_not_called()
 
-            lookup.reset_mock()
-            service.replace_adjustments(
-                self.session,
-                adjustment_xlsx([[NIP, -3, None, None, None]]),
-                "Q3-2026",
-            )
-            service.get_dashboard(self.session, None, [])
-            self.assertEqual(lookup.call_count, 1)
+        service.replace_adjustments(
+            self.session,
+            adjustment_xlsx([[NIP, -3, None, None, None]]),
+            "Q3-2026",
+        )
+        service.get_dashboard(self.session, None, [])
+        self.employee_lookup.assert_not_called()
 
     def test_excel_exports_include_unit_children_and_search_all_matching_records(self) -> None:
         second_nip = "123456789012345679"
@@ -475,11 +896,13 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             NIP: {
                 "unit_eselon_ii": "Unit A",
                 "unit_eselon_iii": "Subunit A",
+                "unit_eselon_iv": "Seksi A",
                 "eselon": "III",
             },
             second_nip: {
                 "unit_eselon_ii": "Unit A",
                 "unit_eselon_iii": "Subunit A",
+                "unit_eselon_iv": "Seksi A",
                 "eselon": "III",
             },
         }
@@ -512,15 +935,17 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         unit_sheet = unit_workbook["Unit Eselon II"]
         record_sheet = records_workbook["Daftar Pegawai"]
         filtered_sheet = filtered_workbook["Daftar Pegawai"]
-        self.assertEqual(unit_sheet.max_row, 3)
-        self.assertEqual(unit_sheet["U1"].value, "Gap Status")
+        self.assertEqual(unit_sheet.max_row, 4)
+        self.assertEqual(unit_sheet["V1"].value, "Gap Status")
         self.assertEqual(unit_sheet["A2"].value, "Unit A")
-        self.assertEqual(unit_sheet["U2"].value, 0)
+        self.assertEqual(unit_sheet["V2"].value, 0)
         self.assertEqual(unit_sheet["A3"].value, "Unit A")
         self.assertEqual(unit_sheet["B3"].value, "Subunit A")
+        self.assertEqual(unit_sheet["C4"].value, "Seksi A")
         self.assertEqual(record_sheet.max_row, 3)
         self.assertEqual(record_sheet["B2"].value, NIP)
         self.assertEqual(record_sheet["B2"].number_format, "@")
+        self.assertEqual(record_sheet["E2"].value, "Seksi A")
         self.assertEqual(record_sheet["B3"].value, second_nip)
         self.assertEqual(filtered_sheet.max_row, 2)
         self.assertEqual(filtered_sheet["B2"].value, second_nip)
@@ -830,7 +1255,11 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
             auth_level=3,
         )
         try:
-            with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+            with patch.object(
+                service,
+                "_lookup_employee_records",
+                return_value=EMPLOYEE,
+            ) as employee_lookup:
                 response = TestClient(app).post(
                     "/performance/full-data/validate",
                     data={"period": "Q3-2026"},
@@ -848,6 +1277,39 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
                 "unidentified_count": 0,
                 "normalized_penalty_count": 0,
             },
+        )
+        employee_lookup.assert_called_once_with(
+            {NIP},
+            employee_source="fetch_pbnopen",
+        )
+
+    def test_super_admin_can_validate_full_data_with_q2_reference_source(self) -> None:
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="root",
+            name="Root",
+            auth_level=3,
+        )
+        try:
+            with patch.object(
+                service,
+                "_lookup_employee_records",
+                return_value=EMPLOYEE,
+            ) as employee_lookup:
+                response = TestClient(app).post(
+                    "/performance/full-data/validate",
+                    data={
+                        "period": "Q2-2026",
+                        "employee_source": "dt_employee_q2_2026",
+                    },
+                    files={"file": ("data.csv", full_csv(), "text/csv")},
+                )
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(response.status_code, 200)
+        employee_lookup.assert_called_once_with(
+            {NIP},
+            employee_source="dt_employee_q2_2026",
         )
 
 

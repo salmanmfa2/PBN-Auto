@@ -15,6 +15,7 @@ from app.schemas.performance_kinerja import (
     PerformanceInsightRead,
     PerformanceInsightUpdate,
     PerformanceRecordsResponse,
+    PerformanceEmployeeSource,
     PerformanceUploadValidation,
 )
 from app.services import performance_kinerja_service as service
@@ -63,10 +64,11 @@ def _parse_record_filters(value: str) -> dict[str, str]:
 @router.get("/analysis", response_model=PerformanceAnalysisResponse)
 def get_performance_analysis(
     group_by: str = "overall",
+    period: str | None = Query(default=None, max_length=7),
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.get_analysis(db, group_by)
+        return service.get_analysis(db, group_by, period)
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
@@ -77,10 +79,13 @@ def get_performance_analysis(
 def get_performance_dashboard(
     unit_eselon_ii: str | None = None,
     eselon: list[str] = Query(default=[]),
+    period: str | None = Query(default=None, max_length=7),
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.get_dashboard(db, unit_eselon_ii, eselon)
+        return service.get_dashboard(db, unit_eselon_ii, eselon, period)
+    except ValueError as exc:
+        raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
         raise _database_error("Could not load employee performance dashboard.") from exc
 
@@ -118,6 +123,7 @@ def get_performance_records(
     filters: str = Query(default="{}", max_length=4000),
     sort_by: str = Query(default="nama", max_length=80),
     sort_order: str = Query(default="asc", max_length=4),
+    period: str | None = Query(default=None, max_length=7),
     db: Session = Depends(get_history_db),
 ):
     try:
@@ -129,6 +135,7 @@ def get_performance_records(
             _parse_record_filters(filters),
             sort_by,
             sort_order,
+            period,
         )
     except ValueError as exc:
         raise _validation_error(exc) from exc
@@ -137,9 +144,14 @@ def get_performance_records(
 
 
 @router.get("/exports/unit-eselon-ii")
-def download_unit_analysis(db: Session = Depends(get_history_db)):
+def download_unit_analysis(
+    period: str | None = Query(default=None, max_length=7),
+    db: Session = Depends(get_history_db),
+):
     try:
-        content = service.create_unit_analysis_workbook(db)
+        content = service.create_unit_analysis_workbook(db, period)
+    except ValueError as exc:
+        raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
         raise _database_error("Could not export the Unit Eselon II analysis.") from exc
     return StreamingResponse(
@@ -155,6 +167,7 @@ def download_performance_records(
     filters: str = Query(default="{}", max_length=4000),
     sort_by: str = Query(default="nama", max_length=80),
     sort_order: str = Query(default="asc", max_length=4),
+    period: str | None = Query(default=None, max_length=7),
     db: Session = Depends(get_history_db),
 ):
     try:
@@ -164,6 +177,7 @@ def download_performance_records(
             _parse_record_filters(filters),
             sort_by,
             sort_order,
+            period,
         )
     except ValueError as exc:
         raise _validation_error(exc) from exc
@@ -180,11 +194,12 @@ def download_performance_records(
 async def validate_full_performance_data(
     file: UploadFile = File(...),
     period: str = Form(...),
+    employee_source: PerformanceEmployeeSource = Form(default="fetch_pbnopen"),
     _: User = Depends(get_super_admin),
 ):
     content = await _read_upload(file, ".csv")
     try:
-        return service.validate_full_upload(content, period)
+        return service.validate_full_upload(content, period, employee_source)
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
@@ -197,6 +212,7 @@ async def validate_full_performance_data(
 async def replace_full_performance_data(
     file: UploadFile = File(...),
     period: str = Form(...),
+    employee_source: PerformanceEmployeeSource = Form(default="fetch_pbnopen"),
     user: User = Depends(get_super_admin),
     db: Session = Depends(get_history_db),
 ):
@@ -208,11 +224,12 @@ async def replace_full_performance_data(
             period,
             uploaded_by_user=user.user,
             uploaded_by_name=user.name,
+            employee_source=employee_source,
         )
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
-        raise _database_error("Could not replace the active performance dataset.") from exc
+        raise _database_error("Could not replace the performance dataset for that period.") from exc
 
 
 @router.get("/adjustments/template")

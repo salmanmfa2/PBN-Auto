@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS plt_plh_monitoring_records (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Older installations may still have the unused plt_plh_edit_password table.
--- Current write access is controlled by auth_level 2 or 3 in the users table.
+-- Current write access is controlled by auth_level 2, 3, or 4 in the users table.
 
 -- Tenure and status are derived from TMT at query time so they stay current.
 -- Boundaries: under 5 completed months = Aktif; 5 to under 6 = Mendekati 6 Bulan;

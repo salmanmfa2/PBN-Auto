@@ -61,7 +61,8 @@ export interface PltPlhEmployeeOption {
   jabatan_definitif_pengganti: string;
 }
 
-export type AuthLevel = 1 | 2 | 3;
+export type AuthLevel = 1 | 2 | 3 | 4;
+export type AssignableAuthLevel = AuthLevel;
 
 export interface AuthUser {
   user: string;
@@ -122,12 +123,12 @@ export interface AuthRegistrationPayload {
 }
 
 export interface AdminUserPayload extends AuthRegistrationPayload {
-  auth_level: AuthLevel;
+  auth_level: AssignableAuthLevel;
 }
 
 export interface AdminUserUpdatePayload {
   name: string;
-  auth_level: AuthLevel;
+  auth_level: AssignableAuthLevel;
   password?: string;
   is_active: boolean;
 }
@@ -144,6 +145,38 @@ export interface PbnOpenDataSourceSyncStatus {
   synced_by_name: string | null;
 }
 
+export type DatabaseMaintenanceOperation = 'replace' | 'sync' | 'reference';
+
+export interface DatabaseMaintenanceTarget {
+  key: string;
+  table_name: string;
+  label: string;
+  operation: DatabaseMaintenanceOperation;
+  source_table: string | null;
+}
+
+export interface DatabaseMaintenancePreview {
+  target_key: string;
+  table_name: string;
+  operation: DatabaseMaintenanceOperation;
+  filename?: string;
+  source_table?: string | null;
+  columns?: string[];
+  row_count: number;
+  current_row_count: number;
+  inserted_count: number;
+  updated_count: number;
+  deleted_count: number;
+}
+
+export interface DatabaseMaintenanceResult {
+  message?: string;
+  row_count: number;
+  inserted_count: number;
+  updated_count: number;
+  deleted_count: number;
+}
+
 export type PerformanceGroupBy = 'overall' | 'unit_eselon_ii' | 'eselon_level' | 'unit_and_eselon';
 
 export interface PerformanceDatasetStatus {
@@ -153,6 +186,13 @@ export interface PerformanceDatasetStatus {
   uploaded_by_user: string;
   uploaded_by_name: string;
 }
+
+export interface PerformancePeriodOption {
+  period: string;
+  row_count: number;
+}
+
+export type PerformanceEmployeeSource = 'fetch_pbnopen' | 'dt_employee_q2_2026';
 
 export interface PerformanceUploadValidation {
   period: string;
@@ -177,6 +217,13 @@ export interface PerformanceCorrectionStats {
   maximum: number | null;
 }
 
+export interface PerformanceMetricComparison {
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+  percentage_change: number | null;
+}
+
 export interface PerformanceAnalysisGroup {
   label: string;
   employee_count: number;
@@ -197,6 +244,9 @@ export interface PerformanceAnalysisResponse {
 
 export interface PerformanceUnitMetrics {
   label: string;
+  unit_kerja_id: number | null;
+  nkp_awal_status_counts: Record<string, number>;
+  nkp_akhir_status_counts: Record<string, number>;
   employee_count: number;
   average_npk: number | null;
   average_nhk: number | null;
@@ -211,9 +261,14 @@ export interface PerformanceUnitMetrics {
   nkp_akhir_sangat_istimewa_count: number;
   nkp_akhir_sangat_istimewa_percentage: number;
   status_gap_count: number;
+  comparison: Record<string, PerformanceMetricComparison>;
 }
 
-export type PerformanceUnitEselonIIISummary = PerformanceUnitMetrics;
+export type PerformanceUnitEselonIVSummary = PerformanceUnitMetrics;
+
+export interface PerformanceUnitEselonIIISummary extends PerformanceUnitMetrics {
+  children: PerformanceUnitEselonIVSummary[];
+}
 
 export interface PerformanceUnitSummary extends PerformanceUnitMetrics {
   children: PerformanceUnitEselonIIISummary[];
@@ -221,10 +276,14 @@ export interface PerformanceUnitSummary extends PerformanceUnitMetrics {
 
 export interface PerformanceDashboardResponse {
   dataset: PerformanceDatasetStatus | null;
+  previous_period: string | null;
+  available_periods: PerformancePeriodOption[];
   total_employees: number;
   unit_eselon_ii_options: string[];
   eselon_options: string[];
   overview: PerformanceAnalysisGroup;
+  overview_previous: PerformanceAnalysisGroup | null;
+  overview_comparison: Record<string, PerformanceMetricComparison>;
   units: PerformanceUnitSummary[];
 }
 
@@ -239,6 +298,7 @@ export interface PerformanceRecord {
   nip: string;
   unit_eselon_ii: string;
   unit_eselon_iii: string;
+  unit_eselon_iv: string;
   eselon: string;
   nhk: number | null;
   npk: number | null;
@@ -266,6 +326,8 @@ export interface PerformanceRecordsResponse {
   page_size: number;
   total: number;
   records: PerformanceRecord[];
+  filter_options: Partial<Record<keyof PerformanceRecord, string[]>>;
+  numeric_ranges: Partial<Record<keyof PerformanceRecord, [number | null, number | null]>>;
 }
 
 export interface CleaningMethodRecommendation {

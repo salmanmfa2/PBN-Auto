@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Integer, Numeric, String, Text
+from sqlalchemy import DateTime, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.history_db import Base
@@ -9,6 +9,9 @@ from app.history_db import Base
 
 class PerformanceKinerjaDataset(Base):
     __tablename__ = "performance_kinerja_datasets"
+    __table_args__ = (
+        UniqueConstraint("period", name="uq_performance_kinerja_dataset_period"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     period: Mapped[str] = mapped_column(String(7), nullable=False)
@@ -25,12 +28,11 @@ class PerformanceKinerjaDataset(Base):
 class PerformanceKinerjaRecord(Base):
     __tablename__ = "performance_kinerja_records"
 
-    nip: Mapped[str] = mapped_column(String(18), primary_key=True)
     dataset_id: Mapped[int] = mapped_column(
         Integer,
-        nullable=False,
-        index=True,
+        primary_key=True,
     )
+    nip: Mapped[str] = mapped_column(String(18), primary_key=True)
     nama: Mapped[str] = mapped_column(Text, nullable=False)
     unit_eselon_ii: Mapped[str] = mapped_column(
         String(255),
@@ -50,6 +52,13 @@ class PerformanceKinerjaRecord(Base):
         default="Unidentified",
         server_default="Unidentified",
     )
+    unit_eselon_iv: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="Unidentified",
+        server_default="Unidentified",
+    )
+    unit_kerja_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     nhk: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     npk: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     nhk_kalibrasi: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)

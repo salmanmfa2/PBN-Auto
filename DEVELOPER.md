@@ -3,15 +3,19 @@ Developer Guide
 This file helps new contributors (especially juniors) understand where to make changes, how the project is organized, and common development tasks.
 
 **Release scope**
-- The current web release is **1.2.1**. See [web update notes](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), [web update 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md), and [desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
+- The current web update is **1.4.0**. See [web update notes 1.4.0](./Update%20Notes/Update%20Notes%201.4.0%20Web.md), [web update notes 1.3.0](./Update%20Notes/Update%20Notes%201.3.0%20Web.md), [web update notes 1.2.1](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), and [desktop update notes](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
 - Desktop main navigation is limited to PBN Analytics and Insight Hub and has no login system. The additional web menus and account workflow are web-only.
-- Generate ND Undangan Pelantikan is implemented for signed-in web users. Analisis Kinerja DJPb is publicly readable, including Guest mode; only Super Admins can upload or adjust its active quarterly dataset. Bahan Pendukung MPK and Simulasi Mutasi remain web placeholders; version **2.0** is the planned milestone for those workflows.
+- Generate ND Undangan Pelantikan is available to signed-in web users; its all-sheets workflow is the primary route, and document downloads can be selected by unit and modality. Analisis Kinerja DJPb is publicly readable, including Guest mode; Super Admins and the reserved God User can upload or adjust data. It retains multiple quarters, with per-quarter replacement and prior-quarter comparisons. Bahan Pendukung MPK and Simulasi Mutasi remain web placeholders; version **2.0** is the planned milestone for those workflows.
 
 **Overview**
 - **Purpose**: A data management platform for PBN dataset cleaning and analytics. Backend is FastAPI (Python), frontend is React 19 + Vite with React Router (TypeScript).
 - **Architecture**: Modular page-based routing using React Router v7. Each major feature lives in its own route under `frontend/src/pages/` with shared hooks and services.
 
 **Quick start (local)**
+- First-time Windows setup:
+  - Install XAMPP and start its local MySQL service. Prepare a current `pbncleaner` schema/reference-data dump with the `fetch_pbnopen` and `dt_employee` table definitions but no employee rows, populated reference tables, and `ref_unit_kerja.city` / `prov`. The dump is supplied separately and is not stored in the repository.
+  - Run `setup-developer.bat` once. It checks/installs Python 3.12 and Node.js 22.12+, installs backend/frontend dependencies, builds the frontend, asks before importing into the local `pbncleaner` database, and writes the Git-ignored `backend/.env`.
+  - The setup does not install XAMPP or create an Admin account. After setup, run `run-app.bat` and create the `salmanmfa` account as a Super Admin; startup promotes it to Level 4. Database maintenance is available to Level 4 accounts. Only Level 4 administrators can assign or manage Level 4 accounts. Imports can replace local database contents; never target production.
 - Backend:
   - Create and activate a Python virtualenv in `backend/`.
   - Install dependencies: `pip install -r requirements.txt`.
@@ -19,7 +23,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - Health: `GET http://localhost:8000/health`.
 - Frontend:
   - From `frontend/`: `npm install` then `npm run dev` for development or `npm run build` for production build.
-  - Routes include `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, `/undangan-pelantikan`, and `/undangan-pelantikan-experimental`.
+  - Routes include `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/analisis-kinerja`, `/manajemen-plt-plh`, and `/undangan-pelantikan`. The old `/undangan-pelantikan-experimental` paths redirect to the primary workflow.
 - One-click local launch:
   - Double-click `run-app-testing.bat` from the repo root to start local backend and Vite frontend servers on separate ports.
   - The development backend uses the same database and dataset storage configured for the LAN app. Development writes and startup schema migrations are shared with the live app; use care when testing changes.
@@ -39,20 +43,24 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/api/insights_beta.py` — database-backed Insight Hub Beta endpoints for `pbncleaner.fetch_pbnopen`.
   - `app/api/plt_plh.py` — Plt./Plh. monitoring API, including the Admin-only PBN Open employee search.
   - `app/api/pelantikan_agenda.py` — owner-scoped agenda, roster upload/matching, participant choices, and ZIP generation API.
+  - `app/api/performance_kinerja.py` — public performance dashboard/records/exports and role-protected dataset upload/adjustment endpoints.
   - `app/api/auth.py` — login, public registration, session, user-preference, and admin-account endpoints.
   - `app/api/feedback.py` — authenticated feedback submission and Admin-only feedback management.
-  - The `auth.py` Admin router exposes Super Admin-only CSV validation and replacement endpoints for `pbncleaner.fetch_pbnopen`.
+  - The `auth.py` Admin router exposes Level 4-only, allowlisted database preview/apply/sync endpoints; only Level 4 administrators can assign Level 4 through account management.
   - `app/api/chat.py` — authenticated chat endpoint; provider credentials remain backend-only.
   - `app/services/chat_service.py` — sends a concise, code-maintained capability summary to Groq on each request; it does not reread README or developer documentation at runtime. Keep that summary aligned with verified app behavior when features change.
   - `app/services/dataset_service.py` — core DataFrame logic. Routes to programmatic cleaners or parses legacy text rule files.
-  - `app/services/pbn_dashboard_service.py` — validates cleaned dashboard columns, applies filters, calculates employee totals and chart distributions.
+  - `app/repositories/pbn_dashboard_repository.py` — isolates reads from the shared employee-source table.
+  - `app/services/pbn_dashboard_service.py` — validates cleaned dashboard columns, applies filters, and calculates employee totals and chart distributions using the repository.
   - Insight Hub Beta reuses the same dashboard service calculations and response schemas; it reads `pbncleaner.fetch_pbnopen` from the configured SQLAlchemy engine.
-  - `app/services/pbnopen_import_service.py` validates exact CSV column names and replaces table rows in a database transaction.
+  - `app/services/performance_kinerja_service.py`, `app/models/performance_kinerja.py`, and `app/schemas/performance_kinerja.py` — quarter-scoped performance persistence, queries, comparisons, caching, and API types.
+  - `app/services/pbnopen_import_service.py` — allowlisted source replacement, key-preserving reference-table maintenance, and NIP-based employee synchronization, with preview and transactional apply paths.
   - `app/services/auth_service.py` — account/session lifecycle, role invariants, and persisted appearance preferences.
+  - `app/history_db.py` — startup migration promotes `salmanmfa` to Level 4 and updates the generic 1–4 role constraint; the SQLite migration preserves related session/preference rows.
   - `app/cleaners/` — programmatic cleaner modules:
     - `pbn.py`, `pbn_edu.py`, `pbn_edu_hb.py`, `sitasi_esiii.py`, `sitasi_esiv.py` — each returns a cleaning config dict.
   - `app/storage/dataset_store.py` — in-memory dataset store (UUID -> sheets). Note: data is ephemeral (restarts clear data).
-  - `app/history_db.py` — SQLAlchemy MySQL connection/session for cleaning history.
+  - `app/history_db.py` — shared SQLAlchemy MySQL/MariaDB engine and session, model registration, and startup schema migrations.
   - `app/models/auth.py` — account, session, and per-user preference models.
   - `app/models/cleaning_history.py` — SQLAlchemy model for cleaning history table.
   - `app/models/plt_plh.py` and `app/services/plt_plh_service.py` — monitoring records, derived tenure/status, Excel export, and replacement-employee lookup.
@@ -72,13 +80,13 @@ This file helps new contributors (especially juniors) understand where to make c
     - `LandingPage.tsx` — landing page with feature selector cards (`/` route).
     - `AnalyticsPage.tsx` — PBN dataset cleaning interface (`/pbn-analytics` route).
     - `InsightHubPage.tsx` — PBN Open + Edu + HB interactive dashboard (`/insights` route).
-    - `LoginPage.tsx` / `AdminPage.tsx` — web authentication entry, feedback inbox, and Super Admin account workspace.
+    - `LoginPage.tsx` / `AdminPage.tsx` — web authentication entry, feedback inbox, Super Admin account workspace, and the God User database-maintenance dialog.
     - `PltPlhManagementPage.tsx` — web-only monitoring UI.
     - `PelantikanAgendaPage.tsx` — web-only agenda, participant preview, and document-generation UI.
   - `src/App.tsx` — React Router routes, session gate, role gate, and shared toolbar/chat/feedback widget mounting.
   - `frontend/index.html` — browser document title (`MPK Workspace`).
   - `src/contexts/AuthContext.tsx` — authentication, Guest mode, and session state.
-  - `src/components/AppToolbar.tsx` — draggable clock that snaps to the nearest screen edge on release/resize, collapsible tools, theme menu, and toolbar dialogs.
+  - `src/components/AppToolbar.tsx` — draggable clock, collapsible tools, theme menu, and toolbar dialogs. The in-app Patch Notes content and default selected version are maintained in `PATCH_NOTES` and `selectedPatchVersion` here.
   - `src/components/ChatWidget.tsx` — authenticated Groq chat UI and Markdown rendering.
   - `src/components/FeedbackWidget.tsx` — compact menu-tagged feedback form beside Groq chat.
   - `src/main.tsx` — app entry point wrapping App with `<BrowserRouter>`.
@@ -86,9 +94,17 @@ This file helps new contributors (especially juniors) understand where to make c
   - `src/services/api.ts` — HTTP wrapper functions to backend endpoints.
   - `src/features/cleaning/DataTable.tsx` — table viewer; handles paging, filtering, sorting.
   - `src/pages/InsightHubPage.tsx` — dashboard controls and distribution charts; receives the current dataset ID and sheet name in the URL.
+  - `src/pages/PerformanceAnalysisPage.tsx` — quarter selector outside the Overview/Unit Eselon II/Daftar Pegawai tabs, period-aware views, filters, and Super Admin data-management dialog.
 
 - `config.json` — centralized deployment config; `host: "auto"` enables dynamic LAN address discovery, while ports and loopback CORS origins remain configurable.
 - `resolve-network-config.ps1` — shared host resolver used by network launch/deployment scripts; it prefers active Wi-Fi and computes the corresponding frontend CORS origin.
+
+**Admin database maintenance (web)**
+- The existing Admin database popup is retained. Level 3 Super Admins can open it but see `You have no authority to view this page.`; API routes independently require Level 4 for database operations. Level 3 retains its other Super Admin capabilities.
+- Level 4 is a role, not a username restriction. `init_history_db()` promotes the `salmanmfa` account and updates the database check constraint at startup. Level 4 has Super Admin capabilities plus database maintenance; only a Level 4 administrator can assign or manage Level 4 accounts. Back up shared MySQL/MariaDB data and test migrations on a copy before deployment.
+- The backend catalog is an allowlist: replace `fetch_pbnopen` or `fetch_pbnopen_q2_2026`; sync `dt_employee` only from `fetch_pbnopen` or `dt_employee_q2_2026` only from `fetch_pbnopen_q2_2026`; update the five shared `ref_*` tables by primary ID. The browser never supplies raw schema/table names.
+- CSV previews validate the complete column set and report row counts before apply. Source replacement and reference updates are transactional. Reference IDs remain stable, and removing an ID still used by either employee table is rejected. Employee sync maps source labels through the shared references, preserves `employee_id` for matching NIPs, inserts new NIPs, and removes obsolete employees; an empty source is rejected to avoid accidental table clearing.
+- Focused checks: from `backend/`, run `python -m unittest discover -s tests -p 'test_pbnopen_import.py'`, `python -m unittest discover -s tests -p 'test_auth_service.py'`, and `python -m unittest discover -s tests -p 'test_auth_migration.py'`. The migration test covers SQLite; MySQL/MariaDB migration behavior still requires validation against a database copy.
 
 **Auto-clean rules — how they work & how to add modes**
 - Rule files live under `backend/Cleaning Logic/`. Each rule file is a small plain-text description (examples present in repo). Supported directives (parser understands these):
@@ -155,6 +171,23 @@ This file helps new contributors (especially juniors) understand where to make c
 - Required output columns are `Sex`, `Usia (th.)`, `TMT Jabatan`, `Eselon`, `Pendidikan Terakhir (Short)`, `Rumpun Pdd Terakhir`, `Region Homebase`, `Unit Eselon II`, and `Agama`. Header matching ignores case and punctuation.
 - PBN Open + Edu + HB cleaning removes apostrophe and backtick characters from string cell values, then converts the eight TMT fields (`TMT JF Keterampilan`, `TMT JF Keahlian`, `TMT JF Ahli Muda`, `TMT JF Ahli Madya`, `TMT Es4`, `TMT Es3`, `TMT Es2`, and `TMT Jabatan`) to datetime values. Unparseable non-empty date values are preserved and reported in the cleaning response/UI. The dashboard calculates tenure from `TMT Jabatan`; rows with missing age/TMT are retained for the full-range view and excluded if that range is narrowed.
 - The popup displays `index`, `Nama`, `Eselon`, `Jabatan`, `Pendidikan Terakhir (Th.)`, `Jurusan`, and `Universitas/Sekolah Tinggi`; `Pendidikan Terakhir (Short)` is used if the requested education label is not present.
+- Database reads are isolated in `app/repositories/pbn_dashboard_repository.py`; keep SQL/source access there and dashboard filtering/aggregation in `pbn_dashboard_service.py`. Insight Hub and Insight Hub Beta share the service behavior.
+
+## Analisis Kinerja DJPb
+
+- The top-level period selector is separate from the three analysis tabs (Overview, Unit Eselon II, and Daftar Pegawai). The latest available quarter is selected by default; dashboard, records, filters, and exports follow the selected quarter.
+- Each period is stored as a separate dataset. Uploading an already-present quarter replaces only that quarter; other periods remain available. Record identity is `(dataset_id, nip)`, and each period is unique in `performance_kinerja_datasets`.
+- The Unit Eselon II comparison uses only the immediately preceding calendar quarter (including Q4-to-Q1 year rollover). If that exact quarter is absent, no comparison is shown. Comparison details are opened from the unit row or the whole-dataset comparison button and include current/prior values, deltas, percentage changes where meaningful, and NKP status distributions. Percentage changes are bold, red for negative values, and green for positive values. The dialog's print button opens the browser print flow and print styles isolate the report for saving as PDF.
+- Unit rows default to ascending `unit_kerja_id` order, with missing IDs last. Numeric column headers toggle ascending/descending order, applied independently at Eselon II, III, and IV; null numeric values remain last.
+- The unit table expands from Unit Eselon II to III and IV; comparisons are available at each level. Lite View includes Unit, Pegawai, Rata-rata NPK, Koreksi (+/−), Pemberian Koreksi (%), Rata-rata NKP Akhir, NKP Akhir Sangat Istimewa, and Bandingkan. Pemberian Koreksi (%) is the number of employees with a nonzero correction divided by unit employee count. Numeric columns can be sorted, and widths expand to use available space and can be resized with pointer or keyboard controls; widths are saved in browser local storage.
+- Full performance uploads snapshot the matched employee name, Eselon, units, and `unit_kerja_id` from the selected reference (`fetch_pbnopen` by default, or `dt_employee_q2_2026` for Q2-2026). For `fetch_pbnopen`, the Unit Kerja label is resolved through `ref_unit_kerja`; the historical table stores the ID directly. The historical table's Eselon ID is resolved through `ref_eselon`. Unit Eselon II and Daftar Pegawai read these stored snapshots, rather than looking up the current/default employee table again, so each period keeps the reference used when it was uploaded. Changing the source invalidates the current validation; uploads do not modify employee/reference tables. `Unit Eselon IV` is exposed as a dropdown filter in Daftar Pegawai and included in its export. Startup migrations add missing snapshot fields to existing records; legacy rows without a source unit ID remain at the bottom of the default unit ordering.
+- Overview status charts show both counts and percentages of the selected quarter. Employee filters use values available in the selected dataset, with numeric range filters for applicable metrics. The Super Admin upload and adjustment forms are behind a compact data-management button/dialog.
+- Overview has a `Compare` toggle that keeps values in the existing cards and charts, showing the immediately preceding calendar quarter, deltas, and percentage changes. The selected Unit Eselon II and Eselon filters apply to both quarters; if the prior quarter is unavailable, the current-period view remains and an explanatory notice is shown.
+- Dashboard calculations and filter metadata are cached per selected dataset for up to five minutes. Successful imports and adjustments invalidate the affected cached data so subsequent requests use the updated quarter.
+- `init_history_db()` upgrades the former single-active-dataset schema while preserving its existing data in its recorded period. Back up the shared MySQL/MariaDB database before first startup after deploying schema changes. The development launcher uses the configured database too, so uploads and startup migrations are not isolated from the LAN app.
+- The legacy-schema migration test uses SQLite; it has not been run against the live MySQL/MariaDB database. Test on a database copy and keep a backup before applying it to a shared installation.
+- `backend/sql/006_create_performance_kinerja.sql` describes the fresh-install schema. Existing installations are upgraded by startup migrations; do not rely on `CREATE TABLE IF NOT EXISTS` alone to migrate existing tables.
+- Focused backend test: from `backend/`, run `python -m unittest discover -s tests -p 'test_performance_kinerja.py'`. Frontend checks: from `frontend/`, run `npm run build` and `npm run lint`.
 
 ## Plt./Plh. employee lookup
 
@@ -166,13 +199,17 @@ This file helps new contributors (especially juniors) understand where to make c
 
 ## Pelantikan agenda workflow
 
-- The standard web route is `/undangan-pelantikan`; `/undangan-pelantikan/:agendaId` resumes a single-sheet agenda. `/undangan-pelantikan-experimental` and its `:agendaId` route provide configurable all, selected, isolated, or single-sheet import. Every agenda API call requires a signed-in user and checks ownership.
+- `/undangan-pelantikan` is the primary all-sheets workflow; `/undangan-pelantikan/:agendaId` resumes an existing agenda, including legacy single-sheet agendas. Old `/undangan-pelantikan-experimental` URLs redirect to the primary route. Import can combine all sheets, combine selected sheets, isolate sheets, or use one sheet. Every agenda API call requires a signed-in user and checks ownership.
 - Agenda records and participant snapshots are persisted in `pelantikan_agendas` and `pelantikan_agenda_people`. Use `backend/sql/005_create_pelantikan_agendas.sql` for fresh installations; startup adds missing workflow, import-strategy, and provenance columns on existing installations.
 - The form's level choices are Administrator and Tinggi Pratama. Dress code choices are Wastra Nusantara, PSL Lengkap, or a user-entered value. The card countdown uses the Jakarta date and shows Berakhir for past dates.
-- Roster upload accepts `.xlsx` and `.xls` up to 50 MB. The standard workflow processes one selected sheet. Experimental import offers combine all sheets, combine chosen sheets, isolate each sheet, or process one sheet. It skips empty/non-roster sheets with a notice, persists each source sheet/row, and resolves NIP duplicates by workbook-tab/row order; the first occurrence is selectable.
-- Both workflows share participant selection, including Select All and Deselect All. Combined imports group matching Unit Eselon II values across sheets while keeping Daring and Luring separate. Isolated imports also keep source sheets in separate preview/document groups. The generated roster uses the employee database's current `Jabatan`; the workbook's proposed new title is only a preview reference and is not copied into the document.
+- Roster upload accepts `.xlsx` and `.xls` up to 50 MB. Import skips empty/non-roster sheets with a notice, persists each source sheet/row, and resolves NIP duplicates by workbook-tab/row order; the first occurrence is selectable.
+- Combined imports group matching Unit Eselon II values across sheets while keeping Daring and Luring separate; a one-click modality toggle speeds up switching. Employees mapped through `ref_unit_kerja.prov` to DKI Jakarta default to Luring; others default to Daring. Isolated imports also keep source sheets in separate preview/document groups. The generated roster uses the employee database's current `Jabatan`; the workbook's proposed new title is only a preview reference and is not copied into the document.
+- Duplicate NIP occurrences remain visible and individually selectable, but a second occurrence cannot be saved/generated; Select All selects at most one row per NIP. The backend enforces the same uniqueness rule.
+- The roster supports a compact Lite View with Pilih, No, Nama/NIP, Jabatan Saat ini/Grade, Usul Jabatan Baru/Grade, Kota, Pencocokan, and Pelantikan, plus adjustable column widths saved in browser-local preferences. Preview cards show the matched city and can be filtered by match status or modality. Documents can be selected by unit and modality (and source sheet for isolated imports). One selected document downloads as DOCX; multiple selected documents download together as ZIP. The backend validates that each requested document group is complete.
+- The preview can also generate one ND Pengantar appendix DOCX from selected participants. Its rows are ordered Luring before Daring and then by unit ID; the template is `backend/templates/undangan_pelantikan/template_lampiran_pengantar.docx`.
+- Pelantikan monitoring has an Excel export with four columns and counts by unit.
 - The source workbook and generated documents are not retained on the server. The agenda and participant snapshot remain so the owner can resume the workflow; re-uploading a workbook or switching sheets replaces that agenda's participant snapshot. The frontend keeps the current workbook and sheet selected after upload so the owner can replace the roster without creating another agenda.
-- Generated DOCX files are grouped by Unit Eselon II and modality, then downloaded together as a ZIP. Keep recipient wording and the shared job-title formatting rules in `pelantikan_agenda_service.py` and `employee_formatting.py` aligned.
+- Keep recipient wording and the shared job-title formatting rules in `pelantikan_agenda_service.py` and `employee_formatting.py` aligned.
 
 **Frontend architecture for junior devs**
 - The app uses **React Router v7** with pages as separate route components in `src/pages/`.
@@ -265,9 +302,8 @@ npm run build              # TypeScript check + Vite build to dist/
 
 ## Current Product Scope and Next Milestone
 
-- **Web 1.2.1:** PBN Analytics, Insight Hub, web accounts and role-based access, the Admin workspace, Plt./Plh. monitoring with PBN Open employee lookup, Pelantikan agenda and invitation generation, user-persisted appearance preferences, magnetic toolbar snapping, and the authenticated Groq assistant.
-- **Web 1.2.1 working-tree addition:** Analisis Kinerja DJPb stores one active quarter, matches NIP against the current employee source, and supports Super Admin full-data/adjustment uploads. Its tables are registered in `backend/app/history_db.py`; `backend/sql/006_create_performance_kinerja.sql` is the manual MySQL DDL.
+- **Web 1.4.0:** Includes all 1.3.0 web features plus the current Generate ND workflow and improvements, multi-quarter Analisis Kinerja history/comparisons/cache, and the related dashboard controls documented above.
+- **Data boundaries:** uploaded cleaning datasets remain in-memory and are cleared on backend restart; performance periods, agendas, monitoring records, accounts, and feedback use the configured MySQL/MariaDB database.
 - **Web-only placeholders:** Bahan Pendukung MPK and Simulasi Mutasi do not yet implement their named workflows.
 - **Version 2.0 milestone:** Make the remaining placeholder workflows functional after requirements are defined. Do not treat 2.0 as already implemented.
 - **Desktop:** Only PBN Analytics and Insight Hub are main navigation menus; there is no desktop login, Admin workflow, or web-only placeholder menu.
-- DatasetStore remains in-memory and is cleared by a backend restart. Database persistence for datasets should be designed separately if/when requested.

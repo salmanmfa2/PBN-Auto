@@ -64,7 +64,10 @@ class PbnDashboardTests(unittest.TestCase):
 
     def test_database_dashboard_uses_same_aggregations_and_filters(self) -> None:
         source = DatasetStore.get(self.dataset_id)["Sheet1"]
-        with patch("app.services.pbn_dashboard_service._load_pbnopen_source", return_value=source):
+        with patch(
+            "app.repositories.pbn_dashboard_repository.load_pbnopen_source",
+            return_value=source,
+        ):
             result = build_pbnopen_dashboard(
                 PbnDashboardFilters(region=["West"]),
                 today=date(2026, 10, 19),
@@ -77,7 +80,10 @@ class PbnDashboardTests(unittest.TestCase):
 
     def test_database_people_uses_same_filters_and_shape(self) -> None:
         source = DatasetStore.get(self.dataset_id)["Sheet1"]
-        with patch("app.services.pbn_dashboard_service._load_pbnopen_source", return_value=source):
+        with patch(
+            "app.repositories.pbn_dashboard_repository.load_pbnopen_source",
+            return_value=source,
+        ):
             result = get_pbnopen_dashboard_people(
                 PbnDashboardFilters(region=["East"]),
                 today=date(2026, 10, 19),
@@ -105,6 +111,17 @@ class PbnDashboardTests(unittest.TestCase):
             {"<20 Th": 0, "20 - 30 Th": 1, "31 - 40 Th": 1, "41 - 50 Th": 0, "51+ Th": 1, "Tidak diketahui": 1},
         )
         self.assertEqual(result["available_filters"]["tenure"], {"min": 1, "max": 11})
+
+    def test_dashboard_reads_dataset_sheet_once(self) -> None:
+        with patch.object(DatasetStore, "get", wraps=DatasetStore.get) as get_dataset:
+            build_pbn_dashboard(
+                self.dataset_id,
+                "Sheet1",
+                PbnDashboardFilters(),
+                today=date(2026, 10, 19),
+            )
+
+        get_dataset.assert_called_once_with(self.dataset_id)
 
     def test_tenure_slider_filters_rows_by_completed_years(self) -> None:
         result = build_pbn_dashboard(

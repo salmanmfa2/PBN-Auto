@@ -1,4 +1,14 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import * as apiClient from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -6,8 +16,10 @@ import type {
   PerformanceDashboardResponse,
   PerformanceHistogramBin,
   PerformanceInsight,
+  PerformanceMetricComparison,
   PerformanceRecord,
   PerformanceRecordsResponse,
+  PerformanceEmployeeSource,
   PerformanceUnitMetrics,
   PerformanceUploadValidation,
 } from '../types';
@@ -19,11 +31,157 @@ const PERFORMANCE_TABS = [
   { id: 'units', label: 'Unit Eselon II' },
   { id: 'employees', label: 'Daftar Pegawai' },
 ] as const;
+const PERFORMANCE_EMPLOYEE_SOURCES: {
+  value: PerformanceEmployeeSource;
+  label: string;
+}[] = [
+  { value: 'fetch_pbnopen', label: 'Default (fetch_pbnopen)' },
+  { value: 'dt_employee_q2_2026', label: 'Q2 2026 (dt_employee_q2_2026)' },
+];
+
+function getPerformanceEmployeeSourceLabel(source: PerformanceEmployeeSource): string {
+  return source === 'dt_employee_q2_2026'
+    ? 'Q2 2026 (dt_employee_q2_2026)'
+    : 'Default (fetch_pbnopen)';
+}
+
+type UnitColumnKey =
+  | 'unit'
+  | 'employeeCount'
+  | 'averageNpk'
+  | 'averageNhk'
+  | 'averageNkpAwal'
+  | 'nkpAwalExceptional'
+  | 'hukdis'
+  | 'dampakPelanggaran'
+  | 'dampakPerilaku'
+  | 'correction'
+  | 'correctionPercentage'
+  | 'averageCorrection'
+  | 'maximumCorrection'
+  | 'minimumCorrection'
+  | 'averageNkpAkhir'
+  | 'nkpAkhirExceptional'
+  | 'statusGap'
+  | 'compare';
+type UnitSortKey = Exclude<UnitColumnKey, 'unit' | 'compare'>;
+type UnitSortState = {
+  key: UnitSortKey;
+  direction: 'asc' | 'desc';
+} | null;
+type UnitColumnDefinition = {
+  key: UnitColumnKey;
+  label: string;
+  minWidth: number;
+  lite: boolean;
+  expansionWeight?: number;
+  sortValue?: (metrics: PerformanceUnitMetrics) => number | null;
+};
+const UNIT_COLUMN_DEFINITIONS: UnitColumnDefinition[] = [
+  { key: 'unit', label: 'Unit', minWidth: 180, lite: true, expansionWeight: 0.45 },
+  { key: 'employeeCount', label: 'Pegawai', minWidth: 80, lite: true, expansionWeight: 0.05, sortValue: (metrics) => metrics.employee_count },
+  { key: 'averageNpk', label: 'Rata-rata NPK', minWidth: 100, lite: true, expansionWeight: 0.05, sortValue: (metrics) => metrics.average_npk },
+  { key: 'averageNhk', label: 'Rata-rata NHK', minWidth: 100, lite: false, expansionWeight: 0.05, sortValue: (metrics) => metrics.average_nhk },
+  { key: 'averageNkpAwal', label: 'Rata-rata NKP Awal', minWidth: 120, lite: false, sortValue: (metrics) => metrics.average_nkp_awal },
+  { key: 'nkpAwalExceptional', label: 'NKP Awal Sangat Istimewa', minWidth: 170, lite: false, sortValue: (metrics) => metrics.nkp_awal_sangat_istimewa_count },
+  { key: 'hukdis', label: 'Hukdis', minWidth: 80, lite: false, sortValue: (metrics) => metrics.hukdis_count },
+  { key: 'dampakPelanggaran', label: 'Dampak Pelanggaran', minWidth: 145, lite: false, sortValue: (metrics) => metrics.dampak_pelanggaran_count },
+  { key: 'dampakPerilaku', label: 'Dampak Perilaku', minWidth: 135, lite: false, sortValue: (metrics) => metrics.dampak_perilaku_count },
+  { key: 'correction', label: 'Koreksi (+/−)', minWidth: 160, lite: true, expansionWeight: 0.2, sortValue: (metrics) => metrics.correction.count },
+  { key: 'correctionPercentage', label: 'Pemberian Koreksi (%)', minWidth: 155, lite: true, expansionWeight: 0.1, sortValue: (metrics) => unitCorrectionPercentage(metrics) },
+  { key: 'averageCorrection', label: 'Rata-rata Koreksi', minWidth: 120, lite: false, sortValue: (metrics) => metrics.correction.average },
+  { key: 'maximumCorrection', label: 'Maks. Koreksi', minWidth: 100, lite: false, sortValue: (metrics) => metrics.correction.maximum },
+  { key: 'minimumCorrection', label: 'Min. Koreksi', minWidth: 100, lite: false, sortValue: (metrics) => metrics.correction.minimum },
+  { key: 'averageNkpAkhir', label: 'Rata-rata NKP Akhir', minWidth: 140, lite: true, expansionWeight: 0.1, sortValue: (metrics) => metrics.average_nkp_akhir },
+  { key: 'nkpAkhirExceptional', label: 'NKP Akhir Sangat Istimewa', minWidth: 180, lite: true, expansionWeight: 0.1, sortValue: (metrics) => metrics.nkp_akhir_sangat_istimewa_count },
+  { key: 'statusGap', label: 'Gap Status', minWidth: 90, lite: false, sortValue: (metrics) => metrics.status_gap_count },
+  { key: 'compare', label: 'Bandingkan', minWidth: 90, lite: true, expansionWeight: 0.05 },
+];
+
+function isSortableUnitColumn(
+  column: UnitColumnDefinition,
+): column is UnitColumnDefinition & {
+  key: UnitSortKey;
+  sortValue: (metrics: PerformanceUnitMetrics) => number | null;
+} {
+  return column.sortValue !== undefined;
+}
+
+function unitSortValue(metrics: PerformanceUnitMetrics, key: UnitSortKey): number | null {
+  const column = UNIT_COLUMN_DEFINITIONS.find((item) => item.key === key);
+  return column?.sortValue?.(metrics) ?? null;
+}
+
+function sortUnitMetrics<T extends PerformanceUnitMetrics>(
+  metrics: T[],
+  sort: UnitSortState,
+): T[] {
+  const direction = sort?.direction === 'desc' ? -1 : 1;
+  return [...metrics].sort((left, right) => {
+    const leftValue = sort
+      ? unitSortValue(left, sort.key)
+      : left.unit_kerja_id;
+    const rightValue = sort
+      ? unitSortValue(right, sort.key)
+      : right.unit_kerja_id;
+    if (leftValue === null && rightValue !== null) return 1;
+    if (leftValue !== null && rightValue === null) return -1;
+    if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
+      return (leftValue - rightValue) * direction;
+    }
+
+    const leftId = left.unit_kerja_id;
+    const rightId = right.unit_kerja_id;
+    if (leftId === null && rightId !== null) return 1;
+    if (leftId !== null && rightId === null) return -1;
+    if (leftId !== null && rightId !== null && leftId !== rightId) {
+      return leftId - rightId;
+    }
+    return left.label.localeCompare(right.label, 'id', { sensitivity: 'base' });
+  });
+}
+
+function sortUnitHierarchy(
+  units: PerformanceDashboardResponse['units'],
+  sort: UnitSortState,
+): PerformanceDashboardResponse['units'] {
+  return sortUnitMetrics(units, sort).map((unit) => ({
+    ...unit,
+    children: sortUnitMetrics(unit.children, sort).map((child) => ({
+      ...child,
+      children: sortUnitMetrics(child.children, sort),
+    })),
+  }));
+}
+type UnitColumnWidths = Record<UnitColumnKey, number>;
+const UNIT_COLUMN_WIDTHS_STORAGE_KEY = 'pbn.performance.unit-column-widths';
+const MAX_UNIT_COLUMN_WIDTH = 640;
+const DEFAULT_UNIT_COLUMN_WIDTHS: UnitColumnWidths = {
+  unit: 250,
+  employeeCount: 80,
+  averageNpk: 100,
+  averageNhk: 100,
+  averageNkpAwal: 130,
+  nkpAwalExceptional: 190,
+  hukdis: 80,
+  dampakPelanggaran: 145,
+  dampakPerilaku: 135,
+  correction: 165,
+  correctionPercentage: 160,
+  averageCorrection: 120,
+  maximumCorrection: 100,
+  minimumCorrection: 100,
+  averageNkpAkhir: 140,
+  nkpAkhirExceptional: 180,
+  statusGap: 100,
+  compare: 90,
+};
 const RECORD_COLUMNS: Array<{ key: keyof PerformanceRecord; label: string }> = [
   { key: 'nama', label: 'Nama' },
   { key: 'nip', label: 'NIP' },
   { key: 'unit_eselon_ii', label: 'Unit Eselon II' },
   { key: 'unit_eselon_iii', label: 'Unit Eselon III' },
+  { key: 'unit_eselon_iv', label: 'Unit Eselon IV' },
   { key: 'eselon', label: 'Eselon' },
   { key: 'nhk', label: 'NHK' },
   { key: 'npk', label: 'NPK' },
@@ -71,6 +229,73 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function unitCorrectionPercentage(metrics: PerformanceUnitMetrics): number {
+  if (metrics.employee_count === 0) return 0;
+  return (metrics.correction.count / metrics.employee_count) * 100;
+}
+
+function isUnitColumnWidths(value: unknown): value is UnitColumnWidths {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const widths = value as Partial<Record<UnitColumnKey, unknown>>;
+  return UNIT_COLUMN_DEFINITIONS.every(({ key, minWidth }) => {
+    const width = widths[key];
+    return width === undefined || (typeof width === 'number'
+      && Number.isFinite(width)
+      && width >= minWidth
+      && width <= MAX_UNIT_COLUMN_WIDTH);
+  });
+}
+
+function getUnitColumnBaseWidth(
+  column: UnitColumnKey,
+  desiredDisplayWidth: number,
+  widths: UnitColumnWidths,
+  visibleColumns: UnitColumnDefinition[],
+  containerWidth: number,
+): number {
+  const columnDefinition = visibleColumns.find((item) => item.key === column);
+  if (!columnDefinition?.expansionWeight) return desiredDisplayWidth;
+  const baseTableWidth = visibleColumns.reduce(
+    (total, item) => total + widths[item.key],
+    0,
+  );
+  const extraWidth = containerWidth - baseTableWidth;
+  const totalExpansionWeight = visibleColumns.reduce(
+    (total, item) => total + (item.expansionWeight ?? 0),
+    0,
+  );
+  if (extraWidth <= 0 || totalExpansionWeight <= 0) return desiredDisplayWidth;
+  const expansionShare = columnDefinition.expansionWeight / totalExpansionWeight;
+  const widthAtFullTableBoundary = containerWidth - (baseTableWidth - widths[column]);
+  if (desiredDisplayWidth >= widthAtFullTableBoundary) return desiredDisplayWidth;
+  return (
+    desiredDisplayWidth - expansionShare * widthAtFullTableBoundary
+  ) / (1 - expansionShare);
+}
+
+function fitUnitColumnWidths(
+  widths: UnitColumnWidths,
+  visibleColumns: UnitColumnDefinition[],
+  containerWidth: number,
+): UnitColumnWidths {
+  const fittedWidths = { ...widths };
+  const baseTableWidth = visibleColumns.reduce(
+    (total, column) => total + widths[column.key],
+    0,
+  );
+  const extraWidth = Math.max(0, containerWidth - baseTableWidth);
+  const totalExpansionWeight = visibleColumns.reduce(
+    (total, column) => total + (column.expansionWeight ?? 0),
+    0,
+  );
+  if (extraWidth === 0 || totalExpansionWeight === 0) return fittedWidths;
+  for (const column of visibleColumns) {
+    if (!column.expansionWeight) continue;
+    fittedWidths[column.key] += extraWidth * column.expansionWeight / totalExpansionWeight;
+  }
+  return fittedWidths;
+}
+
 function saveExcelFile(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -83,6 +308,10 @@ function saveExcelFile(blob: Blob, filename: string): void {
 }
 
 function formatNumber(value: number | null): string {
+  return value === null ? '—' : numberFormatter.format(value);
+}
+
+function formatCount(value: number | null): string {
   return value === null ? '—' : numberFormatter.format(value);
 }
 
@@ -99,8 +328,26 @@ function formatUploadDate(value: string): string {
   }).format(new Date(value));
 }
 
-function Histogram({ bins }: { bins: PerformanceHistogramBin[] }) {
-  const maxCount = Math.max(1, ...bins.map((bin) => bin.count));
+function Histogram({
+  bins,
+  previousBins,
+  currentPeriod,
+  previousPeriod,
+}: {
+  bins: PerformanceHistogramBin[];
+  previousBins?: PerformanceHistogramBin[];
+  currentPeriod?: string;
+  previousPeriod?: string | null;
+}) {
+  const previousByStart = new Map(
+    (previousBins ?? []).map((bin) => [bin.start, bin]),
+  );
+  const maxCount = Math.max(
+    1,
+    ...bins.map((bin) => bin.count),
+    ...(previousBins ?? []).map((bin) => bin.count),
+  );
+  const comparing = Boolean(previousBins && previousPeriod);
   const chartWidth = 720;
   const chartHeight = 170;
   const left = 28;
@@ -108,7 +355,7 @@ function Histogram({ bins }: { bins: PerformanceHistogramBin[] }) {
   const plotWidth = chartWidth - left - 12;
   const plotHeight = chartHeight - bottom - 12;
   const slot = plotWidth / bins.length;
-  const barWidth = Math.max(1, slot - 2);
+  const barWidth = Math.max(1, (slot - (comparing ? 4 : 2)) / (comparing ? 2 : 1));
 
   return (
     <div>
@@ -116,23 +363,43 @@ function Histogram({ bins }: { bins: PerformanceHistogramBin[] }) {
         viewBox={`0 0 ${chartWidth} ${chartHeight}`}
         className="w-full"
         role="img"
-        aria-label="Histogram NPK dari 80 sampai 120 dengan interval 2"
+        aria-label={
+          comparing
+            ? `Perbandingan distribusi NPK ${currentPeriod} dan ${previousPeriod}`
+            : 'Histogram NPK dari 80 sampai 120 dengan interval 2'
+        }
       >
         <line x1={left} y1={plotHeight + 1} x2={chartWidth - 8} y2={plotHeight + 1} stroke="currentColor" opacity="0.35" />
         {bins.map((bin, index) => {
-          const height = (bin.count / maxCount) * plotHeight;
+          const previousBin = previousByStart.get(bin.start);
+          const currentHeight = (bin.count / maxCount) * plotHeight;
+          const previousHeight = ((previousBin?.count ?? 0) / maxCount) * plotHeight;
+          const x = left + index * slot + 1;
           return (
-            <rect
-              key={bin.start}
-              x={left + index * slot + 1}
-              y={plotHeight - height + 1}
-              width={barWidth}
-              height={height}
-              rx="1"
-              fill="#38bdf8"
-            >
-              <title>{`${bin.label}: ${bin.count} pegawai`}</title>
-            </rect>
+            <Fragment key={bin.start}>
+              <rect
+                x={x}
+                y={plotHeight - currentHeight + 1}
+                width={barWidth}
+                height={currentHeight}
+                rx="1"
+                fill="#38bdf8"
+              >
+                <title>{`${currentPeriod ?? 'Periode terpilih'} · ${bin.label}: ${bin.count} pegawai`}</title>
+              </rect>
+              {comparing && previousBin && (
+                <rect
+                  x={x + barWidth + 2}
+                  y={plotHeight - previousHeight + 1}
+                  width={barWidth}
+                  height={previousHeight}
+                  rx="1"
+                  fill="#94a3b8"
+                >
+                  <title>{`${previousPeriod} · ${previousBin.label}: ${previousBin.count} pegawai`}</title>
+                </rect>
+              )}
+            </Fragment>
           );
         })}
         <text x={left} y={chartHeight - 5} fill="currentColor" fontSize="10">80</text>
@@ -141,16 +408,126 @@ function Histogram({ bins }: { bins: PerformanceHistogramBin[] }) {
         <text x="8" y="12" fill="currentColor" fontSize="10">{maxCount}</text>
       </svg>
       <p className="text-center text-xs text-slate-400">NPK 80–120 · interval 2 poin</p>
+      {comparing && (
+        <div className="mt-2 flex justify-center gap-4 text-xs text-slate-400">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-sky-400" aria-hidden="true" />
+            {currentPeriod}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-slate-400" aria-hidden="true" />
+            {previousPeriod}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-function StatusDistribution({ counts }: { counts: Record<string, number> }) {
+function StatusDistribution({
+  counts,
+  total,
+  previousCounts,
+  previousTotal,
+  comparisons,
+  currentPeriod,
+  previousPeriod,
+}: {
+  counts: Record<string, number>;
+  total: number;
+  previousCounts?: Record<string, number>;
+  previousTotal?: number;
+  comparisons?: Record<string, PerformanceMetricComparison>;
+  currentPeriod?: string;
+  previousPeriod?: string;
+}) {
+  if (previousCounts && previousTotal !== undefined && previousPeriod) {
+    const percentages = Object.entries(counts).flatMap(([status, count]) => ([
+      total ? (count / total) * 100 : 0,
+      previousTotal ? ((previousCounts[status] ?? 0) / previousTotal) * 100 : 0,
+    ]));
+    const maximumPercentage = Math.max(1, ...percentages);
+    return (
+      <div>
+        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-sky-400" aria-hidden="true" />
+            {currentPeriod}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-slate-400" aria-hidden="true" />
+            {previousPeriod}
+          </span>
+        </div>
+        <ul className="space-y-3">
+          {Object.entries(counts).map(([status, count]) => {
+            const previousCount = previousCounts[status] ?? 0;
+            const currentPercentage = total ? (count / total) * 100 : 0;
+            const previousPercentage = previousTotal
+              ? (previousCount / previousTotal) * 100
+              : 0;
+            const comparison = comparisons?.[`nkp_akhir_status_counts.${status}`];
+            const changeColor = comparison?.delta === null || comparison?.delta === undefined
+              ? 'text-slate-400'
+              : comparison.delta > 0
+                ? 'text-emerald-400'
+                : comparison.delta < 0
+                  ? 'text-rose-400'
+                  : 'text-slate-400';
+            return (
+              <li
+                key={status}
+                className="grid grid-cols-[7rem_minmax(5rem,1fr)_minmax(9rem,auto)] items-center gap-3 text-xs sm:grid-cols-[7.5rem_1fr_auto] sm:text-sm"
+              >
+                <span className="text-slate-300">{status}</span>
+                <span className="space-y-1">
+                  <span className="block h-2 overflow-hidden rounded-full bg-slate-800">
+                    <span
+                      className="block h-full rounded-full bg-sky-400"
+                      style={{ width: `${(currentPercentage / maximumPercentage) * 100}%` }}
+                    />
+                  </span>
+                  <span className="block h-2 overflow-hidden rounded-full bg-slate-800">
+                    <span
+                      className="block h-full rounded-full bg-slate-400"
+                      style={{ width: `${(previousPercentage / maximumPercentage) * 100}%` }}
+                    />
+                  </span>
+                </span>
+                <span className="text-right font-medium">
+                  <span className="block">
+                    {numberFormatter.format(count)}
+                    <span className="ml-1 text-slate-400">
+                      ({numberFormatter.format(currentPercentage)}%)
+                    </span>
+                  </span>
+                  <span className="block text-slate-400">
+                    {numberFormatter.format(previousCount)}
+                    <span className="ml-1">
+                      ({numberFormatter.format(previousPercentage)}%)
+                    </span>
+                  </span>
+                  <span className={`block ${changeColor}`}>
+                    Δ {formatSignedNumber(comparison?.delta ?? null)}
+                    {comparison?.percentage_change === null
+                      || comparison?.percentage_change === undefined
+                      ? ''
+                      : ` (${formatSignedNumber(comparison.percentage_change)}%)`}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
   const maximum = Math.max(1, ...Object.values(counts));
   return (
     <ul className="space-y-3">
       {Object.entries(counts).map(([status, count]) => (
-        <li key={status} className="grid grid-cols-[7.5rem_1fr_3rem] items-center gap-3 text-sm">
+        <li key={status} className="grid grid-cols-[7.5rem_1fr_auto] items-center gap-3 text-sm">
           <span className="text-slate-300">{status}</span>
           <span className="h-2 overflow-hidden rounded-full bg-slate-800">
             <span
@@ -158,14 +535,46 @@ function StatusDistribution({ counts }: { counts: Record<string, number> }) {
               style={{ width: `${(count / maximum) * 100}%` }}
             />
           </span>
-          <span className="text-right font-medium">{numberFormatter.format(count)}</span>
+          <span className="min-w-20 text-right font-medium">
+            {numberFormatter.format(count)}
+            <span className="ml-1 text-slate-400">
+              ({total ? numberFormatter.format((count / total) * 100) : '0'}%)
+            </span>
+          </span>
         </li>
       ))}
     </ul>
   );
 }
 
-function UnitMetricCells({ metrics }: { metrics: PerformanceUnitMetrics }) {
+function UnitMetricCells({
+  metrics,
+  liteView,
+}: {
+  metrics: PerformanceUnitMetrics;
+  liteView: boolean;
+}) {
+  if (liteView) {
+    return (
+      <>
+        <td className="px-3 py-3">{numberFormatter.format(metrics.employee_count)}</td>
+        <td className="px-3 py-3">{formatNumber(metrics.average_npk)}</td>
+        <td className="px-3 py-3">
+          {numberFormatter.format(metrics.correction.count)}
+          <span className="ml-1 text-slate-400">
+            (+{numberFormatter.format(metrics.correction.positive_count)} / −{numberFormatter.format(metrics.correction.negative_count)})
+          </span>
+        </td>
+        <td className="px-3 py-3">{formatNumber(unitCorrectionPercentage(metrics))}%</td>
+        <td className="px-3 py-3">{formatNumber(metrics.average_nkp_akhir)}</td>
+        <td className="px-3 py-3">
+          {numberFormatter.format(metrics.nkp_akhir_sangat_istimewa_count)}
+          <span className="ml-1 text-slate-400">({formatNumber(metrics.nkp_akhir_sangat_istimewa_percentage)}%)</span>
+        </td>
+      </>
+    );
+  }
+
   return (
     <>
       <td className="px-3 py-3">{numberFormatter.format(metrics.employee_count)}</td>
@@ -185,6 +594,7 @@ function UnitMetricCells({ metrics }: { metrics: PerformanceUnitMetrics }) {
           (+{numberFormatter.format(metrics.correction.positive_count)} / −{numberFormatter.format(metrics.correction.negative_count)})
         </span>
       </td>
+      <td className="px-3 py-3">{formatNumber(unitCorrectionPercentage(metrics))}%</td>
       <td className="px-3 py-3">{formatNumber(metrics.correction.average)}</td>
       <td className="px-3 py-3">{formatNumber(metrics.correction.maximum)}</td>
       <td className="px-3 py-3">{formatNumber(metrics.correction.minimum)}</td>
@@ -203,13 +613,240 @@ function UnitMetricCells({ metrics }: { metrics: PerformanceUnitMetrics }) {
   );
 }
 
+const UNIT_COMPARISON_LABELS: Record<string, string> = {
+  employee_count: 'Jumlah pegawai',
+  average_npk: 'Rata-rata NPK',
+  average_nhk: 'Rata-rata NHK',
+  average_nkp_awal: 'Rata-rata NKP awal',
+  nkp_awal_sangat_istimewa_count: 'NKP awal sangat istimewa · jumlah',
+  nkp_awal_sangat_istimewa_percentage: 'NKP awal sangat istimewa · persentase',
+  hukdis_count: 'Hukdis · jumlah pegawai',
+  dampak_pelanggaran_count: 'Dampak pelanggaran · jumlah pegawai',
+  dampak_perilaku_count: 'Dampak perilaku · jumlah pegawai',
+  'correction.count': 'Koreksi · jumlah',
+  'correction.positive_count': 'Koreksi · penambahan',
+  'correction.negative_count': 'Koreksi · pengurangan',
+  'correction.average': 'Koreksi · rata-rata',
+  'correction.maximum': 'Koreksi · maksimum',
+  'correction.minimum': 'Koreksi · minimum',
+  average_nkp_akhir: 'Rata-rata NKP akhir',
+  nkp_akhir_sangat_istimewa_count: 'NKP akhir sangat istimewa · jumlah',
+  nkp_akhir_sangat_istimewa_percentage: 'NKP akhir sangat istimewa · persentase',
+  status_gap_count: 'Perubahan status awal ke akhir · jumlah',
+};
+
+function comparisonLabel(key: string): string {
+  const [field, status] = key.split('.', 2);
+  if (field === 'nkp_awal_status_counts') return `Status NKP awal · ${status}`;
+  if (field === 'nkp_akhir_status_counts') return `Status NKP akhir · ${status}`;
+  return UNIT_COMPARISON_LABELS[key] ?? key;
+}
+
+function formatSignedNumber(value: number | null): string {
+  if (value === null) return '—';
+  return `${value > 0 ? '+' : ''}${numberFormatter.format(value)}`;
+}
+
+function OverviewComparisonDetail({
+  comparison,
+  previousPeriod,
+  label,
+  formatValue = formatNumber,
+}: {
+  comparison?: PerformanceMetricComparison;
+  previousPeriod: string;
+  label?: string;
+  formatValue?: (value: number | null) => string;
+}) {
+  if (!comparison) return null;
+  const changeColor = comparison.delta === null
+    ? 'text-slate-400'
+    : comparison.delta > 0
+      ? 'text-emerald-400'
+      : comparison.delta < 0
+        ? 'text-rose-400'
+        : 'text-slate-400';
+  const percentage = comparison.percentage_change === null
+    ? ' (—%)'
+    : ` (${formatSignedNumber(comparison.percentage_change)}%)`;
+
+  return (
+    <p className="mt-1 text-xs text-slate-400">
+      {label ? `${label} · ` : ''}
+      Sebelumnya {previousPeriod}: {formatValue(comparison.previous)}
+      {' · '}
+      <span className={`font-semibold ${changeColor}`}>
+        Δ {formatSignedNumber(comparison.delta)}{percentage}
+      </span>
+    </p>
+  );
+}
+
+function UnitComparisonDialog({
+  label,
+  comparison,
+  currentPeriod,
+  previousPeriod,
+  onClose,
+}: {
+  label: string;
+  comparison: Record<string, PerformanceMetricComparison>;
+  currentPeriod: string;
+  previousPeriod: string;
+  onClose: () => void;
+}) {
+  return createPortal(
+    <div
+      id="performance-comparison-print-root"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="performance-comparison-title"
+        className="w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
+      >
+        <header className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 id="performance-comparison-title" className="text-lg font-semibold">
+              Perbandingan kinerja · {label}
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
+              {currentPeriod} dibandingkan dengan {previousPeriod}. Persentase tidak tersedia jika nilai sebelumnya nol.
+            </p>
+          </div>
+          <div className="performance-comparison-no-print flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              aria-label="Cetak atau simpan perbandingan sebagai PDF"
+              title="Cetak atau simpan sebagai PDF"
+              className="size-9 rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-200 transition hover:bg-sky-500/20"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                <path d="M7 14h10v7H7zM17 11h.01" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Tutup perbandingan"
+              className="size-9 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 transition hover:bg-slate-700"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="mx-auto size-5">
+                <path d="m6 6 12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div className="performance-comparison-scroll max-h-[70vh] overflow-auto rounded-xl border border-slate-700">
+          <table className="w-full min-w-[700px] text-left text-sm">
+            <thead className="sticky top-0 bg-slate-800 text-slate-300">
+              <tr>
+                <th className="px-3 py-2.5">Metrik</th>
+                <th className="px-3 py-2.5">{currentPeriod}</th>
+                <th className="px-3 py-2.5">{previousPeriod}</th>
+                <th className="px-3 py-2.5">Perubahan</th>
+                <th className="px-3 py-2.5">Perubahan %</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {Object.entries(comparison).map(([key, values]) => (
+                <tr key={key} className="text-slate-300">
+                  <td className="px-3 py-2">{comparisonLabel(key)}</td>
+                  <td className="px-3 py-2">{formatNumber(values.current)}</td>
+                  <td className="px-3 py-2">{formatNumber(values.previous)}</td>
+                  <td className="px-3 py-2">{formatSignedNumber(values.delta)}</td>
+                  <td
+                    className={`px-3 py-2 font-semibold ${
+                      values.percentage_change === null
+                        ? 'text-slate-400'
+                        : values.percentage_change > 0
+                          ? 'text-emerald-400'
+                          : values.percentage_change < 0
+                            ? 'text-rose-400'
+                            : 'text-slate-300'
+                    }`}
+                  >
+                    {values.percentage_change === null
+                      ? '—'
+                      : `${formatSignedNumber(values.percentage_change)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function UnitComparisonButton({
+  unit,
+  disabled,
+  onClick,
+}: {
+  unit: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={`Bandingkan metrik ${unit} dengan periode sebelumnya`}
+      title={disabled ? 'Periode sebelumnya tidak tersedia' : 'Bandingkan dengan periode sebelumnya'}
+      className="inline-flex size-8 items-center justify-center rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+        <path d="M4 19V5m0 14h16" />
+        <path d="M8 15v-3m4 3V7m4 8v-5" />
+      </svg>
+    </button>
+  );
+}
+
 export default function PerformanceAnalysisPage() {
   const { user } = useAuth();
   const [analysis, setAnalysis] = useState<PerformanceDashboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'units' | 'employees'>('overview');
+  const [isOverviewCompareMode, setIsOverviewCompareMode] = useState(false);
   const [expandedUnits, setExpandedUnits] = useState<string[]>([]);
+  const [unitSort, setUnitSort] = useState<UnitSortState>(null);
+  const [isUnitLiteView, setIsUnitLiteView] = useState(false);
+  const [unitColumnWidths, setUnitColumnWidths] = useState<UnitColumnWidths>(
+    () => ({ ...DEFAULT_UNIT_COLUMN_WIDTHS }),
+  );
+  const [unitTableElement, setUnitTableElement] = useState<HTMLDivElement | null>(null);
+  const [unitTableContainerWidth, setUnitTableContainerWidth] = useState(0);
+  const [unitColumnWidthError, setUnitColumnWidthError] = useState<string | null>(null);
+  const unitColumnWidthsRef = useRef<UnitColumnWidths>({ ...DEFAULT_UNIT_COLUMN_WIDTHS });
+  const unitColumnResizeRef = useRef<{
+    column: UnitColumnKey;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const visibleUnitColumns = UNIT_COLUMN_DEFINITIONS.filter(
+    (column) => !isUnitLiteView || column.lite,
+  );
+  const visibleUnitColumnWidths = fitUnitColumnWidths(
+    unitColumnWidths,
+    visibleUnitColumns,
+    unitTableContainerWidth,
+  );
+  const visibleUnitTableWidth = visibleUnitColumns.reduce(
+    (total, column) => total + visibleUnitColumnWidths[column.key],
+    0,
+  );
   const [selectedUnit, setSelectedUnit] = useState('');
   const [selectedEselon, setSelectedEselon] = useState('');
   const [recordData, setRecordData] = useState<PerformanceRecordsResponse | null>(null);
@@ -218,15 +855,20 @@ export default function PerformanceAnalysisPage() {
   const [recordPage, setRecordPage] = useState(1);
   const [recordSearch, setRecordSearch] = useState('');
   const [recordFilterDrafts, setRecordFilterDrafts] = useState<
-    Partial<Record<keyof PerformanceRecord, string>>
+    Record<string, string>
   >({});
   const [recordFilters, setRecordFilters] = useState<
-    Partial<Record<keyof PerformanceRecord, string>>
+    Record<string, string>
   >({});
   const [recordSort, setRecordSort] = useState<{
     key: keyof PerformanceRecord;
     direction: 'asc' | 'desc';
   }>({ key: 'nama', direction: 'asc' });
+  const [selectedPeriod, setSelectedPeriod] = useState<string | undefined>();
+  const [comparisonTarget, setComparisonTarget] = useState<{
+    label: string;
+    comparison: Record<string, PerformanceMetricComparison>;
+  } | null>(null);
   const [unitExportBusy, setUnitExportBusy] = useState(false);
   const [unitExportError, setUnitExportError] = useState<string | null>(null);
   const [recordsExportBusy, setRecordsExportBusy] = useState(false);
@@ -241,8 +883,145 @@ export default function PerformanceAnalysisPage() {
   const [quarter, setQuarter] = useState(initialPeriod.slice(0, 2));
   const [year, setYear] = useState(initialPeriod.slice(3));
   const period = `${quarter}-${year}`;
+  const analysisPeriod = selectedPeriod ?? analysis?.dataset?.period;
+  const sortedUnits = useMemo(
+    () => sortUnitHierarchy(analysis?.units ?? [], unitSort),
+    [analysis?.units, unitSort],
+  );
+
+  useEffect(() => {
+    if (!unitTableElement) return;
+    const updateWidth = () => setUnitTableContainerWidth(unitTableElement.clientWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(unitTableElement);
+    return () => observer.disconnect();
+  }, [unitTableElement]);
+
+  useEffect(() => {
+    try {
+      const storedWidths = window.localStorage.getItem(UNIT_COLUMN_WIDTHS_STORAGE_KEY);
+      if (!storedWidths) return;
+      const parsed: unknown = JSON.parse(storedWidths);
+      if (!isUnitColumnWidths(parsed)) {
+        throw new Error('Format lebar kolom unit tidak valid.');
+      }
+      const mergedWidths = { ...DEFAULT_UNIT_COLUMN_WIDTHS, ...parsed };
+      unitColumnWidthsRef.current = mergedWidths;
+      setUnitColumnWidths(mergedWidths);
+    } catch (storageError) {
+      setUnitColumnWidthError(
+        `Lebar kolom unit tersimpan tidak dapat dimuat: ${errorMessage(storageError)}`,
+      );
+    }
+  }, []);
+
+  const persistUnitColumnWidths = (widths: UnitColumnWidths) => {
+    try {
+      window.localStorage.setItem(UNIT_COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(widths));
+      setUnitColumnWidthError(null);
+    } catch (storageError) {
+      setUnitColumnWidthError(
+        `Lebar kolom unit tidak dapat disimpan: ${errorMessage(storageError)}`,
+      );
+    }
+  };
+
+  const startUnitColumnResize = (
+    column: UnitColumnKey,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    unitColumnResizeRef.current = {
+      column,
+      startX: event.clientX,
+      startWidth: visibleUnitColumnWidths[column],
+    };
+  };
+
+  const moveUnitColumnResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resize = unitColumnResizeRef.current;
+    if (!resize) return;
+    const desiredDisplayWidth = resize.startWidth + event.clientX - resize.startX;
+    const baseWidth = getUnitColumnBaseWidth(
+      resize.column,
+      desiredDisplayWidth,
+      unitColumnWidthsRef.current,
+      visibleUnitColumns,
+      unitTableContainerWidth,
+    );
+    const columnDefinition = UNIT_COLUMN_DEFINITIONS.find(
+      (column) => column.key === resize.column,
+    );
+    const width = Math.min(
+      MAX_UNIT_COLUMN_WIDTH,
+      Math.max(columnDefinition?.minWidth ?? 80, Math.round(baseWidth)),
+    );
+    const nextWidths = { ...unitColumnWidthsRef.current, [resize.column]: width };
+    unitColumnWidthsRef.current = nextWidths;
+    setUnitColumnWidths(nextWidths);
+  };
+
+  const finishUnitColumnResize = () => {
+    if (!unitColumnResizeRef.current) return;
+    unitColumnResizeRef.current = null;
+    persistUnitColumnWidths(unitColumnWidthsRef.current);
+  };
+
+  const handleUnitColumnResizeKeyDown = (
+    column: UnitColumnKey,
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 12 : -12;
+    const baseWidth = getUnitColumnBaseWidth(
+      column,
+      visibleUnitColumnWidths[column] + delta,
+      unitColumnWidthsRef.current,
+      visibleUnitColumns,
+      unitTableContainerWidth,
+    );
+    const columnDefinition = UNIT_COLUMN_DEFINITIONS.find(
+      (item) => item.key === column,
+    );
+    const width = Math.min(
+      MAX_UNIT_COLUMN_WIDTH,
+      Math.max(columnDefinition?.minWidth ?? 80, Math.round(baseWidth)),
+    );
+    const nextWidths = { ...unitColumnWidthsRef.current, [column]: width };
+    unitColumnWidthsRef.current = nextWidths;
+    setUnitColumnWidths(nextWidths);
+    persistUnitColumnWidths(nextWidths);
+  };
+
+  const unitColumnResizeHandle = (column: UnitColumnDefinition) => (
+    <div
+      role="separator"
+      aria-label={`Ubah lebar kolom ${column.label}`}
+      aria-orientation="vertical"
+      aria-valuemin={column.minWidth}
+      aria-valuemax={Math.max(
+        MAX_UNIT_COLUMN_WIDTH,
+        Math.round(visibleUnitColumnWidths[column.key]),
+      )}
+      aria-valuenow={Math.round(visibleUnitColumnWidths[column.key])}
+      tabIndex={0}
+      title={`Tarik untuk mengubah lebar kolom ${column.label}; gunakan tombol panah kiri/kanan.`}
+      onPointerDown={(event) => startUnitColumnResize(column.key, event)}
+      onPointerMove={moveUnitColumnResize}
+      onPointerUp={finishUnitColumnResize}
+      onPointerCancel={finishUnitColumnResize}
+      onLostPointerCapture={finishUnitColumnResize}
+      onKeyDown={(event) => handleUnitColumnResizeKeyDown(column.key, event)}
+      className="absolute right-0 top-0 z-10 h-full w-2 touch-none cursor-col-resize border-r-2 border-transparent hover:border-sky-400 focus-visible:border-sky-400 focus-visible:outline-none"
+    />
+  );
 
   const [fullFile, setFullFile] = useState<File | null>(null);
+  const [fullEmployeeSource, setFullEmployeeSource] =
+    useState<PerformanceEmployeeSource>('fetch_pbnopen');
   const [fullValidation, setFullValidation] = useState<PerformanceUploadValidation | null>(null);
   const [fullBusy, setFullBusy] = useState(false);
   const [fullError, setFullError] = useState<string | null>(null);
@@ -253,13 +1032,14 @@ export default function PerformanceAnalysisPage() {
   const [adjustmentBusy, setAdjustmentBusy] = useState(false);
   const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
   const [adjustmentNotice, setAdjustmentNotice] = useState<string | null>(null);
+  const [isDataManagementOpen, setIsDataManagementOpen] = useState(false);
   const fullFileInput = useRef<HTMLInputElement>(null);
   const adjustmentFileInput = useRef<HTMLInputElement>(null);
   const analysisRequestId = useRef(0);
   const recordFilterTimer = useRef<number | null>(null);
   const recordRequestId = useRef(0);
 
-  const refreshAnalysis = useCallback(async () => {
+  const refreshAnalysis = useCallback(async (requestedPeriod?: string) => {
     const requestId = ++analysisRequestId.current;
     setIsLoading(true);
     setError(null);
@@ -267,6 +1047,7 @@ export default function PerformanceAnalysisPage() {
       const result = await apiClient.getPerformanceDashboard(
         selectedUnit,
         selectedEselon ? [selectedEselon] : [],
+        requestedPeriod ?? selectedPeriod,
       );
       if (requestId !== analysisRequestId.current) return;
       setAnalysis(result);
@@ -281,13 +1062,13 @@ export default function PerformanceAnalysisPage() {
     } finally {
       if (requestId === analysisRequestId.current) setIsLoading(false);
     }
-  }, [selectedEselon, selectedUnit]);
+  }, [selectedEselon, selectedPeriod, selectedUnit]);
 
   useEffect(() => {
     void refreshAnalysis();
   }, [refreshAnalysis]);
 
-  const refreshRecords = useCallback(async () => {
+  const refreshRecords = useCallback(async (requestedPeriod?: string) => {
     const requestId = ++recordRequestId.current;
     setIsLoadingRecords(true);
     setRecordError(null);
@@ -299,6 +1080,7 @@ export default function PerformanceAnalysisPage() {
         recordFilters,
         recordSort.key,
         recordSort.direction,
+        requestedPeriod ?? selectedPeriod,
       );
       if (requestId === recordRequestId.current) setRecordData(result);
     } catch (loadError) {
@@ -308,7 +1090,7 @@ export default function PerformanceAnalysisPage() {
     } finally {
       if (requestId === recordRequestId.current) setIsLoadingRecords(false);
     }
-  }, [recordFilters, recordPage, recordSearch, recordSort]);
+  }, [recordFilters, recordPage, recordSearch, recordSort, selectedPeriod]);
 
   useEffect(() => {
     void refreshRecords();
@@ -320,6 +1102,24 @@ export default function PerformanceAnalysisPage() {
     }
     recordRequestId.current += 1;
   }, []);
+
+  useEffect(() => {
+    if (!isDataManagementOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsDataManagementOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDataManagementOpen]);
+
+  useEffect(() => {
+    if (!comparisonTarget) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setComparisonTarget(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [comparisonTarget]);
 
   useEffect(() => {
     let active = true;
@@ -364,7 +1164,9 @@ export default function PerformanceAnalysisPage() {
     setFullNotice(null);
     setFullValidation(null);
     try {
-      setFullValidation(await apiClient.validatePerformanceFullData(fullFile, period));
+      setFullValidation(
+        await apiClient.validatePerformanceFullData(fullFile, period, fullEmployeeSource),
+      );
     } catch (validationError) {
       setFullError(errorMessage(validationError));
     } finally {
@@ -374,14 +1176,20 @@ export default function PerformanceAnalysisPage() {
 
   const replaceFullData = async () => {
     if (!fullFile || !fullValidation) return;
-    if (!window.confirm(`Ganti seluruh dataset aktif dengan ${fullValidation.row_count} baris untuk ${period}?`)) {
+    if (!window.confirm(
+      `Ganti dataset ${period} dengan ${fullValidation.row_count} baris menggunakan referensi ${getPerformanceEmployeeSourceLabel(fullEmployeeSource)}? Periode lain tidak akan berubah.`,
+    )) {
       return;
     }
     setFullBusy(true);
     setFullError(null);
     setFullNotice(null);
     try {
-      const result = await apiClient.replacePerformanceFullData(fullFile, period);
+      const result = await apiClient.replacePerformanceFullData(
+        fullFile,
+        period,
+        fullEmployeeSource,
+      );
       const uploadNotes = [
         result.unidentified_count > 0
           ? `${result.unidentified_count} NIP akan dikelompokkan sebagai Unidentified`
@@ -391,13 +1199,19 @@ export default function PerformanceAnalysisPage() {
           : null,
       ].filter((note): note is string => note !== null);
       setFullNotice(
-        `${result.row_count} pegawai berhasil dimuat untuk ${result.period}.`
+        `${result.row_count} pegawai berhasil dimuat untuk ${result.period} menggunakan referensi ${getPerformanceEmployeeSourceLabel(fullEmployeeSource)}.`
         + (uploadNotes.length ? ` Catatan: ${uploadNotes.join('; ')}.` : ''),
       );
+      setSelectedPeriod(result.period);
+      if (selectedPeriod === result.period) {
+        await Promise.all([
+          refreshAnalysis(result.period),
+          refreshRecords(result.period),
+        ]);
+      }
       setFullFile(null);
       if (fullFileInput.current) fullFileInput.current.value = '';
       setFullValidation(null);
-      await Promise.all([refreshAnalysis(), refreshRecords()]);
     } catch (replaceError) {
       setFullError(errorMessage(replaceError));
     } finally {
@@ -424,7 +1238,7 @@ export default function PerformanceAnalysisPage() {
     setUnitExportBusy(true);
     setUnitExportError(null);
     try {
-      const blob = await apiClient.downloadPerformanceUnitAnalysis();
+      const blob = await apiClient.downloadPerformanceUnitAnalysis(analysisPeriod);
       saveExcelFile(blob, `analisis-unit-eselon-ii-${analysis?.dataset?.period ?? 'data'}.xlsx`);
     } catch (exportError) {
       setUnitExportError(errorMessage(exportError));
@@ -442,6 +1256,7 @@ export default function PerformanceAnalysisPage() {
         recordFilterDrafts,
         recordSort.key,
         recordSort.direction,
+        analysisPeriod,
       );
       saveExcelFile(blob, `daftar-pegawai-kinerja-${recordData?.period ?? 'data'}.xlsx`);
     } catch (exportError) {
@@ -451,8 +1266,39 @@ export default function PerformanceAnalysisPage() {
     }
   };
 
-  const updateRecordFilter = (key: keyof PerformanceRecord, value: string) => {
+  const updateRecordFilter = (key: string, value: string) => {
     const nextFilters = { ...recordFilterDrafts, [key]: value };
+    setRecordFilterDrafts(nextFilters);
+    if (recordFilterTimer.current !== null) {
+      window.clearTimeout(recordFilterTimer.current);
+    }
+    recordFilterTimer.current = window.setTimeout(() => {
+      setRecordFilters(nextFilters);
+      setRecordPage(1);
+      recordFilterTimer.current = null;
+    }, 350);
+  };
+
+  const updateNumericRangeFilter = (
+    key: keyof PerformanceRecord,
+    bound: 'min' | 'max',
+    value: string,
+    range: [number | null, number | null],
+  ) => {
+    const [dataMinimum, dataMaximum] = range;
+    const rangeMinimum = `${key}__min`;
+    const rangeMaximum = `${key}__max`;
+    const selectedMinimum = Number(recordFilterDrafts[rangeMinimum] ?? dataMinimum);
+    const selectedMaximum = Number(recordFilterDrafts[rangeMaximum] ?? dataMaximum);
+    const numericValue = Number(value);
+    const nextFilters = { ...recordFilterDrafts, [`${key}__${bound}`]: value };
+
+    if (bound === 'min' && numericValue > selectedMaximum) {
+      nextFilters[rangeMaximum] = value;
+    } else if (bound === 'max' && numericValue < selectedMinimum) {
+      nextFilters[rangeMinimum] = value;
+    }
+
     setRecordFilterDrafts(nextFilters);
     if (recordFilterTimer.current !== null) {
       window.clearTimeout(recordFilterTimer.current);
@@ -484,14 +1330,14 @@ export default function PerformanceAnalysisPage() {
   };
 
   const validateAdjustments = async () => {
-    if (!adjustmentFile) return;
+    if (!adjustmentFile || !analysisPeriod) return;
     setAdjustmentBusy(true);
     setAdjustmentError(null);
     setAdjustmentNotice(null);
     setAdjustmentValidation(null);
     try {
       setAdjustmentValidation(
-        await apiClient.validatePerformanceAdjustments(adjustmentFile, period),
+        await apiClient.validatePerformanceAdjustments(adjustmentFile, analysisPeriod),
       );
     } catch (validationError) {
       setAdjustmentError(errorMessage(validationError));
@@ -501,15 +1347,15 @@ export default function PerformanceAnalysisPage() {
   };
 
   const applyAdjustments = async () => {
-    if (!adjustmentFile || !adjustmentValidation) return;
-    if (!window.confirm(`Terapkan penyesuaian untuk ${adjustmentValidation.row_count} pegawai pada ${period}?`)) {
+    if (!adjustmentFile || !adjustmentValidation || !analysisPeriod) return;
+    if (!window.confirm(`Terapkan penyesuaian untuk ${adjustmentValidation.row_count} pegawai pada ${analysisPeriod}?`)) {
       return;
     }
     setAdjustmentBusy(true);
     setAdjustmentError(null);
     setAdjustmentNotice(null);
     try {
-      const result = await apiClient.replacePerformanceAdjustments(adjustmentFile, period);
+      const result = await apiClient.replacePerformanceAdjustments(adjustmentFile, analysisPeriod);
       setAdjustmentNotice(
         `Penyesuaian ${result.row_count} pegawai berhasil diterapkan.`
         + (result.normalized_penalty_count > 0
@@ -519,7 +1365,10 @@ export default function PerformanceAnalysisPage() {
       setAdjustmentFile(null);
       if (adjustmentFileInput.current) adjustmentFileInput.current.value = '';
       setAdjustmentValidation(null);
-      await Promise.all([refreshAnalysis(), refreshRecords()]);
+      await Promise.all([
+        refreshAnalysis(analysisPeriod),
+        refreshRecords(analysisPeriod),
+      ]);
     } catch (applyError) {
       setAdjustmentError(errorMessage(applyError));
     } finally {
@@ -528,7 +1377,7 @@ export default function PerformanceAnalysisPage() {
   };
 
   return (
-    <main className="min-h-screen bg-surface-900 px-4 pb-14 pt-24 text-slate-100 sm:px-6">
+    <main className="performance-analysis-page min-h-screen bg-surface-900 px-4 pb-14 pt-24 text-slate-100 sm:px-6">
       <div className="mx-auto max-w-[105.8rem] space-y-6">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -540,7 +1389,7 @@ export default function PerformanceAnalysisPage() {
           </div>
           {analysis?.dataset && (
             <div className="card min-w-56 px-4 py-3 text-sm">
-              <p className="text-slate-400">Dataset aktif</p>
+              <p className="text-slate-400">Periode terpilih</p>
               <p className="mt-1 font-semibold">{analysis.dataset.period} · {analysis.dataset.row_count} pegawai</p>
               <p className="mt-1 text-xs text-slate-400">
                 Unggah oleh {analysis.dataset.uploaded_by_name} ({analysis.dataset.uploaded_by_user})
@@ -558,18 +1407,106 @@ export default function PerformanceAnalysisPage() {
           </div>
         )}
 
-        {user?.auth_level === 3 && (
-          <section className="grid gap-5 lg:grid-cols-2">
+        {Boolean(analysis?.available_periods.length) && (
+          <section className="card flex flex-wrap items-center justify-between gap-4 p-4">
+            <div>
+              <h2 className="font-semibold">Periode dataset</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Pilih triwulan untuk melihat analisis dan data pegawainya.
+              </p>
+            </div>
+            <div role="group" aria-label="Pilih periode dataset kinerja" className="flex flex-wrap gap-2">
+              {analysis?.available_periods.map((item) => {
+                const active = (selectedPeriod ?? analysis?.dataset?.period) === item.period;
+                return (
+                  <button
+                    key={item.period}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => {
+                      setSelectedPeriod(item.period);
+                      setQuarter(item.period.slice(0, 2));
+                      setYear(item.period.slice(3));
+                      setRecordPage(1);
+                      setFullValidation(null);
+                      setAdjustmentValidation(null);
+                    }}
+                    className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                      active
+                        ? 'border-sky-400 bg-sky-500/15 text-sky-200'
+                        : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-slate-500 hover:bg-slate-800'
+                    }`}
+                  >
+                    {item.period}
+                    <span className="ml-2 text-xs text-slate-400">
+                      {numberFormatter.format(item.row_count)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {(user?.auth_level ?? 0) >= 3 && (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setIsDataManagementOpen(true)}
+                aria-label="Kelola dataset dan penyesuaian nilai"
+                title="Kelola dataset dan penyesuaian nilai"
+                className="inline-flex items-center gap-2 rounded-xl border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-sm font-medium text-sky-200 transition hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+                  <path d="M5 16v4h14v-4" />
+                </svg>
+                <span>Kelola dataset</span>
+              </button>
+            </div>
+            {isDataManagementOpen && (
+              <div
+                className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) setIsDataManagementOpen(false);
+                }}
+              >
+                <section
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="performance-data-management-title"
+                  className="my-auto w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
+                >
+                  <header className="mb-5 flex items-center justify-between gap-4">
+                    <div>
+                      <h2 id="performance-data-management-title" className="text-lg font-semibold">Kelola dataset kinerja</h2>
+                      <p className="mt-1 text-sm text-slate-400">Unggah dataset lengkap atau terapkan penyesuaian nilai.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsDataManagementOpen(false)}
+                      aria-label="Tutup pengelolaan dataset"
+                      title="Tutup"
+                      className="size-9 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="mx-auto size-5">
+                        <path d="m6 6 12 12M18 6 6 18" />
+                      </svg>
+                    </button>
+                  </header>
+                  <div className="grid max-h-[75vh] gap-5 overflow-y-auto lg:grid-cols-2">
             <div className="card p-5">
               <h2 className="font-semibold">Unggah dataset lengkap</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Dataset aktif akan diganti setelah validasi berhasil. Gunakan CSV contoh; NIP boleh 16 atau 18 digit.
+                Unggahan mengganti data hanya untuk periode yang dipilih; periode lain tetap tersimpan. Gunakan CSV contoh; NIP boleh 16 atau 18 digit.
               </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_140px]">
                 <label className="block text-sm text-slate-300">
                   Periode
                   <select
                     value={quarter}
+                    disabled={fullBusy}
                     onChange={(event) => {
                       setQuarter(event.target.value);
                       setFullValidation(null);
@@ -590,6 +1527,7 @@ export default function PerformanceAnalysisPage() {
                     min={2000}
                     max={2100}
                     value={year}
+                    disabled={fullBusy}
                     onChange={(event) => {
                       setYear(event.target.value);
                       setFullValidation(null);
@@ -600,11 +1538,37 @@ export default function PerformanceAnalysisPage() {
                 </label>
               </div>
               <label className="mt-4 block text-sm text-slate-300">
+                Referensi pegawai untuk pencocokan NIP
+                <select
+                  value={fullEmployeeSource}
+                  disabled={fullBusy}
+                  onChange={(event) => {
+                    const selectedSource = PERFORMANCE_EMPLOYEE_SOURCES.find(
+                      (source) => source.value === event.target.value,
+                    )?.value;
+                    if (!selectedSource) return;
+                    setFullEmployeeSource(selectedSource);
+                    setFullValidation(null);
+                    setFullError(null);
+                    setFullNotice(null);
+                  }}
+                  className="input mt-1.5"
+                >
+                  {PERFORMANCE_EMPLOYEE_SOURCES.map((source) => (
+                    <option key={source.value} value={source.value}>{source.label}</option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs text-slate-400">
+                  Nama, eselon, dan unit dari sumber ini disimpan pada periode yang diunggah dan dipakai di tab analisis.
+                </span>
+              </label>
+              <label className="mt-4 block text-sm text-slate-300">
                 File CSV
                 <input
                   ref={fullFileInput}
                   type="file"
                   accept=".csv,text/csv"
+                  disabled={fullBusy}
                   onChange={(event) => {
                     setFullFile(event.target.files?.[0] ?? null);
                     setFullValidation(null);
@@ -618,7 +1582,7 @@ export default function PerformanceAnalysisPage() {
               {fullValidation && (
                 <div className="mt-3 space-y-1 text-sm">
                   <p role="status" className="text-emerald-300">
-                    Valid: {fullValidation.row_count} pegawai · {fullValidation.period}
+                    Valid: {fullValidation.row_count} pegawai · {fullValidation.period} · {getPerformanceEmployeeSourceLabel(fullEmployeeSource)}
                   </p>
                   {fullValidation.unidentified_count > 0 && (
                     <p className="text-amber-300">
@@ -638,7 +1602,7 @@ export default function PerformanceAnalysisPage() {
                 </button>
                 {fullValidation && (
                   <button type="button" onClick={() => void replaceFullData()} disabled={fullBusy} className="btn-primary">
-                    Ganti Dataset Aktif
+                    Simpan Dataset Periode
                   </button>
                 )}
               </div>
@@ -648,7 +1612,7 @@ export default function PerformanceAnalysisPage() {
               <h2 className="font-semibold">Penyesuaian nilai</h2>
               <p className="mt-1 text-sm text-slate-400">
                 Kosongkan sel untuk mempertahankan nilai saat ini. Nilai Hukdis/Dampak positif akan dinormalisasi sebagai potongan negatif.
-                Periode harus sama dengan dataset aktif.
+                Periode penyesuaian: {analysisPeriod ?? 'belum ada dataset'}.
               </p>
               <button type="button" onClick={() => void downloadTemplate()} className="btn-secondary mt-4">
                 Unduh Template Excel
@@ -685,19 +1649,23 @@ export default function PerformanceAnalysisPage() {
                 <button
                   type="button"
                   onClick={() => void validateAdjustments()}
-                  disabled={!adjustmentFile || adjustmentBusy}
+                  disabled={!adjustmentFile || !analysisPeriod || adjustmentBusy}
                   className="btn-secondary"
                 >
                   {adjustmentBusy ? <Spinner size="sm" label="Memvalidasi…" /> : 'Validasi Penyesuaian'}
                 </button>
                 {adjustmentValidation && (
-                  <button type="button" onClick={() => void applyAdjustments()} disabled={adjustmentBusy} className="btn-primary">
+                  <button type="button" onClick={() => void applyAdjustments()} disabled={!analysisPeriod || adjustmentBusy} className="btn-primary">
                     Terapkan Penyesuaian
                   </button>
                 )}
               </div>
             </div>
-          </section>
+                  </div>
+                </section>
+              </div>
+            )}
+          </>
         )}
 
         <div role="tablist" aria-label="Analisis kinerja" className="flex flex-wrap gap-2 border-b border-slate-700">
@@ -710,12 +1678,30 @@ export default function PerformanceAnalysisPage() {
               aria-selected={activeTab === tab.id}
               aria-controls={`performance-panel-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
-              className={`border-b-2 px-4 py-3 text-sm font-medium transition ${
+              className={`inline-flex items-center gap-2 rounded-t-lg border-b-2 px-4 py-3 text-sm font-medium transition ${
                 activeTab === tab.id
-                  ? 'border-sky-400 text-sky-300'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  ? 'border-sky-400 bg-sky-500/10 text-sky-200'
+                  : 'border-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
               }`}
             >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                {tab.id === 'overview' ? (
+                  <>
+                    <path d="M4 19V5m0 14h16" />
+                    <path d="m7 15 4-4 3 2 5-6" />
+                  </>
+                ) : tab.id === 'units' ? (
+                  <>
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <path d="M3 9h18M9 9v11m6-11v11" />
+                  </>
+                ) : (
+                  <>
+                    <circle cx="9" cy="8" r="3" />
+                    <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6m2-9a3 3 0 1 0 0-6m1 9c2.2.6 3.8 2.6 4 5" />
+                  </>
+                )}
+              </svg>
               {tab.label}
             </button>
           ))}
@@ -731,7 +1717,23 @@ export default function PerformanceAnalysisPage() {
           >
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="font-semibold">Overview Analisis Kinerja</h2>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="font-semibold">Overview Analisis Kinerja</h2>
+                  <button
+                    type="button"
+                    aria-pressed={isOverviewCompareMode}
+                    aria-label="Bandingkan periode terpilih dengan periode sebelumnya"
+                    onClick={() => setIsOverviewCompareMode((current) => !current)}
+                    disabled={!analysis?.dataset}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      isOverviewCompareMode
+                        ? 'border-sky-400 bg-sky-500/15 text-sky-200'
+                        : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    Compare
+                  </button>
+                </div>
                 <p className="mt-1 text-sm text-slate-400">
                   {analysis?.dataset
                     ? `Periode ${analysis.dataset.period} · ${numberFormatter.format(analysis.total_employees)} pegawai`
@@ -774,6 +1776,11 @@ export default function PerformanceAnalysisPage() {
             {error && (
               <p role="alert" className="mt-4 break-words text-sm text-rose-300">{error}</p>
             )}
+            {isOverviewCompareMode && analysis?.dataset && !analysis.previous_period && (
+              <p role="status" className="mt-4 rounded-lg border border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
+                Data untuk triwulan sebelumnya tidak tersedia. Nilai periode terpilih tetap ditampilkan.
+              </p>
+            )}
             {isLoading && !analysis ? (
               <div className="flex justify-center p-10"><Spinner label="Memuat analisis…" /></div>
             ) : !analysis?.dataset ? (
@@ -786,6 +1793,13 @@ export default function PerformanceAnalysisPage() {
                   <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
                     <p className="text-sm text-slate-400">Jumlah Pegawai</p>
                     <p className="mt-2 text-2xl font-semibold">{numberFormatter.format(analysis.overview.employee_count)}</p>
+                    {isOverviewCompareMode && analysis.previous_period && (
+                      <OverviewComparisonDetail
+                        comparison={analysis.overview_comparison.employee_count}
+                        previousPeriod={analysis.previous_period}
+                        formatValue={formatCount}
+                      />
+                    )}
                   </div>
                   <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
                     <p className="text-sm text-slate-400">Jumlah Koreksi (bukan nol)</p>
@@ -793,25 +1807,85 @@ export default function PerformanceAnalysisPage() {
                     <p className="mt-1 text-xs text-slate-400">
                       {numberFormatter.format(analysis.overview.correction.positive_count)} penambahan · {numberFormatter.format(analysis.overview.correction.negative_count)} pengurangan
                     </p>
+                    {isOverviewCompareMode && analysis.previous_period && (
+                      <>
+                        <OverviewComparisonDetail
+                          comparison={analysis.overview_comparison['correction.count']}
+                          previousPeriod={analysis.previous_period}
+                          label="Jumlah"
+                          formatValue={formatCount}
+                        />
+                        <OverviewComparisonDetail
+                          comparison={analysis.overview_comparison['correction.positive_count']}
+                          previousPeriod={analysis.previous_period}
+                          label="Penambahan"
+                          formatValue={formatCount}
+                        />
+                        <OverviewComparisonDetail
+                          comparison={analysis.overview_comparison['correction.negative_count']}
+                          previousPeriod={analysis.previous_period}
+                          label="Pengurangan"
+                          formatValue={formatCount}
+                        />
+                      </>
+                    )}
                   </div>
                   <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
                     <p className="text-sm text-slate-400">Rata-rata Nilai Koreksi</p>
                     <p className="mt-2 text-2xl font-semibold">{formatNumber(analysis.overview.correction.average)}</p>
+                    {isOverviewCompareMode && analysis.previous_period && (
+                      <OverviewComparisonDetail
+                        comparison={analysis.overview_comparison['correction.average']}
+                        previousPeriod={analysis.previous_period}
+                      />
+                    )}
                   </div>
                   <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
                     <p className="text-sm text-slate-400">Jumlah Penambahan</p>
                     <p className="mt-2 text-2xl font-semibold">{numberFormatter.format(analysis.overview.correction.positive_count)}</p>
+                    {isOverviewCompareMode && analysis.previous_period && (
+                      <OverviewComparisonDetail
+                        comparison={analysis.overview_comparison['correction.positive_count']}
+                        previousPeriod={analysis.previous_period}
+                        formatValue={formatCount}
+                      />
+                    )}
                   </div>
                 </div>
 
                 <div className="mt-5 grid gap-5 xl:grid-cols-2">
                   <div className="min-w-0 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
                     <h3 className="mb-3 text-sm font-semibold">Distribusi NPK</h3>
-                    <Histogram bins={analysis.overview.histogram} />
+                    <Histogram
+                      bins={analysis.overview.histogram}
+                      previousBins={
+                        isOverviewCompareMode
+                          ? analysis.overview_previous?.histogram
+                          : undefined
+                      }
+                      currentPeriod={analysis.dataset.period}
+                      previousPeriod={analysis.previous_period}
+                    />
                   </div>
                   <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
                     <h3 className="mb-4 text-sm font-semibold">Distribusi Status NKP Akhir</h3>
-                    <StatusDistribution counts={analysis.overview.status_counts} />
+                    <StatusDistribution
+                      counts={analysis.overview.status_counts}
+                      total={analysis.overview.employee_count}
+                      previousCounts={
+                        isOverviewCompareMode
+                          ? analysis.overview_previous?.status_counts
+                          : undefined
+                      }
+                      previousTotal={
+                        isOverviewCompareMode
+                          ? analysis.overview_previous?.employee_count
+                          : undefined
+                      }
+                      comparisons={analysis.overview_comparison}
+                      currentPeriod={analysis.dataset.period}
+                      previousPeriod={analysis.previous_period ?? undefined}
+                    />
                   </div>
                 </div>
 
@@ -821,14 +1895,35 @@ export default function PerformanceAnalysisPage() {
                     <div>
                       <dt className="text-slate-400">Hukuman Disiplin</dt>
                       <dd className="mt-1 text-lg font-semibold">{numberFormatter.format(analysis.overview.hukdis_count)}</dd>
+                      {isOverviewCompareMode && analysis.previous_period && (
+                        <OverviewComparisonDetail
+                          comparison={analysis.overview_comparison.hukdis_count}
+                          previousPeriod={analysis.previous_period}
+                          formatValue={formatCount}
+                        />
+                      )}
                     </div>
                     <div>
                       <dt className="text-slate-400">Dampak Pelanggaran Disiplin</dt>
                       <dd className="mt-1 text-lg font-semibold">{numberFormatter.format(analysis.overview.dampak_pelanggaran_count)}</dd>
+                      {isOverviewCompareMode && analysis.previous_period && (
+                        <OverviewComparisonDetail
+                          comparison={analysis.overview_comparison.dampak_pelanggaran_count}
+                          previousPeriod={analysis.previous_period}
+                          formatValue={formatCount}
+                        />
+                      )}
                     </div>
                     <div>
                       <dt className="text-slate-400">Dampak Perilaku</dt>
                       <dd className="mt-1 text-lg font-semibold">{numberFormatter.format(analysis.overview.dampak_perilaku_count)}</dd>
+                      {isOverviewCompareMode && analysis.previous_period && (
+                        <OverviewComparisonDetail
+                          comparison={analysis.overview_comparison.dampak_perilaku_count}
+                          previousPeriod={analysis.previous_period}
+                          formatValue={formatCount}
+                        />
+                      )}
                     </div>
                   </dl>
                 </div>
@@ -897,20 +1992,74 @@ export default function PerformanceAnalysisPage() {
               <div>
                 <h2 className="font-semibold">Analisis berdasarkan Unit Eselon II</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  Buka baris unit untuk melihat rincian Unit Eselon III. Statistik memakai seluruh dataset aktif.
+                  Buka Unit Eselon II dan III untuk melihat rincian hingga Unit Eselon IV. Statistik mengikuti periode terpilih.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => void exportUnitAnalysis()}
-                disabled={!analysis?.dataset || unitExportBusy}
-                className="btn-secondary disabled:opacity-50"
-              >
-                {unitExportBusy ? 'Mengekspor…' : 'Unduh Excel'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-1" role="group" aria-label="Mode tampilan unit">
+                  <button
+                    type="button"
+                    aria-pressed={!isUnitLiteView}
+                    onClick={() => setIsUnitLiteView(false)}
+                    className={`rounded-md px-3 py-1.5 text-sm transition ${!isUnitLiteView ? 'bg-sky-500/20 text-sky-100' : 'text-slate-400 hover:text-slate-200'}`}
+                  >
+                    Full View
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={isUnitLiteView}
+                    onClick={() => setIsUnitLiteView(true)}
+                    className={`rounded-md px-3 py-1.5 text-sm transition ${isUnitLiteView ? 'bg-sky-500/20 text-sky-100' : 'text-slate-400 hover:text-slate-200'}`}
+                  >
+                    Lite View
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!analysis) return;
+                    setComparisonTarget({
+                      label: 'Seluruh Dataset',
+                      comparison: analysis.overview_comparison,
+                    });
+                  }}
+                  disabled={
+                    !analysis?.previous_period
+                    || Object.keys(analysis.overview_comparison).length === 0
+                  }
+                  title={
+                    analysis?.previous_period
+                      ? 'Bandingkan seluruh dataset dengan periode sebelumnya'
+                      : 'Periode sebelumnya tidak tersedia'
+                  }
+                  className="inline-flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                    <path d="M4 19V5m0 14h16" />
+                    <path d="M8 15v-3m4 3V7m4 8v-5" />
+                  </svg>
+                  Bandingkan Seluruh Dataset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportUnitAnalysis()}
+                  disabled={!analysis?.dataset || unitExportBusy}
+                  aria-label={unitExportBusy ? 'Mengekspor analisis unit' : 'Unduh analisis unit sebagai Excel'}
+                  title="Unduh analisis unit sebagai Excel"
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                    <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
+                  </svg>
+                  <span>{unitExportBusy ? 'Mengekspor…' : 'Unduh Excel'}</span>
+                </button>
+              </div>
             </div>
             {unitExportError && (
               <p role="alert" className="mt-3 break-words text-sm text-rose-300">{unitExportError}</p>
+            )}
+            {unitColumnWidthError && (
+              <p role="alert" className="mt-3 break-words text-sm text-rose-300">{unitColumnWidthError}</p>
             )}
             {isLoading && !analysis ? (
               <div className="flex justify-center p-10"><Spinner label="Memuat analisis unit…" /></div>
@@ -919,46 +2068,78 @@ export default function PerformanceAnalysisPage() {
                 Belum ada dataset kinerja yang diunggah.
               </p>
             ) : (
-              <div className="mt-5 overflow-x-auto rounded-xl border border-slate-700">
-                <table className="w-full min-w-[2320px] text-left text-xs">
+              <div
+                ref={setUnitTableElement}
+                className="mt-5 overflow-x-auto rounded-xl border border-slate-700"
+              >
+                <table
+                  className="text-left text-xs"
+                  style={{ width: visibleUnitTableWidth, tableLayout: 'fixed' }}
+                >
+                  <colgroup>
+                    {visibleUnitColumns.map((column) => (
+                      <col
+                        key={column.key}
+                        style={{ width: visibleUnitColumnWidths[column.key] }}
+                      />
+                    ))}
+                  </colgroup>
                   <thead className="sticky top-0 bg-slate-900 text-slate-300">
                     <tr>
-                      <th className="sticky left-0 z-10 bg-slate-900 px-3 py-3">Unit</th>
-                      <th className="px-3 py-3">Pegawai</th>
-                      <th className="px-3 py-3">Rata-rata NPK</th>
-                      <th className="px-3 py-3">Rata-rata NHK</th>
-                      <th className="px-3 py-3">Rata-rata NKP Awal</th>
-                      <th className="px-3 py-3">NKP Awal Sangat Istimewa</th>
-                      <th className="px-3 py-3">Hukdis</th>
-                      <th className="px-3 py-3">Dampak Pelanggaran</th>
-                      <th className="px-3 py-3">Dampak Perilaku</th>
-                      <th className="px-3 py-3">Koreksi (+/−)</th>
-                      <th className="px-3 py-3">Rata-rata Koreksi</th>
-                      <th className="px-3 py-3">Maks. Koreksi</th>
-                      <th className="px-3 py-3">Min. Koreksi</th>
-                      <th className="px-3 py-3">Rata-rata NKP Akhir</th>
-                      <th className="px-3 py-3">NKP Akhir Sangat Istimewa</th>
-                      <th
-                        className="px-3 py-3"
-                        title="Jumlah pegawai dengan status akhir yang berbeda dari status awal"
-                      >
-                        Gap Status
-                      </th>
+                      {visibleUnitColumns.map((column) => (
+                        <th
+                          key={column.key}
+                          aria-sort={
+                            isSortableUnitColumn(column) && unitSort?.key === column.key
+                              ? unitSort.direction === 'asc'
+                                ? 'ascending'
+                                : 'descending'
+                              : 'none'
+                          }
+                          className={`relative px-3 py-3 ${column.key === 'unit' ? 'sticky left-0 z-10 bg-slate-900' : ''}`}
+                        >
+                          {isSortableUnitColumn(column) ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const { key } = column;
+                                setUnitSort((current) => ({
+                                  key,
+                                  direction: current?.key === key && current.direction === 'asc'
+                                    ? 'desc'
+                                    : 'asc',
+                                }));
+                              }}
+                              className="inline-flex items-center gap-1 text-left hover:text-white"
+                              aria-label={`Urutkan berdasarkan ${column.label}`}
+                            >
+                              {column.label}
+                              <span aria-hidden="true" className="text-sky-300">
+                                {unitSort?.key === column.key
+                                  ? unitSort.direction === 'asc' ? '↑' : '↓'
+                                  : '↕'}
+                              </span>
+                            </button>
+                          ) : column.label}
+                          {unitColumnResizeHandle(column)}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
-                    {analysis.units.map((unit) => {
-                      const expanded = expandedUnits.includes(unit.label);
+                    {sortedUnits.map((unit) => {
+                      const unitKey = JSON.stringify([unit.label]);
+                      const expanded = expandedUnits.includes(unitKey);
                       return (
-                        <Fragment key={unit.label}>
+                        <Fragment key={unitKey}>
                           <tr className="bg-slate-800/40 hover:bg-slate-800/70">
                             <td className="sticky left-0 bg-surface-800 px-3 py-3 font-medium">
                               <button
                                 type="button"
                                 onClick={() => {
                                   setExpandedUnits((current) => expanded
-                                    ? current.filter((value) => value !== unit.label)
-                                    : [...current, unit.label]);
+                                    ? current.filter((value) => value !== unitKey)
+                                    : [...current, unitKey]);
                                 }}
                                 aria-expanded={expanded}
                                 disabled={unit.children.length === 0}
@@ -969,16 +2150,80 @@ export default function PerformanceAnalysisPage() {
                               </button>
                               {unit.label}
                             </td>
-                            <UnitMetricCells metrics={unit} />
+                            <UnitMetricCells metrics={unit} liteView={isUnitLiteView} />
+                            <td className="px-3 py-3">
+                              <UnitComparisonButton
+                                unit={unit.label}
+                                disabled={!analysis.previous_period}
+                                onClick={() => setComparisonTarget({
+                                  label: unit.label,
+                                  comparison: unit.comparison,
+                                })}
+                              />
+                            </td>
                           </tr>
-                          {expanded && unit.children.map((child) => (
-                            <tr key={`${unit.label}-${child.label}`} className="hover:bg-slate-800/40">
-                              <td className="sticky left-0 bg-surface-900 px-3 py-3 pl-10 text-slate-300">
-                                {child.label}
-                              </td>
-                              <UnitMetricCells metrics={child} />
-                            </tr>
-                          ))}
+                          {expanded && unit.children.map((child) => {
+                            const childKey = JSON.stringify([unit.label, child.label]);
+                            const childExpanded = expandedUnits.includes(childKey);
+                            return (
+                              <Fragment key={childKey}>
+                                <tr className="hover:bg-slate-800/40">
+                                  <td className="sticky left-0 bg-surface-900 px-3 py-3 pl-10 text-slate-300">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setExpandedUnits((current) => childExpanded
+                                          ? current.filter((value) => value !== childKey)
+                                          : [...current, childKey]);
+                                      }}
+                                      aria-expanded={childExpanded}
+                                      disabled={child.children.length === 0}
+                                      className="mr-2 text-sky-300 disabled:text-slate-600"
+                                      aria-label={`${childExpanded ? 'Tutup' : 'Buka'} rincian ${child.label}`}
+                                    >
+                                      {childExpanded ? '−' : '+'}
+                                    </button>
+                                    {child.label}
+                                  </td>
+                                  <UnitMetricCells metrics={child} liteView={isUnitLiteView} />
+                                  <td className="px-3 py-3">
+                                    <UnitComparisonButton
+                                      unit={child.label}
+                                      disabled={!analysis.previous_period}
+                                      onClick={() => setComparisonTarget({
+                                        label: `${unit.label} · ${child.label}`,
+                                        comparison: child.comparison,
+                                      })}
+                                    />
+                                  </td>
+                                </tr>
+                                {childExpanded && child.children.map((grandchild) => (
+                                  <tr
+                                    key={JSON.stringify([unit.label, child.label, grandchild.label])}
+                                    className="hover:bg-slate-800/40"
+                                  >
+                                    <td className="sticky left-0 bg-surface-900 px-3 py-3 pl-16 text-slate-400">
+                                      {grandchild.label}
+                                    </td>
+                                    <UnitMetricCells
+                                      metrics={grandchild}
+                                      liteView={isUnitLiteView}
+                                    />
+                                    <td className="px-3 py-3">
+                                      <UnitComparisonButton
+                                        unit={grandchild.label}
+                                        disabled={!analysis.previous_period}
+                                        onClick={() => setComparisonTarget({
+                                          label: `${unit.label} · ${child.label} · ${grandchild.label}`,
+                                          comparison: grandchild.comparison,
+                                        })}
+                                      />
+                                    </td>
+                                  </tr>
+                                ))}
+                              </Fragment>
+                            );
+                          })}
                         </Fragment>
                       );
                     })}
@@ -1034,9 +2279,14 @@ export default function PerformanceAnalysisPage() {
                 type="button"
                 onClick={() => void exportRecords()}
                 disabled={!recordData?.period || recordsExportBusy}
-                className="btn-secondary disabled:opacity-50"
+                aria-label={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
+                title="Unduh daftar pegawai sebagai Excel"
+                className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50"
               >
-                {recordsExportBusy ? 'Mengekspor…' : 'Unduh Excel'}
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                  <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
+                </svg>
+                <span>{recordsExportBusy ? 'Mengekspor…' : 'Unduh Excel'}</span>
               </button>
             </div>
           </div>
@@ -1088,19 +2338,84 @@ export default function PerformanceAnalysisPage() {
                       })}
                     </tr>
                     <tr className="border-t border-slate-700">
-                      {RECORD_COLUMNS.map((column) => (
-                        <th key={column.key} className="px-2 py-2">
-                          <input
-                            type="search"
-                            value={recordFilterDrafts[column.key] ?? ''}
-                            onChange={(event) => updateRecordFilter(column.key, event.target.value)}
-                            maxLength={100}
-                            className="input w-36 px-2 py-1 text-xs"
-                            aria-label={`Filter ${column.label}`}
-                            placeholder={`Filter ${column.label}`}
-                          />
-                        </th>
-                      ))}
+                      {RECORD_COLUMNS.map((column) => {
+                        const options = recordData.filter_options[column.key];
+                        const range = recordData.numeric_ranges[column.key];
+                        if (options) {
+                          return (
+                            <th key={column.key} className="px-2 py-2">
+                              <select
+                                value={recordFilterDrafts[column.key] ?? ''}
+                                onChange={(event) => updateRecordFilter(column.key, event.target.value)}
+                                className="input w-40 px-2 py-1 text-xs"
+                                aria-label={`Filter ${column.label}`}
+                              >
+                                <option value="">Semua</option>
+                                {options.map((option) => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                            </th>
+                          );
+                        }
+                        if (
+                          range
+                          && range[0] !== null
+                          && range[1] !== null
+                          && range[0] < range[1]
+                        ) {
+                          const [minimum, maximum] = range;
+                          const minKey = `${column.key}__min`;
+                          const maxKey = `${column.key}__max`;
+                          const selectedMinimum = Number(recordFilterDrafts[minKey] ?? minimum);
+                          const selectedMaximum = Number(recordFilterDrafts[maxKey] ?? maximum);
+                          return (
+                            <th key={column.key} className="min-w-40 px-2 py-2">
+                              <div className="space-y-1">
+                                <label className="flex items-center gap-1 text-[10px] text-slate-400">
+                                  Min
+                                  <input
+                                    type="range"
+                                    min={minimum}
+                                    max={maximum}
+                                    step="0.01"
+                                    value={selectedMinimum}
+                                    aria-label={`Nilai minimum ${column.label}`}
+                                    onChange={(event) => updateNumericRangeFilter(
+                                      column.key,
+                                      'min',
+                                      event.target.value,
+                                      range,
+                                    )}
+                                    className="w-20 accent-sky-400"
+                                  />
+                                  <span>{formatNumber(selectedMinimum)}</span>
+                                </label>
+                                <label className="flex items-center gap-1 text-[10px] text-slate-400">
+                                  Maks
+                                  <input
+                                    type="range"
+                                    min={minimum}
+                                    max={maximum}
+                                    step="0.01"
+                                    value={selectedMaximum}
+                                    aria-label={`Nilai maksimum ${column.label}`}
+                                    onChange={(event) => updateNumericRangeFilter(
+                                      column.key,
+                                      'max',
+                                      event.target.value,
+                                      range,
+                                    )}
+                                    className="w-20 accent-sky-400"
+                                  />
+                                  <span>{formatNumber(selectedMaximum)}</span>
+                                </label>
+                              </div>
+                            </th>
+                          );
+                        }
+                        return <th key={column.key} className="px-2 py-2" />;
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -1156,6 +2471,15 @@ export default function PerformanceAnalysisPage() {
         </section>
         )}
       </div>
+      {comparisonTarget && analysis?.dataset && analysis?.previous_period && (
+        <UnitComparisonDialog
+          label={comparisonTarget.label}
+          comparison={comparisonTarget.comparison}
+          currentPeriod={analysis.dataset.period}
+          previousPeriod={analysis.previous_period}
+          onClose={() => setComparisonTarget(null)}
+        />
+      )}
     </main>
   );
 }

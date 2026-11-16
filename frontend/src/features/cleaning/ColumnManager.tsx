@@ -57,6 +57,7 @@ export function ColumnManager({ columns, onApplyRemove, onApplyRename, isLoading
   const pendingRenames = Object.entries(renames).filter(
     ([orig, val]: [string, string]) => val.trim() && val.trim() !== orig
   ).length;
+
   const removedCount = columns.length - checked.size;
 
   return (

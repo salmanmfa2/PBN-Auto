@@ -6,7 +6,7 @@ Nama aplikasi web pada tab browser adalah **MPK Workspace**; PBN Cleaner tetap m
 
 ## Catatan Rilis
 
-Pembaruan web saat ini adalah **1.3.0**: [Catatan pembaruan Web](./Update%20Notes/Update%20Notes%201.3.0%20Web.md), setelah [pembaruan Web 1.2.1](./Update%20Notes/Update%20Notes%201.2.1%20Web.md) dan [pembaruan Web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). Persyaratan desktop terkait didokumentasikan terpisah di [Catatan pembaruan Desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); catatan desktop tersebut tidak menyatakan build atau rilis desktop telah dibuat.
+Pembaruan web saat ini adalah **1.4.0**: [Catatan pembaruan Web](./Update%20Notes/Update%20Notes%201.4.0%20Web.md), setelah [pembaruan Web 1.3.0](./Update%20Notes/Update%20Notes%201.3.0%20Web.md), [Web 1.2.1](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), dan [Web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md). Persyaratan desktop terkait didokumentasikan terpisah di [Catatan pembaruan Desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md); catatan desktop tersebut tidak menyatakan build atau rilis desktop telah dibuat.
 
 Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub**, tanpa sistem login. Akun web, monitoring Plt./Plh., pembuatan agenda Pelantikan, dan Analisis Kinerja DJPb hanya tersedia di web. Bahan Pendukung MPK dan Simulasi Mutasi masih berupa placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
 
@@ -19,12 +19,12 @@ Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub
 | **Pengelolaan Kolom** | ✅ Aktif | Menyembunyikan atau menghapus kolom serta mengganti nama kolom secara langsung dengan pratinjau tabel |
 | **Ekspor** | ✅ Aktif | Mengunduh data dalam format `.csv` atau `.xlsx` |
 | **Insight Hub** | ✅ Aktif | Dashboard PBN Open + Edu + HB dengan jumlah pegawai dan distribusi data |
-| **Insight Hub Beta (web)** | ✅ Beta | Filter, grafik, dan tabel pegawai yang sama dari `pbncleaner.fetch_pbnopen`; Super Admin dapat mengganti sumber melalui CSV yang divalidasi kolomnya |
-| **Analisis Kinerja DJPb (web)** | ✅ Aktif | Analisis dan tabel data dapat diakses semua pengguna termasuk Guest; hanya Super Admin yang dapat mengunggah atau menyesuaikan data |
+| **Insight Hub Beta (web)** | ✅ Beta | Filter, grafik, dan tabel pegawai yang sama dari `pbncleaner.fetch_pbnopen`; God User dapat mengelola sumber dan tabel terkait melalui dialog Admin |
+| **Analisis Kinerja DJPb (web)** | ✅ Aktif | Riwayat beberapa triwulan, perbandingan Unit Eselon II dengan triwulan sebelumnya, filter dan ekspor per periode; Super Admin dan God User dapat mengunggah atau menyesuaikan data |
 | **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, memilih pejabat pengganti dari PBN Open, dan mengekspor data |
-| **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Mengelola agenda pribadi, memproses satu atau beberapa sheet workbook, memakai Lite View dan lebar kolom yang dapat diatur, mencocokkan pegawai dengan PBN Open, meninjau peserta terpilih, serta mengunduh dokumen undangan atau lampiran ND Pengantar |
-| **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, dan Super Admin; sesi pengguna berlaku satu jam |
-| **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin dan administrasi monitoring Plt./Plh. |
+| **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Alur utama semua sheet, Lite View dan lebar kolom tersimpan, toggle Daring/Luring, pilihan unduhan dokumen per Unit/moda, serta lampiran ND Pengantar |
+| **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, Super Admin, serta God User Level 4 berbasis peran; sesi pengguna berlaku satu jam |
+| **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin; pemeliharaan tabel database hanya oleh God User |
 | **Feedback pengguna (web)** | ✅ Aktif | Mengirim masukan untuk menu tertentu atau keseluruhan aplikasi; Admin dan Super Admin dapat melihat, menghapus satu masukan, atau menghapus semuanya |
 | **Menu web lainnya** | 🛠️ Placeholder | Bahan Pendukung MPK dan Simulasi Mutasi belum diimplementasikan; menu ini tidak tersedia di desktop |
 | **Tampilan** | ✅ Aktif | Tema Default, Dark, dan Light; pilihan pengguna yang login tersimpan pada akunnya |
@@ -231,6 +231,11 @@ VITE_API_URL=http://localhost:8000
 | `POST` | `/auth/logout` | Mencabut sesi saat ini |
 | `GET` / `PUT` | `/auth/preferences/theme` | Membaca atau memperbarui tema akun yang sedang masuk |
 | `GET` / `POST` / `PUT` / `DELETE` | `/admin/users` | Mengelola akun (khusus Super Admin) |
+| `GET` | `/admin/database/tables` | Mencantumkan target tabel yang diizinkan (khusus God User) |
+| `POST` | `/admin/database/{target_key}/preview` | Memvalidasi CSV dan menampilkan dampak tanpa perubahan (khusus God User) |
+| `POST` | `/admin/database/{target_key}/apply` | Mengganti sumber atau memperbarui tabel referensi secara transaksional (khusus God User) |
+| `POST` | `/admin/database/{target_key}/sync/preview` | Mempratinjau sinkronisasi tabel pegawai (khusus God User) |
+| `POST` | `/admin/database/{target_key}/sync` | Menyinkronkan tabel pegawai dari sumber yang dipasangkan (khusus God User) |
 | `POST` | `/chat` | Membuat jawaban chat Groq untuk pengguna yang sudah masuk |
 | `POST` / `GET` / `DELETE` | `/feedback` | Mengirim feedback (pengguna login), atau melihat/menghapus semua feedback (Admin dan Super Admin) |
 | `DELETE` | `/feedback/{feedback_id}` | Menghapus satu feedback (Admin dan Super Admin) |
@@ -247,11 +252,11 @@ VITE_API_URL=http://localhost:8000
 
 ### Akun dan peran
 
-Aplikasi web mendukung Guest, User (level 1), Admin (level 2), dan Super Admin (level 3). Pendaftaran publik langsung membuat akun level 1. Guest dan User dapat melihat data monitoring Plt./Plh.; hanya Admin dan Super Admin yang dapat mengubahnya. Workspace Admin hanya dapat diakses akun Admin dan Super Admin yang sudah masuk; pengelolaan akun hanya dapat dilakukan Super Admin. Fitur pembersihan dataset tetap tersedia untuk Guest dan User.
+Aplikasi web mendukung Guest, User (level 1), Admin (level 2), Super Admin (level 3), dan God User (level 4). Pendaftaran publik langsung membuat akun level 1. Level 4 adalah peran umum, bukan batasan username; migrasi startup menaikkan akun `salmanmfa` ke level 4. Hanya administrator Level 4 yang dapat memberikan atau mengelola akun Level 4. Peran ini mencakup kemampuan Super Admin dan akses pemeliharaan tabel database. Super Admin level 3 yang membuka popup Database Management akan melihat `You have no authority to view this page.`; endpoint backend tetap memeriksa hak akses secara independen. Guest dan User dapat melihat data monitoring Plt./Plh.; Admin, Super Admin, dan God User dapat mengubahnya. Workspace Admin dapat diakses Admin ke atas, sedangkan pengelolaan akun tersedia untuk Super Admin dan God User. Fitur pembersihan dataset tetap tersedia untuk Guest dan User.
 
 Toolbar menyediakan tema Default (tampilan gelap bawaan), Dark, dan Light. Pilihan terakhir pengguna yang sudah masuk disimpan di `user_preferences` dan mengikuti akunnya; pilihan Guest hanya disimpan di browser tersebut. Tombol Patch Notes, catatan yang belum diperbaiki, Snake, API Test, dan Admin dikelompokkan di balik tombol tampil/sembunyikan toolbar; tombol masuk/keluar tetap terlihat.
 
-Super Admin pertama **tidak dibuat otomatis**. Setelah tabel akun dibuat, masukkan Super Admin pertama secara manual menggunakan contoh SQL berkomentar dalam `backend/sql/003_create_users_and_sessions.sql`, lalu masuk dan gunakan workspace Super Admin. Sesuai kebutuhan proyek saat ini, password akun disimpan sebagai teks biasa di MySQL. Ini tidak sesuai untuk produksi atau penerapan yang sensitif; jangan membuka akses database dan jangan menggunakan password nyata/yang dipakai ulang.
+Super Admin pertama **tidak dibuat otomatis**. Setelah tabel akun dibuat, masukkan akun awal secara manual menggunakan contoh SQL berkomentar dalam `backend/sql/003_create_users_and_sessions.sql`. Akun `salmanmfa` akan dipromosikan ke Level 4 oleh migrasi startup; akun lain dapat diberi Level 4 melalui manajemen akun oleh administrator Level 4. Sesuai kebutuhan proyek saat ini, password akun disimpan sebagai teks biasa di MySQL. Ini tidak sesuai untuk produksi atau penerapan yang sensitif; jangan membuka akses database dan jangan menggunakan password nyata/yang dipakai ulang.
 
 Pembersihan Sitasi Es.III mengubah `Keterangan` menjadi proper case setelah enam karakter pertamanya dihapus. Pembersihan Sitasi Es.IV mengubah `Pertimbangan` menjadi proper case. Proper case menjadikan huruf pertama setiap kata sebagai huruf kapital; nilai yang kosong tetap kosong.
 

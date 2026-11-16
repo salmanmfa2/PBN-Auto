@@ -4,9 +4,9 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 
 ## Cakupan Rilis
 
-- Rilis web saat ini adalah **1.2.1**. Lihat [catatan pembaruan web](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), [pembaruan web 1.2](./Update%20Notes/Update%20Notes%201.2%20Web.md), dan [catatan pembaruan desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
+- Pembaruan web saat ini adalah **1.4.0**. Lihat [catatan pembaruan web 1.4.0](./Update%20Notes/Update%20Notes%201.4.0%20Web.md), [catatan pembaruan web 1.3.0](./Update%20Notes/Update%20Notes%201.3.0%20Web.md), [web 1.2.1](./Update%20Notes/Update%20Notes%201.2.1%20Web.md), dan [catatan pembaruan desktop](./Update%20Notes/Update%20Notes%201.2%20Desktop.md).
 - Navigasi utama desktop hanya berisi PBN Analytics dan Insight Hub serta tidak memiliki sistem login. Menu tambahan dan alur akun hanya berlaku untuk web.
-- Generate ND Undangan Pelantikan telah berfungsi untuk pengguna web yang masuk. Analisis Kinerja DJPb dapat dilihat publik, termasuk Guest; hanya Super Admin yang dapat mengunggah atau menyesuaikan dataset triwulan aktif. Bahan Pendukung MPK dan Simulasi Mutasi masih placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
+- Generate ND Undangan Pelantikan tersedia bagi pengguna web yang sudah masuk; alur semua sheet menjadi rute utama dan unduhan dokumen dapat dipilih berdasarkan unit dan moda. Analisis Kinerja DJPb dapat dilihat publik, termasuk Guest; Super Admin dan God User dapat mengunggah atau menyesuaikan data. Beberapa triwulan disimpan terpisah, dengan penggantian per triwulan dan perbandingan terhadap periode sebelumnya. Bahan Pendukung MPK dan Simulasi Mutasi masih placeholder web; versi **2.0** direncanakan sebagai milestone untuk alur tersebut.
 
 ## Gambaran Umum
 
@@ -15,6 +15,10 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 
 ## Mulai Cepat (Lokal)
 
+- Penyiapan Windows pertama kali:
+  - Pasang XAMPP dan jalankan layanan MySQL lokal. Siapkan dump skema/data referensi `pbncleaner` terbaru yang memiliki definisi tabel `fetch_pbnopen` dan `dt_employee` tanpa baris pegawai, tabel referensi yang sudah terisi, serta kolom `ref_unit_kerja.city` / `prov`. Dump disediakan terpisah dan tidak disimpan di repositori.
+  - Jalankan `setup-developer.bat` satu kali. Skrip memeriksa/memasang Python 3.12 dan Node.js 22.12+, memasang dependensi backend/frontend, membangun frontend, meminta konfirmasi sebelum mengimpor ke database lokal `pbncleaner`, dan membuat `backend/.env` yang diabaikan Git.
+  - Skrip tidak memasang XAMPP atau membuat akun Admin. Setelah setup, jalankan `run-app.bat` dan buat akun `salmanmfa` sebagai Super Admin; startup akan menaikkan akun tersebut ke Level 4. Pemeliharaan database tersedia bagi akun Level 4. Hanya administrator Level 4 yang dapat memberikan atau mengelola peran Level 4. Impor dapat mengganti isi database lokal; jangan arahkan ke produksi.
 - Backend:
   - Buat dan aktifkan Python virtual environment di `backend/`.
   - Pasang dependensi: `pip install -r requirements.txt`.
@@ -22,7 +26,7 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - Health check: `GET http://localhost:8000/health`.
 - Frontend:
   - Dari `frontend/`, jalankan `npm install`, kemudian `npm run dev` untuk pengembangan atau `npm run build` untuk build produksi.
-  - Rute mencakup `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/manajemen-plt-plh`, `/undangan-pelantikan`, dan `/undangan-pelantikan-experimental`.
+  - Rute mencakup `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/analisis-kinerja`, `/manajemen-plt-plh`, dan `/undangan-pelantikan`. Rute lama `/undangan-pelantikan-experimental` diarahkan ke alur utama.
 - Menjalankan aplikasi lokal dengan satu klik:
   - Klik dua kali `run-app-testing.bat` dari direktori utama proyek untuk menjalankan backend lokal dan frontend Vite di port terpisah.
   - Backend pengembangan memakai database dan penyimpanan dataset yang sama dengan aplikasi LAN sesuai konfigurasi. Perubahan data dan migrasi skema saat startup akan berlaku untuk aplikasi aktif; berhati-hatilah saat menguji perubahan.
@@ -43,19 +47,23 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `app/api/insights_beta.py` — endpoint Insight Hub Beta berbasis database untuk `pbncleaner.fetch_pbnopen`.
   - `app/api/plt_plh.py` — API monitoring Plt./Plh., termasuk pencarian pegawai PBN Open khusus Admin.
   - `app/api/pelantikan_agenda.py` — API agenda milik pengguna, unggah/pencocokan roster, pilihan peserta, dan pembuatan ZIP.
+  - `app/api/performance_kinerja.py` — dashboard/data/ekspor kinerja publik serta endpoint unggah/penyesuaian yang dilindungi peran.
   - `app/api/auth.py` — endpoint login, pendaftaran, sesi, preferensi pengguna, dan administrasi akun.
-  - Router Admin di `auth.py` menyediakan endpoint validasi dan penggantian CSV `pbncleaner.fetch_pbnopen` khusus Super Admin.
+  - Router Admin di `auth.py` menyediakan endpoint pratinjau/terapkan/sinkronisasi database dengan allowlist khusus Level 4; hanya administrator Level 4 yang dapat memberikan Level 4 melalui manajemen akun.
   - `app/api/chat.py` — endpoint chat pengguna terautentikasi; kredensial penyedia tetap di backend.
   - `app/services/chat_service.py` — mengirim ringkasan kemampuan aplikasi yang ringkas dan dikelola di kode ke Groq pada setiap permintaan; README dan dokumentasi developer tidak dibaca ulang saat runtime. Selaraskan ringkasan tersebut dengan perilaku aplikasi yang telah diverifikasi ketika fitur berubah.
   - `app/services/dataset_service.py` — logika DataFrame utama. Mengarahkan proses ke cleaner programatis atau membaca file aturan teks lama.
-  - `app/services/pbn_dashboard_service.py` — memvalidasi kolom dashboard yang sudah dibersihkan, menerapkan filter, dan menghitung jumlah pegawai serta distribusi grafik.
+  - `app/repositories/pbn_dashboard_repository.py` — memisahkan pembacaan dari tabel sumber pegawai bersama.
+  - `app/services/pbn_dashboard_service.py` — memvalidasi kolom dashboard, menerapkan filter, serta menghitung jumlah pegawai dan distribusi grafik melalui repository.
   - Insight Hub Beta menggunakan ulang perhitungan dan skema respons dashboard yang sama; data dibaca dari `pbncleaner.fetch_pbnopen` melalui engine SQLAlchemy yang dikonfigurasi.
-  - `app/services/pbnopen_import_service.py` memvalidasi nama kolom CSV secara tepat dan mengganti seluruh baris tabel dalam transaksi database.
+  - `app/services/performance_kinerja_service.py`, `app/models/performance_kinerja.py`, dan `app/schemas/performance_kinerja.py` — penyimpanan berbasis triwulan, query, perbandingan, cache, dan tipe API Analisis Kinerja.
+  - `app/services/pbnopen_import_service.py` menangani penggantian sumber yang diizinkan, pemeliharaan tabel referensi dengan ID stabil, dan sinkronisasi pegawai berdasarkan NIP; perubahan dipratinjau dan diterapkan secara transaksional.
   - `app/services/auth_service.py` — siklus akun/sesi, aturan peran, dan preferensi tampilan tersimpan.
+  - `app/history_db.py` — migrasi startup yang menaikkan akun `salmanmfa` ke Level 4 dan memperbarui constraint peran umum 1–4; migrasi SQLite mempertahankan sesi/preferensi.
   - `app/cleaners/` — modul cleaner programatis:
     - `pbn.py`, `pbn_edu.py`, `pbn_edu_hb.py`, `sitasi_esiii.py`, `sitasi_esiv.py` — masing-masing mengembalikan konfigurasi pembersihan.
   - `app/storage/dataset_store.py` — penyimpanan dataset dalam memori (UUID -> sheets). Data bersifat sementara dan akan hilang saat server dimulai ulang.
-  - `app/history_db.py` — koneksi dan sesi SQLAlchemy MySQL untuk riwayat pembersihan.
+  - `app/history_db.py` — engine dan sesi SQLAlchemy bersama untuk MySQL/MariaDB, registrasi model, serta migrasi skema saat startup.
   - `app/models/auth.py` — model akun, sesi, dan preferensi pengguna.
   - `app/models/cleaning_history.py` — model SQLAlchemy untuk tabel riwayat pembersihan.
   - `app/models/plt_plh.py` dan `app/services/plt_plh_service.py` — record monitoring, masa kerja/status, ekspor Excel, dan lookup pejabat pengganti.
@@ -73,22 +81,31 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
     - `LandingPage.tsx` — halaman utama dengan pilihan fitur (rute `/`).
     - `AnalyticsPage.tsx` — antarmuka pembersihan dataset PBN (rute `/pbn-analytics`).
     - `InsightHubPage.tsx` — dashboard interaktif PBN Open + Edu + HB (rute `/insights`).
-    - `LoginPage.tsx` / `AdminPage.tsx` — login web dan workspace pengelolaan akun oleh Super Admin.
+    - `LoginPage.tsx` / `AdminPage.tsx` — login web, inbox feedback, workspace akun Super Admin, dan dialog pemeliharaan database God User.
     - `PltPlhManagementPage.tsx` — UI monitoring khusus web.
     - `PelantikanAgendaPage.tsx` — UI agenda, pratinjau peserta, dan pembuatan dokumen khusus web.
   - `src/App.tsx` — rute, gerbang sesi/peran, dan pemasangan toolbar/chat bersama.
   - `frontend/index.html` — judul dokumen browser (`MPK Workspace`).
   - `src/contexts/AuthContext.tsx` — autentikasi, mode Guest, dan status sesi.
-  - `src/components/AppToolbar.tsx` — jam yang dapat digeser dan menempel ke tepi layar saat dilepas/ukuran layar berubah, tombol utilitas tersembunyi, menu tema, dan dialog toolbar.
+  - `src/components/AppToolbar.tsx` — jam yang dapat digeser, utilitas yang dapat disembunyikan, menu tema, dan dialog toolbar. Konten Patch Notes dalam aplikasi serta versi default dikelola di `PATCH_NOTES` dan `selectedPatchVersion` pada file ini.
   - `src/components/ChatWidget.tsx` — UI Groq chat terautentikasi dan tampilan Markdown.
   - `src/main.tsx` — entry point frontend yang membungkus App dengan `<BrowserRouter>`.
   - `src/hooks/useDataset.ts` — aksi dataset tingkat tinggi dan panggilan API yang digunakan UI.
   - `src/services/api.ts` — fungsi pembungkus HTTP untuk endpoint backend.
   - `src/features/cleaning/DataTable.tsx` — komponen tabel untuk halaman; menangani pagination, filter, dan pengurutan.
   - `src/pages/InsightHubPage.tsx` — kontrol dan grafik distribusi dashboard; menerima ID dataset dan nama sheet melalui URL.
+  - `src/pages/PerformanceAnalysisPage.tsx` — pemilih triwulan di luar tiga tab Overview/Unit Eselon II/Daftar Pegawai, tampilan per periode, filter, dan dialog pengelolaan data Super Admin.
 
 - `config.json` — konfigurasi deployment terpusat; `host: "auto"` mengaktifkan deteksi alamat LAN dinamis, sedangkan port dan origin CORS loopback tetap dapat diatur.
 - `resolve-network-config.ps1` — resolver host bersama untuk launcher/deployment jaringan; mengutamakan Wi-Fi aktif dan menghitung origin CORS frontend.
+
+## Pemeliharaan Database Admin (Web)
+
+- Popup database Admin yang sudah ada tetap digunakan. Super Admin level 3 dapat membukanya, tetapi akan melihat `You have no authority to view this page.`; endpoint API juga mewajibkan Level 4 untuk operasi database. Hak Super Admin lainnya tetap tersedia bagi Level 3.
+- Level 4 adalah peran, bukan batasan username. `init_history_db()` menaikkan akun `salmanmfa` dan memperbarui constraint database saat startup. Level 4 mencakup kemampuan Super Admin serta pemeliharaan database; hanya administrator Level 4 yang dapat memberikan atau mengelola akun Level 4. Cadangkan MySQL/MariaDB bersama dan uji migrasi pada salinan sebelum deployment.
+- Katalog backend menggunakan allowlist: penggantian `fetch_pbnopen` atau `fetch_pbnopen_q2_2026`; sinkronisasi `dt_employee` hanya dari `fetch_pbnopen` atau `dt_employee_q2_2026` hanya dari `fetch_pbnopen_q2_2026`; pembaruan lima tabel `ref_*` bersama berdasarkan primary ID. Browser tidak mengirim nama skema/tabel mentah.
+- Pratinjau CSV memvalidasi seluruh kolom dan melaporkan jumlah baris sebelum diterapkan. Penggantian sumber dan pembaruan referensi berjalan dalam transaksi. ID referensi tetap stabil; ID yang masih dipakai salah satu tabel pegawai tidak dapat dihapus. Sinkronisasi memetakan label melalui referensi bersama, mempertahankan `employee_id` untuk NIP yang cocok, menambah NIP baru, dan menghapus pegawai yang tidak lagi ada di sumber. Sumber kosong ditolak agar tabel tidak terhapus tanpa sengaja.
+- Pemeriksaan terfokus: dari `backend/`, jalankan `python -m unittest discover -s tests -p 'test_pbnopen_import.py'`, `python -m unittest discover -s tests -p 'test_auth_service.py'`, dan `python -m unittest discover -s tests -p 'test_auth_migration.py'`. Tes migrasi mencakup SQLite; migrasi MySQL/MariaDB tetap perlu diuji pada salinan database.
 
 ## Aturan Auto-Clean: Cara Kerja dan Penambahan Mode
 
@@ -161,6 +178,23 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 - Kolom keluaran yang diperlukan adalah `Sex`, `Usia (th.)`, `TMT Jabatan`, `Eselon`, `Pendidikan Terakhir (Short)`, `Rumpun Pdd Terakhir`, `Region Homebase`, `Unit Eselon II`, dan `Agama`. Pencocokan header mengabaikan kapitalisasi dan tanda baca.
 - Cleaner mempertahankan nilai `TMT Jabatan` apa adanya. Dashboard mem-parsing nilai (termasuk teks tanggal dengan apostrof di depan) untuk menghitung masa jabatan tanpa mengubah data hasil pembersihan. Masa jabatan dihitung dalam tahun kalender penuh hingga tanggal saat ini. Baris dengan usia/TMT kosong tetap disertakan pada tampilan rentang penuh dan dikecualikan jika rentang terkait dipersempit.
 - Popup menampilkan `index`, `Nama`, `Eselon`, `Jabatan`, `Pendidikan Terakhir (Th.)`, `Jurusan`, dan `Universitas/Sekolah Tinggi`; `Pendidikan Terakhir (Short)` digunakan jika header pendidikan yang diminta tidak tersedia.
+- Pembacaan database dipisahkan ke `app/repositories/pbn_dashboard_repository.py`; akses SQL/sumber data tetap di repository, sedangkan filter/agregasi dashboard berada di `pbn_dashboard_service.py`. Insight Hub dan Insight Hub Beta berbagi perilaku layanan tersebut.
+
+## Analisis Kinerja DJPb
+
+- Pemilih periode tingkat atas terpisah dari tiga tab analisis (Overview, Unit Eselon II, dan Daftar Pegawai). Triwulan terbaru dipilih secara default; dashboard, data, filter, dan ekspor mengikuti periode terpilih.
+- Setiap periode disimpan sebagai dataset terpisah. Unggah ulang triwulan yang sama hanya mengganti triwulan tersebut; periode lain tetap tersedia. Identitas record adalah `(dataset_id, nip)`, dan setiap periode unik di `performance_kinerja_datasets`.
+- Perbandingan Unit Eselon II hanya menggunakan triwulan kalender yang tepat sebelumnya, termasuk pergantian tahun Q4 ke Q1. Jika periode tersebut tidak tersedia, perbandingan tidak ditampilkan. Detail dibuka dari baris unit atau tombol perbandingan seluruh dataset dan mencakup nilai saat ini/sebelumnya, delta, perubahan persentase jika relevan, serta distribusi status NKP. Perubahan persentase ditampilkan tebal, merah untuk nilai negatif, dan hijau untuk nilai positif. Ikon cetak membuka tampilan cetak khusus laporan yang dapat disimpan sebagai PDF.
+- Urutan awal unit mengikuti `unit_kerja_id` dari kecil ke besar; ID yang tidak tersedia ditempatkan di bawah. Header metrik numerik dapat mengurutkan naik/turun, diterapkan terpisah pada tingkat Eselon II, III, dan IV; nilai numerik kosong tetap di bawah.
+- Tabel unit dapat dibuka bertingkat dari Unit Eselon II ke III dan IV; perbandingan tersedia pada setiap tingkat. Lite View menampilkan Unit, Pegawai, Rata-rata NPK, Koreksi (+/−), Pemberian Koreksi (%), Rata-rata NKP Akhir, NKP Akhir Sangat Istimewa, dan Bandingkan. Pemberian Koreksi (%) dihitung dari jumlah pegawai dengan koreksi bukan nol dibagi jumlah pegawai unit. Metrik numerik dapat diurutkan; lebar kolom menyesuaikan ruang yang tersedia, dapat diubah dengan pointer atau keyboard, dan disimpan di local storage browser.
+- Unggah kinerja menyimpan snapshot nama pegawai, Eselon, unit, dan `unit_kerja_id` dari referensi terpilih (`fetch_pbnopen` sebagai default atau `dt_employee_q2_2026` untuk Q2-2026). Untuk `fetch_pbnopen`, label Unit Kerja dipetakan melalui `ref_unit_kerja`; tabel historis menyimpan ID secara langsung. Eselon ID historis dipetakan melalui `ref_eselon`. `Unit Eselon IV` tersedia sebagai filter dropdown di Daftar Pegawai dan disertakan dalam ekspor. Migrasi startup menambahkan kolom snapshot yang belum ada; record lama tanpa ID unit berada di bagian bawah urutan default.
+- Grafik status Overview menampilkan jumlah dan persentase dari triwulan terpilih. Filter pegawai memakai nilai yang tersedia di dataset terpilih, dengan rentang numerik untuk metrik terkait. Form unggah dan penyesuaian Super Admin berada di balik tombol/dialog pengelolaan data yang ringkas.
+- Tab Overview menyediakan toggle `Compare` yang menampilkan perbandingan triwulan kalender sebelumnya langsung di kartu dan grafik yang ada, beserta delta dan perubahan persentase. Filter Unit Eselon II dan Eselon yang dipilih berlaku untuk kedua triwulan; jika triwulan sebelumnya tidak tersedia, tampilan periode aktif tetap muncul dengan pemberitahuan.
+- Perhitungan dashboard dan metadata filter disimpan dalam cache per dataset terpilih hingga lima menit. Unggah dan penyesuaian yang berhasil membatalkan cache data terkait agar permintaan berikutnya memakai data terbaru.
+- `init_history_db()` memutakhirkan skema dataset aktif tunggal sebelumnya tanpa menghilangkan datanya dari periode yang tercatat. Cadangkan database MySQL/MariaDB bersama sebelum startup pertama setelah perubahan skema diterapkan. Launcher pengembangan juga memakai database yang dikonfigurasi, sehingga unggahan dan migrasi startup tidak terisolasi dari aplikasi LAN.
+- Tes migrasi skema lama memakai SQLite; migrasi belum dijalankan pada database MySQL/MariaDB aktif. Uji pada salinan database dan simpan cadangan sebelum menerapkannya pada instalasi bersama.
+- `backend/sql/006_create_performance_kinerja.sql` menjelaskan skema instalasi baru. Instalasi lama dimutakhirkan melalui migrasi startup; `CREATE TABLE IF NOT EXISTS` saja tidak memutakhirkan tabel yang sudah ada.
+- Pengujian backend terfokus: dari `backend/`, jalankan `python -m unittest discover -s tests -p 'test_performance_kinerja.py'`. Pemeriksaan frontend: dari `frontend/`, jalankan `npm run build` dan `npm run lint`.
 
 ## Lookup Pegawai Plt./Plh.
 
@@ -172,13 +206,17 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 
 ## Alur Agenda Pelantikan
 
-- Rute standar adalah `/undangan-pelantikan`; `/undangan-pelantikan/:agendaId` membuka kembali agenda satu sheet. `/undangan-pelantikan-experimental` dan rute `:agendaId`-nya menyediakan pilihan impor semua, sheet tertentu, sheet terpisah, atau satu sheet. Setiap API agenda memerlukan pengguna yang sudah masuk dan memeriksa kepemilikan agenda.
+- `/undangan-pelantikan` adalah alur semua sheet utama; `/undangan-pelantikan/:agendaId` membuka kembali agenda yang sudah ada, termasuk agenda lama satu sheet. URL lama `/undangan-pelantikan-experimental` diarahkan ke rute utama. Impor dapat menggabungkan semua sheet, sheet terpilih, memisahkan sheet, atau memakai satu sheet. Setiap API agenda memerlukan pengguna yang sudah masuk dan memeriksa kepemilikan agenda.
 - Agenda dan snapshot peserta disimpan di `pelantikan_agendas` dan `pelantikan_agenda_people`. Gunakan `backend/sql/005_create_pelantikan_agendas.sql` untuk instalasi baru; startup menambahkan kolom mode alur, strategi impor, dan provenance yang belum ada pada instalasi lama.
 - Pilihan level jabatan adalah Administrator dan Tinggi Pratama. Pilihan dresscode adalah Wastra Nusantara, PSL Lengkap, atau nilai khusus dari pengguna. Hitung mundur kartu menggunakan tanggal Jakarta dan menampilkan Berakhir untuk tanggal lampau.
-- Unggah roster menerima `.xlsx` dan `.xls` hingga 50 MB. Alur standar memproses satu sheet yang dipilih. Impor eksperimental menawarkan pilihan menggabungkan semua sheet, menggabungkan sheet tertentu, memisahkan setiap sheet, atau memproses satu sheet. Sheet kosong/non-roster dilewati dengan pemberitahuan; nama sheet/baris sumber disimpan. Duplikat NIP diselesaikan menurut urutan tab/baris workbook; kemunculan pertama dapat dipilih.
-- Kedua alur memakai pilihan peserta yang sama, termasuk Pilih Semua dan Batalkan Semua. Impor gabungan menyatukan Unit Eselon II yang sama dari sheet berbeda tetapi tetap memisahkan moda Daring/Luring. Mode terpisah juga menjaga sheet sumber sebagai grup pratinjau/dokumen tersendiri. Roster dokumen memakai `Jabatan` saat ini dari database; usulan jabatan baru di workbook hanya menjadi referensi pratinjau dan tidak disalin.
+- Unggah roster menerima `.xlsx` dan `.xls` hingga 50 MB. Impor melewati sheet kosong/non-roster dengan pemberitahuan, menyimpan nama sheet/baris sumber, dan menyelesaikan duplikat NIP menurut urutan tab/baris workbook; kemunculan pertama dapat dipilih.
+- Impor gabungan menyatukan Unit Eselon II yang sama dari sheet berbeda tetapi tetap memisahkan moda Daring/Luring; tombol alih moda sekali klik mempercepat pergantian. Pegawai yang dipetakan ke DKI Jakarta melalui `ref_unit_kerja.prov` secara default mendapat Luring; pegawai lain mendapat Daring. Mode terpisah juga menjaga sheet sumber sebagai grup pratinjau/dokumen tersendiri. Roster dokumen memakai `Jabatan` saat ini dari database; usulan jabatan baru di workbook hanya menjadi referensi pratinjau dan tidak disalin.
+- Kemunculan NIP duplikat tetap terlihat dan dapat dipilih secara individual, tetapi kemunculan kedua tidak dapat disimpan/dibuatkan dokumen; Pilih Semua hanya memilih maksimal satu baris per NIP. Backend menerapkan aturan unik yang sama.
+- Roster mendukung Lite View berisi Pilih, No, Nama/NIP, Jabatan Saat ini/Grade, Usul Jabatan Baru/Grade, Kota, Pencocokan, dan Pelantikan, serta lebar kolom yang dapat diatur dan tersimpan di browser. Kartu pratinjau menampilkan kota hasil pencocokan dan dapat difilter berdasarkan status pencocokan atau moda. Dokumen dapat dipilih berdasarkan unit dan moda (serta sheet sumber untuk impor terpisah). Satu dokumen terpilih diunduh sebagai DOCX; beberapa dokumen terpilih diunduh bersama sebagai ZIP. Backend memvalidasi kelengkapan setiap grup dokumen.
+- Pratinjau juga dapat membuat satu DOCX lampiran ND Pengantar dari peserta terpilih. Baris diurutkan Luring sebelum Daring, lalu berdasarkan ID unit; template berada di `backend/templates/undangan_pelantikan/template_lampiran_pengantar.docx`.
+- Monitoring Pelantikan menyediakan ekspor Excel dengan empat kolom dan jumlah per unit.
 - Workbook sumber dan dokumen yang dihasilkan tidak disimpan. Agenda dan snapshot peserta tetap tersimpan agar pemilik dapat melanjutkan proses; unggahan ulang mengganti snapshot peserta pada agenda tersebut.
-- Dokumen DOCX dikelompokkan berdasarkan Unit Eselon II dan moda, lalu diunduh bersama dalam ZIP. Jaga konsistensi penulisan penerima serta aturan jabatan pada `pelantikan_agenda_service.py` dan `employee_formatting.py`.
+- Jaga konsistensi penulisan penerima serta aturan jabatan pada `pelantikan_agenda_service.py` dan `employee_formatting.py`.
 
 ## Arsitektur Frontend untuk Pengembang Pemula
 
@@ -277,11 +315,10 @@ npm run build              # TypeScript check + Vite build to dist/
 
 ## Cakupan Saat Ini dan Milestone Berikutnya
 
-- **Web 1.2.1:** PBN Analytics, Insight Hub, akun dan kontrol akses berbasis peran, workspace Admin, monitoring Plt./Plh. dengan lookup pegawai dari PBN Open, agenda dan pembuatan undangan Pelantikan, preferensi tema tersimpan per pengguna, toolbar yang menempel ke tepi layar, dan Groq chat untuk pengguna login.
-- **Tambahan pada working tree Web 1.2.1:** Analisis Kinerja DJPb menyimpan satu triwulan aktif, mencocokkan NIP dengan sumber pegawai terkini, dan mendukung unggahan dataset serta penyesuaian oleh Super Admin. Tabel didaftarkan di `backend/app/history_db.py`; DDL MySQL manual tersedia di `backend/sql/006_create_performance_kinerja.sql`.
+- **Web 1.4.0:** Mencakup seluruh fitur web 1.3.0, alur Generate ND terkini beserta peningkatannya, riwayat/perbandingan/cache multi-triwulan Analisis Kinerja, dan kontrol dashboard terkait yang dijelaskan di atas.
+- **Batas persistensi data:** Dataset pembersihan yang diunggah tetap berada dalam memori dan hilang saat backend dimulai ulang; periode kinerja, agenda, record monitoring, akun, dan feedback memakai database MySQL/MariaDB yang dikonfigurasi.
 - **Placeholder web:** Bahan Pendukung MPK dan Simulasi Mutasi belum menjalankan alur kerja sesuai namanya.
 - **Milestone versi 2.0:** Menjadikan alur kerja placeholder yang tersisa berfungsi setelah kebutuhannya ditentukan. Jangan menganggap versi 2.0 sudah diimplementasikan.
 - **Desktop:** Menu navigasi utamanya hanya PBN Analytics dan Insight Hub; tidak ada login desktop, workspace Admin, atau menu placeholder web.
-- DatasetStore masih menggunakan memori dan akan kosong setelah backend dimulai ulang. Persistensi dataset ke database perlu dirancang terpisah jika diminta.
 
 Jika diperlukan, pengujian unit untuk `dataset_service._load_auto_clean_rules` dapat ditambahkan untuk memastikan perilaku parser, begitu pula panduan kontribusi yang mencakup alur kerja Git tim.

@@ -233,16 +233,16 @@ function FeatureIcon({ name, className }: { name: FeatureIconName; className?: s
 
 function StatusBadge({ feature }: { feature: Feature }) {
   if (feature.adminOnly) {
-    return <span className="badge shrink-0 border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">Admin only</span>;
+    return <span className="landing-status-badge landing-status-badge-admin badge shrink-0 border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">Admin only</span>;
   }
   if (feature.status === 'beta') {
-    return <span className="badge shrink-0 border border-brand-500/30 bg-brand-500/10 text-slate-300">Beta</span>;
+    return <span className="landing-status-badge landing-status-badge-beta badge shrink-0 border border-brand-500/30 bg-brand-500/10 text-slate-300">Beta</span>;
   }
   if (feature.status === 'dev') {
-    return <span className="badge shrink-0 border border-surface-700 bg-surface-800 text-slate-400">On development</span>;
+    return <span className="landing-status-badge landing-status-badge-dev badge shrink-0 border border-surface-700 bg-surface-800 text-slate-400">On development</span>;
   }
   if (feature.status === 'ready') {
-    return <span className="badge shrink-0 border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">Operational</span>;
+    return <span className="landing-status-badge landing-status-badge-ready badge shrink-0 border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">Operational</span>;
   }
   return null;
 }
@@ -254,7 +254,7 @@ function QuickAccessButton({ feature, onOpen }: { feature: Feature; onOpen: (fea
       onClick={() => onOpen(feature)}
       className="flex min-w-0 items-center gap-2 rounded-xl border border-surface-700 bg-surface-900 px-3 py-2 text-left transition hover:border-brand-500/40 hover:bg-surface-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 motion-reduce:transition-none"
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-slate-200">
+      <span className="landing-feature-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500/10 text-slate-200">
         <FeatureIcon name={feature.icon} className="h-4 w-4" />
       </span>
       <span className="min-w-0 whitespace-normal break-words text-sm font-medium text-slate-200">{feature.title}</span>
@@ -292,7 +292,7 @@ function FeatureCard({
           onClick={() => onOpen(feature)}
           className="group flex min-w-0 flex-1 items-center gap-3 rounded-l-[15px] px-3 py-4 text-left focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-400 sm:gap-4 sm:px-4"
         >
-          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-500/10 ${feature.status === 'dev' ? 'text-slate-400' : 'text-slate-200'}`}>
+          <span className={`landing-feature-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-500/10 ${feature.status === 'dev' ? 'text-slate-400' : 'text-slate-200'}`}>
             <FeatureIcon name={feature.icon} className="h-5 w-5" />
           </span>
           <span className="min-w-0 flex-1">

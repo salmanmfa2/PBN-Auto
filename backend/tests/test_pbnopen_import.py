@@ -189,6 +189,9 @@ class DtEmployeeSyncTests(unittest.TestCase):
             connection.exec_driver_sql(
                 f"CREATE TABLE pbncleaner.fetch_pbnopen ({source_column_sql})"
             )
+            connection.exec_driver_sql(
+                f"CREATE TABLE pbncleaner.fetch_pbnopen_q2_2026 ({source_column_sql})"
+            )
             reference_targets = {
                 target for target, _, _, _ in pbnopen_import_service.EMPLOYEE_REFERENCE_COLUMNS
             }
@@ -198,6 +201,11 @@ class DtEmployeeSyncTests(unittest.TestCase):
             )
             connection.exec_driver_sql(
                 "CREATE TABLE pbncleaner.dt_employee "
+                f"(employee_id INTEGER PRIMARY KEY AUTOINCREMENT, {target_column_sql}, "
+                "CHECK (\"Nama Gelar\" != 'reject'))"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE pbncleaner.dt_employee_q2_2026 "
                 f"(employee_id INTEGER PRIMARY KEY AUTOINCREMENT, {target_column_sql}, "
                 "CHECK (\"Nama Gelar\" != 'reject'))"
             )
@@ -222,17 +230,27 @@ class DtEmployeeSyncTests(unittest.TestCase):
             record[source] = f"{reference_name} label"
         return record
 
-    def _insert_source(self, records: list[dict[str, str]]) -> None:
+    def _insert_source(
+        self,
+        records: list[dict[str, str]],
+        table_name: str = "fetch_pbnopen",
+    ) -> None:
         quoted_columns = ", ".join(f'"{column}"' for column in self.source_columns)
         placeholders = ", ".join("?" for _ in self.source_columns)
         values = [tuple(record[column] for column in self.source_columns) for record in records]
         with self.test_engine.begin() as connection:
             connection.exec_driver_sql(
-                f"INSERT INTO pbncleaner.fetch_pbnopen ({quoted_columns}) VALUES ({placeholders})",
+                f"INSERT INTO pbncleaner.{table_name} ({quoted_columns}) VALUES ({placeholders})",
                 values,
             )
 
-    def _insert_employee(self, employee_id: int, nip: str, name: str) -> None:
+    def _insert_employee(
+        self,
+        employee_id: int,
+        nip: str,
+        name: str,
+        table_name: str = "dt_employee",
+    ) -> None:
         values = {column: f"old-{column}" for column in self.target_columns}
         values["NIP"] = nip
         values["Nama Gelar"] = name
@@ -247,18 +265,18 @@ class DtEmployeeSyncTests(unittest.TestCase):
         placeholders = ", ".join("?" for _ in columns)
         with self.test_engine.begin() as connection:
             connection.exec_driver_sql(
-                f"INSERT INTO pbncleaner.dt_employee ({quoted_columns}) VALUES ({placeholders})",
+                f"INSERT INTO pbncleaner.{table_name} ({quoted_columns}) VALUES ({placeholders})",
                 (employee_id, *(values[column] for column in self.target_columns)),
             )
 
-    def _employee_rows(self) -> list[dict[str, object]]:
+    def _employee_rows(self, table_name: str = "dt_employee") -> list[dict[str, object]]:
         with self.test_engine.connect() as connection:
             return list(
                 connection.execute(
                     text(
                         'SELECT employee_id, "NIP", "Nama Gelar", "Unit Eselon III", '
-                        "pangkat_id, eselon_id, pendidikan_id, unit_kerja_id, rumpun_id "
-                        "FROM pbncleaner.dt_employee ORDER BY employee_id"
+                        f"pangkat_id, eselon_id, pendidikan_id, unit_kerja_id, rumpun_id "
+                        f"FROM pbncleaner.{table_name} ORDER BY employee_id"
                     )
                 ).mappings()
             )
@@ -282,6 +300,116 @@ class DtEmployeeSyncTests(unittest.TestCase):
         self.assertEqual(by_nip["001"]["Unit Eselon III"], "source-Unit Eselon III")
         for reference_id in ("pangkat_id", "eselon_id", "pendidikan_id", "unit_kerja_id", "rumpun_id"):
             self.assertEqual(by_nip["001"][reference_id], 1)
+
+    def test_q2_sync_preview_is_read_only_and_sync_preserves_employee_ids(self) -> None:
+        self._insert_source(
+            [self._source_record("001", "Updated Q2"), self._source_record("002", "New Q2")],
+            table_name="fetch_pbnopen_q2_2026",
+        )
+        self._insert_employee(200, "001", "Old Q2", table_name="dt_employee_q2_2026")
+        self._insert_employee(201, "003", "Obsolete Q2", table_name="dt_employee_q2_2026")
+
+        with patch.object(pbnopen_import_service, "engine", self.test_engine):
+            preview = pbnopen_import_service.preview_employee_table_sync(
+                "dt_employee_q2_2026"
+            )
+            self.assertEqual(preview["row_count"], 2)
+            self.assertEqual(preview["updated_count"], 1)
+            self.assertEqual(preview["inserted_count"], 1)
+            self.assertEqual(preview["deleted_count"], 1)
+            before_apply = self._employee_rows("dt_employee_q2_2026")
+            self.assertEqual(before_apply[0]["Nama Gelar"], "Old Q2")
+
+            result = pbnopen_import_service.sync_employee_table("dt_employee_q2_2026")
+
+        rows = self._employee_rows("dt_employee_q2_2026")
+        by_nip = {row["NIP"]: row for row in rows}
+        self.assertEqual(result["row_count"], 2)
+        self.assertEqual(result["updated_count"], 1)
+        self.assertEqual(result["inserted_count"], 1)
+        self.assertEqual(result["deleted_count"], 1)
+        self.assertEqual(set(by_nip), {"001", "002"})
+        self.assertEqual(by_nip["001"]["employee_id"], 200)
+        self.assertEqual(by_nip["001"]["Nama Gelar"], "Updated Q2")
+
+    def test_q2_source_preview_and_replacement(self) -> None:
+        self._insert_source(
+            [self._source_record("001", "Old Q2")],
+            table_name="fetch_pbnopen_q2_2026",
+        )
+        replacement = self._source_record("002", "New Q2")
+        csv_content = (
+            ",".join(self.source_columns)
+            + "\n"
+            + ",".join(replacement[column] for column in self.source_columns)
+            + "\n"
+        ).encode()
+
+        with patch.object(pbnopen_import_service, "engine", self.test_engine):
+            preview = pbnopen_import_service.preview_table_maintenance_csv(
+                "fetch_pbnopen_q2_2026",
+                csv_content,
+            )
+            self.assertEqual(preview["row_count"], 1)
+            self.assertEqual(preview["current_row_count"], 1)
+            with self.test_engine.connect() as connection:
+                before_apply = connection.execute(
+                    text("SELECT NIP, `Nama Gelar` FROM pbncleaner.fetch_pbnopen_q2_2026")
+                ).one()
+            self.assertEqual(before_apply, ("001", "Old Q2"))
+
+            result = pbnopen_import_service.apply_table_maintenance_csv(
+                "fetch_pbnopen_q2_2026",
+                csv_content,
+                synced_by_user="salmanmfa",
+                synced_by_name="Salman",
+            )
+
+        with self.test_engine.connect() as connection:
+            rows = connection.execute(
+                text("SELECT NIP, `Nama Gelar` FROM pbncleaner.fetch_pbnopen_q2_2026")
+            ).all()
+        self.assertEqual(result["row_count"], 1)
+        self.assertEqual(rows, [("002", "New Q2")])
+
+    def test_reference_update_preserves_ids_and_rejects_removing_used_ids(self) -> None:
+        self._insert_employee(100, "001", "Employee")
+        with patch.object(pbnopen_import_service, "engine", self.test_engine):
+            with self.assertRaisesRegex(ValueError, "still uses them"):
+                pbnopen_import_service.preview_table_maintenance_csv(
+                    "ref_pangkat",
+                    b"pangkat_id,value\n2,New rank\n",
+                )
+
+            content = b"pangkat_id,value\n1,Updated rank\n2,New rank\n"
+            preview = pbnopen_import_service.preview_table_maintenance_csv(
+                "ref_pangkat",
+                content,
+            )
+            self.assertEqual(preview["updated_count"], 1)
+            self.assertEqual(preview["inserted_count"], 1)
+            result = pbnopen_import_service.apply_table_maintenance_csv(
+                "ref_pangkat",
+                content,
+                synced_by_user="salmanmfa",
+                synced_by_name="Salman",
+            )
+
+        with self.test_engine.connect() as connection:
+            rows = connection.execute(
+                text("SELECT pangkat_id, value FROM pbncleaner.ref_pangkat ORDER BY pangkat_id")
+            ).all()
+        self.assertEqual(result["updated_count"], 1)
+        self.assertEqual(result["inserted_count"], 1)
+        self.assertEqual(rows, [(1, "Updated rank"), (2, "New rank")])
+
+    def test_database_maintenance_rejects_non_allowlisted_target(self) -> None:
+        with patch.object(pbnopen_import_service, "engine", self.test_engine):
+            with self.assertRaisesRegex(ValueError, "not an allowed database-maintenance target"):
+                pbnopen_import_service.preview_table_maintenance_csv(
+                    "users",
+                    b"user,name\nroot,Root\n",
+                )
 
     def test_missing_reference_mapping_leaves_employee_table_unchanged(self) -> None:
         source_record = self._source_record("001", "Updated")
@@ -380,7 +508,7 @@ class PbnOpenImportAuthorizationTests(unittest.TestCase):
             {"last_synced_at": None, "synced_by_user": None, "synced_by_name": None},
         )
 
-    def test_super_admin_can_replace_data_source_csv(self) -> None:
+    def test_super_admin_cannot_replace_data_source_csv(self) -> None:
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
             user="root",
             name="Root",
@@ -398,12 +526,33 @@ class PbnOpenImportAuthorizationTests(unittest.TestCase):
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
+        self.assertEqual(response.status_code, 403)
+        replace.assert_not_called()
+
+    def test_god_user_can_replace_data_source_csv(self) -> None:
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="salmanmfa",
+            name="Salman",
+            auth_level=4,
+        )
+        try:
+            with patch(
+                "app.api.auth.pbnopen_import_service.replace_pbnopen_data",
+                return_value=1,
+            ) as replace:
+                response = TestClient(app).post(
+                    "/admin/pbnopen-data-source/replace",
+                    files={"file": ("data.csv", "Name,Age\nAlice,30\n", "text/csv")},
+                )
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["row_count"], 1)
         replace.assert_called_once_with(
             b"Name,Age\nAlice,30\n",
-            synced_by_user="root",
-            synced_by_name="Root",
+            synced_by_user="salmanmfa",
+            synced_by_name="Salman",
         )
 
     def test_normal_admin_cannot_sync_dt_employee(self) -> None:
@@ -422,7 +571,7 @@ class PbnOpenImportAuthorizationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         sync.assert_not_called()
 
-    def test_super_admin_can_sync_dt_employee(self) -> None:
+    def test_super_admin_cannot_sync_dt_employee(self) -> None:
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
             user="root",
             name="Root",
@@ -437,9 +586,146 @@ class PbnOpenImportAuthorizationTests(unittest.TestCase):
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
+        self.assertEqual(response.status_code, 403)
+        sync.assert_not_called()
+
+    def test_god_user_can_sync_dt_employee(self) -> None:
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="salmanmfa",
+            name="Salman",
+            auth_level=4,
+        )
+        try:
+            with patch(
+                "app.api.auth.pbnopen_import_service.sync_dt_employee_from_pbnopen",
+                return_value=2,
+            ) as sync:
+                response = TestClient(app).post("/admin/dt-employee/sync")
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["row_count"], 2)
         sync.assert_called_once_with()
+
+    def test_level_three_cannot_open_database_maintenance_catalog(self) -> None:
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="root",
+            name="Root",
+            auth_level=3,
+        )
+        try:
+            with patch(
+                "app.api.auth.pbnopen_import_service.get_table_maintenance_catalog"
+            ) as get_tables:
+                response = TestClient(app).get("/admin/database/tables")
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(response.status_code, 403)
+        get_tables.assert_not_called()
+
+    def test_level_three_cannot_preview_database_csv(self) -> None:
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="root",
+            name="Root",
+            auth_level=3,
+        )
+        try:
+            with patch(
+                "app.api.auth.pbnopen_import_service.preview_table_maintenance_csv"
+            ) as preview:
+                response = TestClient(app).post(
+                    "/admin/database/fetch_pbnopen_q2_2026/preview",
+                    files={"file": ("data.csv", "Name,Age\nAlice,30\n", "text/csv")},
+                )
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(response.status_code, 403)
+        preview.assert_not_called()
+
+    def test_god_user_can_preview_database_csv(self) -> None:
+        preview_result = {
+            "target_key": "fetch_pbnopen_q2_2026",
+            "table_name": "fetch_pbnopen_q2_2026",
+            "operation": "replace",
+            "columns": ["Name", "Age"],
+            "row_count": 1,
+            "current_row_count": 0,
+            "inserted_count": 1,
+            "updated_count": 0,
+            "deleted_count": 0,
+        }
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="salmanmfa",
+            name="Salman",
+            auth_level=4,
+        )
+        try:
+            with patch(
+                "app.api.auth.pbnopen_import_service.preview_table_maintenance_csv",
+                return_value=preview_result,
+            ) as preview:
+                response = TestClient(app).post(
+                    "/admin/database/fetch_pbnopen_q2_2026/preview",
+                    files={"file": ("data.csv", "Name,Age\nAlice,30\n", "text/csv")},
+                )
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["filename"], "data.csv")
+        self.assertEqual(response.json()["row_count"], 1)
+        preview.assert_called_once_with(
+            "fetch_pbnopen_q2_2026",
+            b"Name,Age\nAlice,30\n",
+        )
+
+    def test_god_user_can_open_database_maintenance_catalog(self) -> None:
+        catalog = [
+            {
+                "key": "fetch_pbnopen_q2_2026",
+                "table_name": "fetch_pbnopen_q2_2026",
+                "label": "PBN Open source (Q2 2026)",
+                "operation": "replace",
+                "source_table": None,
+            }
+        ]
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="salmanmfa",
+            name="Salman",
+            auth_level=4,
+        )
+        try:
+            with patch(
+                "app.api.auth.pbnopen_import_service.get_table_maintenance_catalog",
+                return_value=catalog,
+            ) as get_tables:
+                response = TestClient(app).get("/admin/database/tables")
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"tables": catalog})
+        get_tables.assert_called_once_with()
+
+    def test_any_level_four_account_can_use_database_maintenance(self) -> None:
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="someone-else",
+            name="Someone Else",
+            auth_level=4,
+        )
+        try:
+            with patch(
+                "app.api.auth.pbnopen_import_service.get_table_maintenance_catalog"
+            ) as get_tables:
+                response = TestClient(app).get("/admin/database/tables")
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(response.status_code, 200)
+        get_tables.assert_called_once_with()
 
 
 if __name__ == "__main__":

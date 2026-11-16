@@ -588,22 +588,6 @@ export default function AnalyticsPage() {
               </button>
               <div className="flex-1" />
               {isBusy && <Spinner size="sm" label="Applying…" />}
-              {activeAutoCleanMode === 'PBN Open + Edu + HB' && preview && (
-                <ActionTooltip label="Open Insights dashboard">
-                  <button
-                    type="button"
-                    aria-label="Open Insights dashboard"
-                    onClick={() => navigate(`/insights?dataset_id=${encodeURIComponent(preview.dataset_id)}&sheet_name=${encodeURIComponent(preview.selected_sheet)}`)}
-                    disabled={isBusy}
-                    className="btn-primary !px-3 !py-2 text-xs"
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 14l4-4 4 4 6-7" />
-                    </svg>
-                    Insights
-                  </button>
-                </ActionTooltip>
-              )}
               <ActionTooltip label="Download filtered data as CSV">
                 <button
                   type="button"

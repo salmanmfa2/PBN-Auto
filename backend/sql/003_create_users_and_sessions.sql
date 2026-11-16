@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`user`),
-  CONSTRAINT chk_users_auth_level CHECK (auth_level IN (1, 2, 3))
+  CONSTRAINT chk_users_auth_level CHECK (auth_level IN (1, 2, 3, 4))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS user_sessions (
@@ -45,3 +45,4 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 -- After creating the tables, insert your own account directly in SQL:
 -- INSERT INTO users (`user`, `name`, auth_level, `password`)
 -- VALUES ('your-login', 'Your Name', 3, 'your-chosen-password');
+-- The account 'salmanmfa' is promoted to Level 4 by app startup migration.

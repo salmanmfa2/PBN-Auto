@@ -92,6 +92,11 @@ const liteRosterColumns = new Set<RosterColumnKey>([
   'matching',
   'modality',
 ]);
+const liteColumnExpansionWeights: Partial<Record<RosterColumnKey, number>> = {
+  sourceName: 0.2,
+  sourcePosition: 0.4,
+  proposedPosition: 0.4,
+};
 const rosterColumnWidthsStorageKey = 'pbn.pelantikan.roster-column-widths';
 const maxRosterColumnWidth = 640;
 
@@ -105,6 +110,28 @@ function isRosterColumnWidths(value: unknown): value is RosterColumnWidths {
       && width >= rosterColumnMinWidths[key]
       && width <= maxRosterColumnWidth;
   });
+}
+
+function getBaseColumnWidth(
+  column: RosterColumnKey,
+  desiredDisplayWidth: number,
+  widths: RosterColumnWidths,
+  visibleColumns: RosterColumnKey[],
+  containerWidth: number,
+  isLiteView: boolean,
+): number {
+  const expansionWeight = isLiteView ? liteColumnExpansionWeights[column] : undefined;
+  const baseTableWidth = visibleColumns.reduce((total, key) => total + widths[key], 0);
+  const extraWidth = containerWidth - baseTableWidth;
+  if (!expansionWeight || extraWidth <= 0) return desiredDisplayWidth;
+
+  const otherColumnsWidth = baseTableWidth - widths[column];
+  const widthAtFullTableBoundary = containerWidth - otherColumnsWidth;
+  if (desiredDisplayWidth >= widthAtFullTableBoundary) return desiredDisplayWidth;
+
+  return (
+    desiredDisplayWidth - expansionWeight * widthAtFullTableBoundary
+  ) / (1 - expansionWeight);
 }
 
 function agendaFields(agenda: PelantikanAgendaDetail): PelantikanAgendaFields {
@@ -226,6 +253,8 @@ export default function PelantikanAgendaPage({
   const [notice, setNotice] = useState<string | null>(null);
   const [columnWidthError, setColumnWidthError] = useState<string | null>(null);
   const [columnWidths, setColumnWidths] = useState<RosterColumnWidths>(() => ({ ...rosterColumnWidths }));
+  const [rosterTableElement, setRosterTableElement] = useState<HTMLDivElement | null>(null);
+  const [rosterTableContainerWidth, setRosterTableContainerWidth] = useState(0);
   const columnWidthsRef = useRef<RosterColumnWidths>({ ...rosterColumnWidths });
   const columnResizeRef = useRef<{
     column: RosterColumnKey;
@@ -233,6 +262,41 @@ export default function PelantikanAgendaPage({
     startWidth: number;
   } | null>(null);
   const activeWorkflowMode = agenda?.workflow_mode ?? workflowMode;
+  const visibleRosterColumnKeys = useMemo(
+    () => rosterColumnKeys.filter((key) => !isLiteView || liteRosterColumns.has(key)),
+    [isLiteView],
+  );
+  const visibleRosterColumnWidths = useMemo(() => {
+    const widths = { ...columnWidths };
+    if (!isLiteView || rosterTableContainerWidth <= 0) return widths;
+
+    const baseWidth = visibleRosterColumnKeys.reduce(
+      (total, key) => total + columnWidths[key],
+      0,
+    );
+    const extraWidth = Math.max(0, rosterTableContainerWidth - baseWidth);
+    widths.sourceName += extraWidth * 0.2;
+    widths.sourcePosition += extraWidth * 0.4;
+    widths.proposedPosition += (
+      extraWidth
+      - extraWidth * 0.2
+      - extraWidth * 0.4
+    );
+    return widths;
+  }, [columnWidths, isLiteView, rosterTableContainerWidth, visibleRosterColumnKeys]);
+  const visibleRosterTableWidth = visibleRosterColumnKeys.reduce(
+    (total, key) => total + visibleRosterColumnWidths[key],
+    0,
+  );
+
+  useEffect(() => {
+    if (!rosterTableElement) return;
+    const updateWidth = () => setRosterTableContainerWidth(rosterTableElement.clientWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(rosterTableElement);
+    return () => observer.disconnect();
+  }, [rosterTableElement]);
 
   useEffect(() => {
     try {
@@ -275,18 +339,27 @@ export default function PelantikanAgendaPage({
     columnResizeRef.current = {
       column,
       startX: event.clientX,
-      startWidth: columnWidthsRef.current[column],
+      startWidth: visibleRosterColumnWidths[column],
     };
   };
 
   const moveColumnResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     const resize = columnResizeRef.current;
     if (!resize) return;
+    const desiredDisplayWidth = resize.startWidth + event.clientX - resize.startX;
+    const baseWidth = getBaseColumnWidth(
+      resize.column,
+      desiredDisplayWidth,
+      columnWidthsRef.current,
+      visibleRosterColumnKeys,
+      rosterTableContainerWidth,
+      isLiteView,
+    );
     const width = Math.min(
       maxRosterColumnWidth,
       Math.max(
         rosterColumnMinWidths[resize.column],
-        resize.startWidth + event.clientX - resize.startX,
+        Math.round(baseWidth),
       ),
     );
     const nextWidths = { ...columnWidthsRef.current, [resize.column]: width };
@@ -307,9 +380,17 @@ export default function PelantikanAgendaPage({
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
     const delta = event.key === 'ArrowRight' ? 12 : -12;
+    const baseWidth = getBaseColumnWidth(
+      column,
+      visibleRosterColumnWidths[column] + delta,
+      columnWidthsRef.current,
+      visibleRosterColumnKeys,
+      rosterTableContainerWidth,
+      isLiteView,
+    );
     const width = Math.min(
       maxRosterColumnWidth,
-      Math.max(rosterColumnMinWidths[column], columnWidthsRef.current[column] + delta),
+      Math.max(rosterColumnMinWidths[column], Math.round(baseWidth)),
     );
     const nextWidths = { ...columnWidthsRef.current, [column]: width };
     columnWidthsRef.current = nextWidths;
@@ -323,8 +404,11 @@ export default function PelantikanAgendaPage({
       aria-label={`Ubah lebar kolom ${label}`}
       aria-orientation="vertical"
       aria-valuemin={rosterColumnMinWidths[column]}
-      aria-valuemax={maxRosterColumnWidth}
-      aria-valuenow={columnWidths[column]}
+      aria-valuemax={Math.max(
+        maxRosterColumnWidth,
+        Math.round(visibleRosterColumnWidths[column]),
+      )}
+      aria-valuenow={Math.round(visibleRosterColumnWidths[column])}
       tabIndex={0}
       title={`Tarik untuk mengubah lebar kolom ${label}; gunakan tombol panah kiri/kanan.`}
       onPointerDown={(event) => startColumnResize(column, event)}
@@ -389,10 +473,6 @@ export default function PelantikanAgendaPage({
   const selectedCount = useMemo(
     () => Object.values(choices).filter((choice) => choice.selected).length,
     [choices],
-  );
-  const visibleRosterColumnKeys = useMemo(
-    () => rosterColumnKeys.filter((key) => !isLiteView || liteRosterColumns.has(key)),
-    [isLiteView],
   );
   const visiblePeople = useMemo(
     () => (agenda?.people ?? []).filter((person) => {
@@ -1350,16 +1430,14 @@ export default function PelantikanAgendaPage({
                     </button>
                   </div>
                 </div>
-                <div className="max-h-[70vh] overflow-auto">
+                <div ref={setRosterTableElement} className="max-h-[70vh] overflow-auto">
                   <table
                     className="table-fixed border-collapse text-left text-sm"
-                    style={{
-                      width: `${visibleRosterColumnKeys.reduce((total, key) => total + columnWidths[key], 0)}px`,
-                    }}
+                    style={{ width: `${visibleRosterTableWidth}px` }}
                   >
                     <colgroup>
                       {visibleRosterColumnKeys.map((key) => (
-                        <col key={key} style={{ width: `${columnWidths[key]}px` }} />
+                        <col key={key} style={{ width: `${visibleRosterColumnWidths[key]}px` }} />
                       ))}
                     </colgroup>
                     <thead className="bg-slate-950 text-xs uppercase tracking-wide text-slate-400">
@@ -1426,6 +1504,11 @@ export default function PelantikanAgendaPage({
                         const choice = choices[person.id] ?? { selected: false, modality: null };
                         const pendamping = isPendamping(person);
                         const canSelect = isSelectablePerson(person);
+                        const modality = choice.modality ?? 'daring';
+                        const isLuring = modality === 'luring';
+                        const modalityLabel = isLuring ? 'Luring' : 'Daring';
+                        const nextModality = isLuring ? 'daring' : 'luring';
+                        const nextModalityLabel = isLuring ? 'Daring' : 'Luring';
                         return (
                           <tr key={person.id} className="align-top">
                             <td className="px-4 py-3">
@@ -1472,20 +1555,34 @@ export default function PelantikanAgendaPage({
                               </span>
                             </td>
                             <td className="px-4 py-3">
-                              <select
-                                aria-label={`Modus pelantikan ${person.nama || `baris ${person.row_number}`}`}
-                                value={choice.modality ?? 'daring'}
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={isLuring}
+                                aria-label={`Modus pelantikan ${person.nama || `baris ${person.row_number}`}: ${modalityLabel}. Klik untuk mengubah ke ${nextModalityLabel}.`}
+                                title={`Ubah ke ${nextModalityLabel}`}
                                 disabled={!choice.selected || !canSelect}
-                                onChange={(event) => changeChoice(
+                                onClick={() => changeChoice(
                                   person.id,
                                   true,
-                                  event.target.value as PelantikanModality,
+                                  nextModality,
                                 )}
-                                className="input min-w-32 py-1.5 text-sm"
                               >
-                                <option value="daring">Daring</option>
-                                <option value="luring">Luring</option>
-                              </select>
+                                <span className="inline-flex items-center gap-2 rounded-lg px-1 py-1 text-sm">
+                                  <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
+                                    isLuring
+                                      ? 'border-amber-400 bg-amber-500/40'
+                                      : 'border-brand-400 bg-brand-500/40'
+                                  }`}>
+                                    <span className={`absolute left-0.5 size-4 rounded-full bg-white shadow transition-transform ${
+                                      isLuring ? 'translate-x-6' : 'translate-x-0'
+                                    }`} />
+                                  </span>
+                                  <span className={`font-medium ${
+                                    isLuring ? 'text-amber-200' : 'text-brand-200'
+                                  }`}>{modalityLabel}</span>
+                                </span>
+                              </button>
                             </td>
                           </tr>
                         );

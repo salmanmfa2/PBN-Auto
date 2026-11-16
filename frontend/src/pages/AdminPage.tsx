@@ -3,11 +3,14 @@ import { Link } from 'react-router-dom';
 import * as apiClient from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import type {
+  AssignableAuthLevel,
   AdminUserUpdatePayload,
   AuthLevel,
   AuthUser,
+  DatabaseMaintenanceResult,
+  DatabaseMaintenancePreview,
+  DatabaseMaintenanceTarget,
   UserFeedback,
-  PbnOpenCsvValidation,
   PbnOpenDataSourceSyncStatus,
 } from '../types';
 import { Spinner } from '../components/Spinner';
@@ -15,7 +18,7 @@ import { Spinner } from '../components/Spinner';
 type UserForm = {
   user: string;
   name: string;
-  auth_level: AuthLevel;
+  auth_level: AssignableAuthLevel;
   password: string;
   is_active: boolean;
 };
@@ -28,7 +31,9 @@ const emptyForm: UserForm = {
   is_active: true,
 };
 
+
 function authLevelLabel(level: AuthLevel): string {
+  if (level === 4) return 'God User';
   if (level === 3) return 'Super Admin';
   if (level === 2) return 'Admin';
   return 'User';
@@ -52,9 +57,10 @@ function formatSourceSyncDate(value: string): string {
 
 export default function AdminPage() {
   const { user: currentUser } = useAuth();
+  const isGodUser = currentUser?.auth_level === 4;
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [feedbackItems, setFeedbackItems] = useState<UserFeedback[]>([]);
-  const [isLoading, setIsLoading] = useState(currentUser?.auth_level === 3);
+  const [isLoading, setIsLoading] = useState((currentUser?.auth_level ?? 0) >= 3);
   const [isLoadingFeedback, setIsLoadingFeedback] = useState((currentUser?.auth_level ?? 1) >= 2);
   const [isSaving, setIsSaving] = useState(false);
   const [isClearingFeedback, setIsClearingFeedback] = useState(false);
@@ -63,21 +69,23 @@ export default function AdminPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [form, setForm] = useState<UserForm>(emptyForm);
-  const [sourceFile, setSourceFile] = useState<File | null>(null);
-  const [sourceValidation, setSourceValidation] = useState<PbnOpenCsvValidation | null>(null);
+  const [databaseFile, setDatabaseFile] = useState<File | null>(null);
+  const [databasePreview, setDatabasePreview] = useState<DatabaseMaintenancePreview | null>(null);
+  const [databaseTargets, setDatabaseTargets] = useState<DatabaseMaintenanceTarget[]>([]);
+  const [selectedDatabaseTarget, setSelectedDatabaseTarget] = useState('fetch_pbnopen');
+  const [isLoadingDatabaseTargets, setIsLoadingDatabaseTargets] = useState(false);
   const [sourceSyncStatus, setSourceSyncStatus] = useState<PbnOpenDataSourceSyncStatus | null>(null);
   const [isLoadingSourceSync, setIsLoadingSourceSync] = useState((currentUser?.auth_level ?? 0) >= 2);
   const [sourceSyncError, setSourceSyncError] = useState<string | null>(null);
-  const [isValidatingSource, setIsValidatingSource] = useState(false);
-  const [isReplacingSource, setIsReplacingSource] = useState(false);
-  const [isSyncingEmployeeTable, setIsSyncingEmployeeTable] = useState(false);
+  const [isPreviewingDatabaseChange, setIsPreviewingDatabaseChange] = useState(false);
+  const [isApplyingDatabaseChange, setIsApplyingDatabaseChange] = useState(false);
   const [showSourceDialog, setShowSourceDialog] = useState(false);
-  const [sourceDialogError, setSourceDialogError] = useState<string | null>(null);
-  const [sourceReplaceFailed, setSourceReplaceFailed] = useState(false);
-  const sourceFileInput = useRef<HTMLInputElement>(null);
+  const [databaseDialogError, setDatabaseDialogError] = useState<string | null>(null);
+  const [databaseApplyFailed, setDatabaseApplyFailed] = useState(false);
+  const databaseFileInput = useRef<HTMLInputElement>(null);
 
-  const refreshUsers = async () => {
-    if (currentUser?.auth_level !== 3) return;
+  const refreshUsers = useCallback(async () => {
+    if ((currentUser?.auth_level ?? 0) < 3) return;
     setError(null);
     try {
       setUsers(await apiClient.listAdminUsers());
@@ -86,7 +94,7 @@ export default function AdminPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser?.auth_level]);
 
   const refreshFeedback = useCallback(async () => {
     if ((currentUser?.auth_level ?? 0) < 2) {
@@ -124,13 +132,37 @@ export default function AdminPage() {
   }, [currentUser?.auth_level]);
 
   const closeSourceDialog = useCallback(() => {
-    if (sourceDialogError) setError(sourceDialogError);
+    if (databaseDialogError) setError(databaseDialogError);
     setShowSourceDialog(false);
-  }, [sourceDialogError]);
+  }, [databaseDialogError]);
+
+  const openDatabaseDialog = (targetKey = 'fetch_pbnopen') => {
+    setError(null);
+    setDatabaseFile(null);
+    setDatabasePreview(null);
+    setDatabaseDialogError(null);
+    setDatabaseApplyFailed(false);
+    setSelectedDatabaseTarget(targetKey);
+    setShowSourceDialog(true);
+    if (!isGodUser) return;
+
+    setIsLoadingDatabaseTargets(true);
+    void apiClient.getDatabaseMaintenanceTargets()
+      .then((targets) => {
+        setDatabaseTargets(targets);
+        if (!targets.some((target) => target.key === targetKey)) {
+          setDatabaseDialogError(`The table '${targetKey}' is not available for maintenance.`);
+        }
+      })
+      .catch((loadError: unknown) => {
+        setDatabaseDialogError(loadError instanceof Error ? loadError.message : String(loadError));
+      })
+      .finally(() => setIsLoadingDatabaseTargets(false));
+  };
 
   useEffect(() => {
     void refreshUsers();
-  }, [currentUser?.auth_level]);
+  }, [refreshUsers]);
 
   useEffect(() => {
     void refreshFeedback();
@@ -141,13 +173,13 @@ export default function AdminPage() {
   }, [refreshSourceSyncStatus]);
 
   useEffect(() => {
-    if (!showSourceDialog || isValidatingSource || isReplacingSource) return;
+    if (!showSourceDialog || isPreviewingDatabaseChange || isApplyingDatabaseChange) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeSourceDialog();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showSourceDialog, isValidatingSource, isReplacingSource, closeSourceDialog]);
+  }, [showSourceDialog, isPreviewingDatabaseChange, isApplyingDatabaseChange, closeSourceDialog]);
 
   const resetForm = () => {
     setForm(emptyForm);
@@ -188,6 +220,7 @@ export default function AdminPage() {
   };
 
   const startEditing = (account: AuthUser) => {
+    if (account.auth_level === 4 && currentUser?.auth_level !== 4) return;
     setEditingUser(account.user);
     setForm({
       user: account.user,
@@ -248,59 +281,59 @@ export default function AdminPage() {
     }
   };
 
-  const validateSourceFile = async () => {
-    if (!sourceFile) return;
-    setSourceDialogError(null);
+  const previewDatabaseChange = async () => {
+    const target = databaseTargets.find((item) => item.key === selectedDatabaseTarget);
+    if (!target || (!databaseFile && target.operation !== 'sync')) return;
+    setDatabaseDialogError(null);
     setNotice(null);
-    setIsValidatingSource(true);
+    setIsPreviewingDatabaseChange(true);
     try {
-      const result = await apiClient.validatePbnOpenCsv(sourceFile);
-      setSourceValidation(result);
-    } catch (validationError) {
-      setSourceValidation(null);
-      setSourceDialogError(validationError instanceof Error ? validationError.message : String(validationError));
+      let result: DatabaseMaintenancePreview;
+      if (target.operation === 'sync') {
+        result = await apiClient.previewDatabaseEmployeeSync(target.key);
+      } else {
+        if (!databaseFile) return;
+        result = await apiClient.previewDatabaseMaintenanceCsv(target.key, databaseFile);
+      }
+      setDatabasePreview(result);
+    } catch (previewError) {
+      setDatabasePreview(null);
+      setDatabaseDialogError(previewError instanceof Error ? previewError.message : String(previewError));
     } finally {
-      setIsValidatingSource(false);
+      setIsPreviewingDatabaseChange(false);
     }
   };
 
-  const confirmSourceReplacement = async () => {
-    if (!sourceFile || !sourceValidation) return;
-    setSourceDialogError(null);
+  const applyDatabaseChange = async () => {
+    const target = databaseTargets.find((item) => item.key === selectedDatabaseTarget);
+    if (!target || !databasePreview || (!databaseFile && target.operation !== 'sync')) return;
+    setDatabaseDialogError(null);
     setNotice(null);
-    setIsReplacingSource(true);
+    setIsApplyingDatabaseChange(true);
     try {
-      const result = await apiClient.replacePbnOpenCsv(sourceFile);
-      setNotice(`Employee Data Source berhasil di-resync dengan ${result.row_count} baris.`);
+      let result: DatabaseMaintenanceResult;
+      if (target.operation === 'sync') {
+        result = await apiClient.syncDatabaseEmployeeTable(target.key);
+      } else {
+        if (!databaseFile) return;
+        result = await apiClient.applyDatabaseMaintenanceCsv(target.key, databaseFile);
+      }
+      setNotice(
+        `Tabel ${target.table_name} berhasil diproses: ${result.row_count.toLocaleString()} baris; `
+        + `${result.inserted_count.toLocaleString()} ditambahkan, `
+        + `${result.updated_count.toLocaleString()} diperbarui, `
+        + `${result.deleted_count.toLocaleString()} dihapus.`,
+      );
       setShowSourceDialog(false);
-      setSourceValidation(null);
-      setSourceFile(null);
-      if (sourceFileInput.current) sourceFileInput.current.value = '';
-      await refreshSourceSyncStatus();
-    } catch (replaceError) {
-      setSourceReplaceFailed(true);
-      setSourceDialogError(replaceError instanceof Error ? replaceError.message : String(replaceError));
+      setDatabasePreview(null);
+      setDatabaseFile(null);
+      if (databaseFileInput.current) databaseFileInput.current.value = '';
+      if (target.key === 'fetch_pbnopen') await refreshSourceSyncStatus();
+    } catch (applyError) {
+      setDatabaseApplyFailed(true);
+      setDatabaseDialogError(applyError instanceof Error ? applyError.message : String(applyError));
     } finally {
-      setIsReplacingSource(false);
-    }
-  };
-
-  const syncEmployeeTable = async () => {
-    const confirmed = window.confirm(
-      'Sinkronkan pbncleaner.dt_employee dari pbncleaner.fetch_pbnopen? Data yang cocok berdasarkan NIP akan diperbarui tanpa mengubah employee_id, data baru akan ditambahkan, dan pegawai yang tidak ada lagi di sumber akan dihapus.',
-    );
-    if (!confirmed) return;
-
-    setError(null);
-    setNotice(null);
-    setIsSyncingEmployeeTable(true);
-    try {
-      const result = await apiClient.syncDtEmployeeFromPbnOpen();
-      setNotice(`dt_employee berhasil disinkronkan dengan ${result.row_count} baris.`);
-    } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : String(syncError));
-    } finally {
-      setIsSyncingEmployeeTable(false);
+      setIsApplyingDatabaseChange(false);
     }
   };
 
@@ -401,13 +434,6 @@ export default function AdminPage() {
         {(currentUser?.auth_level ?? 0) >= 2 && (
           <section className="card p-5">
               <h2 className="font-semibold">Employee Data Source</h2>
-              <p className="mt-2 text-sm text-slate-400">
-                Sumber data pegawai utama untuk berbagai fitur aplikasi, bukan hanya Insight Hub Beta.
-                Unggah CSV untuk mengganti seluruh isi <code>pbncleaner.fetch_pbnopen</code>; kolom harus cocok dengan tabel saat ini.
-                Hanya Super Admin yang dapat melakukan re-sync; data lama baru diganti setelah validasi berhasil dan konfirmasi.
-                Sinkronisasi <code>dt_employee</code> dilakukan terpisah: NIP yang cocok mempertahankan <code>employee_id</code>,
-                pegawai baru ditambahkan, dan pegawai yang tidak lagi ada di sumber akan dihapus.
-              </p>
               <div className="mt-4 rounded-lg border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm">
                 <h3 className="font-medium text-slate-200">Re-sync terakhir</h3>
                 {isLoadingSourceSync ? (
@@ -430,45 +456,36 @@ export default function AdminPage() {
                   <p className="mt-2 text-slate-400">Belum ada catatan re-sync melalui aplikasi.</p>
                 )}
               </div>
-              {currentUser?.auth_level === 3 && (
+              {(currentUser?.auth_level ?? 0) >= 3 && (
                 <div className="mt-4 flex flex-wrap gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      setSourceFile(null);
-                      setSourceValidation(null);
-                      setSourceDialogError(null);
-                      setSourceReplaceFailed(false);
-                      setError(null);
-                      setShowSourceDialog(true);
-                    }}
-                    disabled={isSyncingEmployeeTable}
+                    onClick={() => openDatabaseDialog()}
+                    disabled={isApplyingDatabaseChange || isPreviewingDatabaseChange}
                     className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Re-sync Employee Data Source
+                    Database Management
                   </button>
                   <button
                     type="button"
-                    onClick={() => void syncEmployeeTable()}
-                    disabled={isSyncingEmployeeTable || isValidatingSource || isReplacingSource}
+                    onClick={() => openDatabaseDialog('dt_employee')}
+                    disabled={isApplyingDatabaseChange || isPreviewingDatabaseChange}
                     className="btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {isSyncingEmployeeTable
-                      ? <Spinner size="sm" label="Menyinkronkan dt_employee…" />
-                      : 'Sync dt_employee dari fetch_pbnopen'}
+                    Sync dt_employee dari fetch_pbnopen
                   </button>
                 </div>
               )}
           </section>
         )}
 
-        {currentUser?.auth_level === 3 ? (
+        {(currentUser?.auth_level ?? 0) >= 3 ? (
           <>
             <section className="card overflow-hidden">
               <div className="border-b border-slate-700 px-5 py-4">
                 <h2 className="font-semibold">Manajemen Akun</h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  Level 1 User · Level 2 Admin · Level 3 Super Admin. Password saat ini disimpan sebagai teks biasa sesuai keputusan sementara.
+                  Level 1 User · Level 2 Admin · Level 3 Super Admin · Level 4 God User.
                 </p>
               </div>
             <form onSubmit={(event) => void submitUser(event)} className="grid gap-4 p-5 md:grid-cols-2">
@@ -499,12 +516,13 @@ export default function AdminPage() {
                 Auth level
                 <select
                   value={form.auth_level}
-                  onChange={(event) => setForm((value) => ({ ...value, auth_level: Number(event.target.value) as AuthLevel }))}
+                  onChange={(event) => setForm((value) => ({ ...value, auth_level: Number(event.target.value) as AssignableAuthLevel }))}
                   className="input mt-1.5"
                 >
                   <option value={1}>1 · User</option>
                   <option value={2}>2 · Admin</option>
                   <option value={3}>3 · Super Admin</option>
+                  {currentUser?.auth_level === 4 && <option value={4}>4 · God User</option>}
                 </select>
               </label>
               <label className="block text-sm text-slate-300">
@@ -568,7 +586,10 @@ export default function AdminPage() {
                             <button
                               type="button"
                               onClick={() => startEditing(account)}
-                              disabled={account.user === currentUser.user}
+                              disabled={
+                                account.user === currentUser?.user
+                                || (account.auth_level === 4 && currentUser?.auth_level !== 4)
+                              }
                               className="btn-secondary px-3 py-1.5 disabled:opacity-50"
                             >
                               Edit
@@ -576,7 +597,10 @@ export default function AdminPage() {
                             <button
                               type="button"
                               onClick={() => void removeUser(account)}
-                              disabled={account.user === currentUser.user}
+                              disabled={
+                                account.user === currentUser?.user
+                                || (account.auth_level === 4 && currentUser?.auth_level !== 4)
+                              }
                               className="btn-danger px-3 py-1.5 disabled:opacity-50"
                             >
                               Hapus
@@ -598,7 +622,7 @@ export default function AdminPage() {
           <section className="card p-5">
             <h2 className="font-semibold">Manajemen Akun</h2>
             <p className="mt-2 text-sm text-slate-400">
-              Pengelolaan akun hanya tersedia untuk Super Admin (level 3).
+              Pengelolaan akun hanya tersedia untuk Super Admin (level 3) dan God User (level 4).
             </p>
           </section>
         )}
@@ -608,96 +632,180 @@ export default function AdminPage() {
           className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !isReplacingSource) {
+            if (
+              event.target === event.currentTarget
+              && !isPreviewingDatabaseChange
+              && !isApplyingDatabaseChange
+            ) {
               closeSourceDialog();
             }
           }}
         >
           <section
-            className="w-full max-w-lg rounded-xl border border-amber-500/40 bg-slate-900 p-6 shadow-2xl"
+            className="w-full max-w-xl rounded-xl border border-amber-500/40 bg-slate-900 p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="pbnopen-source-title"
+            aria-labelledby="database-management-title"
           >
-            <h2 id="pbnopen-source-title" className="text-lg font-semibold text-amber-200">
-              {sourceValidation ? 'Kolom CSV cocok' : 'Unggah CSV Sumber Data'}
+            <h2 id="database-management-title" className="text-lg font-semibold text-amber-200">
+              Database Management
             </h2>
-            {sourceValidation ? (
-              <>
-                <p className="mt-3 text-sm text-slate-300">
-                  File <strong>{sourceValidation.filename}</strong> berisi {sourceValidation.row_count.toLocaleString()} baris dan{' '}
-                  {sourceValidation.columns.length} kolom yang cocok dengan sumber data.
-                </p>
-                <p className="mt-3 rounded-lg border border-rose-700/50 bg-rose-900/20 p-3 text-sm text-rose-200">
-                  Apakah Anda yakin ingin mengganti seluruh isi <code>pbncleaner.fetch_pbnopen</code>? Data yang ada akan dihapus.
-                </p>
-              </>
+            {!isGodUser ? (
+              <p role="alert" className="mt-4 rounded-lg border border-rose-700/50 bg-rose-900/20 p-3 text-sm text-rose-200">
+                You have no authority to view this page.
+              </p>
+            ) : isLoadingDatabaseTargets ? (
+              <div className="flex justify-center py-8"><Spinner label="Memuat tabel database…" /></div>
             ) : (
-              <>
-                <p className="mt-2 text-sm text-slate-400">
-                  Pilih CSV UTF-8 (maksimal 50 MB). Tidak ada perubahan data sebelum Anda mengonfirmasi penggantian.
-                </p>
-                <input
-                  ref={sourceFileInput}
-                  type="file"
-                  accept=".csv,text/csv"
-                  className="sr-only"
-                  aria-label="Pilih CSV sumber data Insight Hub Beta"
-                  onChange={(event) => {
-                    setSourceFile(event.currentTarget.files?.[0] ?? null);
-                    setSourceValidation(null);
-                    setSourceDialogError(null);
-                    setSourceReplaceFailed(false);
-                    event.currentTarget.value = '';
-                  }}
-                />
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => sourceFileInput.current?.click()}
-                    disabled={isValidatingSource}
-                    className="btn-secondary"
+              <div className="mt-4 space-y-4">
+                <label className="block text-sm text-slate-300">
+                  Tabel database
+                  <select
+                    value={selectedDatabaseTarget}
+                    onChange={(event) => {
+                      setSelectedDatabaseTarget(event.target.value);
+                      setDatabaseFile(null);
+                      setDatabasePreview(null);
+                      setDatabaseDialogError(null);
+                      setDatabaseApplyFailed(false);
+                      if (databaseFileInput.current) databaseFileInput.current.value = '';
+                    }}
+                    className="input mt-1.5"
                   >
-                    Pilih CSV
-                  </button>
-                  <span className="text-sm text-slate-300">
-                    {sourceFile?.name ?? 'Belum ada file dipilih'}
-                  </span>
-                </div>
-              </>
+                    {databaseTargets.map((target) => (
+                      <option key={target.key} value={target.key}>{target.label}</option>
+                    ))}
+                  </select>
+                </label>
+                {(() => {
+                  const target = databaseTargets.find((item) => item.key === selectedDatabaseTarget);
+                  if (!target) return null;
+                  if (target.operation === 'sync') {
+                    return (
+                      <p className="text-sm text-slate-400">
+                        Sinkronkan <code>{target.table_name}</code> dari <code>{target.source_table}</code>.
+                        NIP yang cocok mempertahankan <code>employee_id</code>; data baru ditambahkan dan data yang sudah tidak ada di sumber dihapus.
+                      </p>
+                    );
+                  }
+                  if (target.operation === 'reference') {
+                    return (
+                      <p className="text-sm text-slate-400">
+                        Unggah CSV untuk memperbarui <code>{target.table_name}</code> berdasarkan ID yang sudah ada.
+                        ID yang masih dipakai tabel pegawai tidak dapat dihapus.
+                      </p>
+                    );
+                  }
+                  return (
+                    <p className="text-sm text-slate-400">
+                      Unggah CSV UTF-8 untuk mengganti seluruh isi <code>pbncleaner.{target.table_name}</code>.
+                      Tabel pegawai hanya dapat diubah melalui sinkronisasi.
+                    </p>
+                  );
+                })()}
+                {databaseTargets.find((item) => item.key === selectedDatabaseTarget)?.operation !== 'sync' && (
+                  <>
+                    <input
+                      ref={databaseFileInput}
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="sr-only"
+                      aria-label="Pilih CSV untuk tabel database"
+                      onChange={(event) => {
+                        setDatabaseFile(event.currentTarget.files?.[0] ?? null);
+                        setDatabasePreview(null);
+                        setDatabaseDialogError(null);
+                        setDatabaseApplyFailed(false);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => databaseFileInput.current?.click()}
+                        disabled={isPreviewingDatabaseChange || isApplyingDatabaseChange}
+                        className="btn-secondary"
+                      >
+                        Pilih CSV
+                      </button>
+                      <span className="text-sm text-slate-300">
+                        {databaseFile?.name ?? 'Belum ada file dipilih'}
+                      </span>
+                    </div>
+                  </>
+                )}
+                {databasePreview && (
+                  <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4">
+                    <p className="text-sm text-slate-200">
+                      Pratinjau <code>{databasePreview.table_name}</code>
+                      {databasePreview.filename ? ` · ${databasePreview.filename}` : ''}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Tidak ada perubahan yang diterapkan sampai Anda memilih tombol konfirmasi.
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                      <div><p className="text-xs text-slate-400">Di sumber</p><p>{databasePreview.row_count.toLocaleString()}</p></div>
+                      <div><p className="text-xs text-slate-400">Ditambahkan</p><p>{databasePreview.inserted_count.toLocaleString()}</p></div>
+                      <div><p className="text-xs text-slate-400">Diperbarui</p><p>{databasePreview.updated_count.toLocaleString()}</p></div>
+                      <div><p className="text-xs text-slate-400">Dihapus</p><p>{databasePreview.deleted_count.toLocaleString()}</p></div>
+                    </div>
+                    {databasePreview.operation === 'replace' && (
+                      <p className="mt-3 text-sm text-rose-200">
+                        Seluruh {databasePreview.current_row_count.toLocaleString()} baris saat ini akan diganti.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
-            {sourceDialogError && (
+            {databaseDialogError && isGodUser && (
               <p role="alert" className="mt-4 rounded-lg border border-rose-700/50 bg-rose-900/20 px-3 py-2 text-sm text-rose-200">
-                {sourceDialogError}
+                {databaseDialogError}
               </p>
             )}
             <div className="mt-5 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={closeSourceDialog}
-                disabled={isValidatingSource || isReplacingSource}
+                disabled={isPreviewingDatabaseChange || isApplyingDatabaseChange}
                 className="btn-secondary"
               >
                 Batal
               </button>
-              {sourceValidation ? (
-                <button
-                  type="button"
-                  onClick={() => void confirmSourceReplacement()}
-                  disabled={isReplacingSource || sourceReplaceFailed}
-                  className="btn-danger disabled:opacity-50"
-                >
-                  {isReplacingSource ? <Spinner size="sm" label="Mengganti data…" /> : 'Ya, Ganti Seluruh Data'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void validateSourceFile()}
-                  disabled={!sourceFile || isValidatingSource}
-                  className="btn-primary disabled:opacity-50"
-                >
-                  {isValidatingSource ? <Spinner size="sm" label="Memeriksa kolom…" /> : 'Periksa Kolom CSV'}
-                </button>
+              {isGodUser && !isLoadingDatabaseTargets && databaseTargets.length > 0 && (
+                databasePreview ? (
+                  <button
+                    type="button"
+                    onClick={() => void applyDatabaseChange()}
+                    disabled={isApplyingDatabaseChange || databaseApplyFailed}
+                    className="btn-danger disabled:opacity-50"
+                  >
+                    {isApplyingDatabaseChange
+                      ? <Spinner size="sm" label="Menerapkan perubahan…" />
+                      : databasePreview.operation === 'sync'
+                        ? 'Ya, Sinkronkan'
+                        : 'Ya, Terapkan Perubahan'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void previewDatabaseChange()}
+                    disabled={
+                      isPreviewingDatabaseChange
+                      || (
+                        databaseTargets.find((item) => item.key === selectedDatabaseTarget)?.operation !== 'sync'
+                        && !databaseFile
+                      )
+                    }
+                    className="btn-primary disabled:opacity-50"
+                  >
+                    {isPreviewingDatabaseChange
+                      ? <Spinner size="sm" label="Memeriksa tabel…" />
+                      : databaseTargets.find((item) => item.key === selectedDatabaseTarget)?.operation === 'sync'
+                        ? 'Pratinjau Sinkronisasi'
+                        : 'Pratinjau CSV'}
+                  </button>
+                )
               )}
             </div>
           </section>

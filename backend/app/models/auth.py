@@ -9,7 +9,12 @@ from app.history_db import Base
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("auth_level IN (1, 2, 3)", name="chk_users_auth_level"),)
+    __table_args__ = (
+        CheckConstraint(
+            "auth_level IN (1, 2, 3, 4)",
+            name="chk_users_auth_level",
+        ),
+    )
 
     user: Mapped[str] = mapped_column(String(80), primary_key=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)

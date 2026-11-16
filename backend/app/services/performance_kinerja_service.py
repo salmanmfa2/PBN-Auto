@@ -60,8 +60,13 @@ MAX_ADJUSTMENT = Decimal("20")
 ZERO = Decimal("0")
 TWO_PLACES = Decimal("0.01")
 UNIDENTIFIED = "Unidentified"
+EMPLOYEE_REFERENCE_TABLES = {
+    "fetch_pbnopen": ("fetch_pbnopen", False, True),
+    "dt_employee_q2_2026": ("dt_employee_q2_2026", True, False),
+}
 CACHE_TTL_SECONDS = 300
 MAX_CACHED_FILTERS = 64
+MAX_CACHED_DATASETS = 12
 STATUS_LABELS = (
     "Sangat Istimewa",
     "Istimewa",
@@ -92,6 +97,19 @@ _TEXT_FIELDS = {
     "Rating Perilaku Kerja": "rating_perilaku_kerja",
     "Predikat Kinerja": "predikat_kinerja",
 }
+RECORD_FILTER_OPTION_FIELDS = (
+    "unit_eselon_ii",
+    "unit_eselon_iii",
+    "unit_eselon_iv",
+    "eselon",
+    "rating_hasil_kerja_awal",
+    "rating_perilaku_kerja_awal",
+    "predikat_kinerja_awal",
+    "rating_hasil_kerja",
+    "rating_perilaku_kerja",
+    "predikat_kinerja",
+    "status",
+)
 _SCORE_FIELDS = {"NHK", "NPK", "NHK Kalibrasi", "NPK Kalibrasi", "NKO"}
 _PENALTY_FIELDS = {
     "Nilai Hukuman Disiplin",
@@ -103,6 +121,7 @@ RECORD_EXPORT_COLUMNS = (
     ("nip", "NIP"),
     ("unit_eselon_ii", "Unit Eselon II"),
     ("unit_eselon_iii", "Unit Eselon III"),
+    ("unit_eselon_iv", "Unit Eselon IV"),
     ("eselon", "Eselon"),
     ("nhk", "NHK"),
     ("npk", "NPK"),
@@ -126,6 +145,7 @@ RECORD_EXPORT_COLUMNS = (
 UNIT_EXPORT_HEADERS = (
     "Unit Eselon II",
     "Unit Eselon III",
+    "Unit Eselon IV",
     "Jumlah Pegawai",
     "Rata-rata NPK",
     "Rata-rata NHK",
@@ -154,23 +174,30 @@ class _PerformanceDashboardCache:
     dataset_signature: tuple[Any, ...]
     built_at: float
     dataset: dict[str, Any]
-    resolved_records: list[tuple[PerformanceKinerjaRecord, str, str, str]]
+    resolved_records: list[tuple[PerformanceKinerjaRecord, str, str, str, str]]
     unit_options: list[str]
     eselon_options: list[str]
     units: list[dict[str, Any]]
+    record_filter_options: dict[str, list[str]] = field(default_factory=dict)
+    record_numeric_ranges: dict[str, tuple[float | None, float | None]] = field(
+        default_factory=dict
+    )
     filtered_overviews: OrderedDict[tuple[str | None, tuple[str, ...]], dict[str, Any]] = field(
         default_factory=OrderedDict
     )
+    analyses: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
-_dashboard_cache: _PerformanceDashboardCache | None = None
+_dashboard_cache: OrderedDict[
+    tuple[object, int],
+    _PerformanceDashboardCache,
+] = OrderedDict()
 _dashboard_cache_lock = RLock()
 
 
 def invalidate_dashboard_cache() -> None:
-    global _dashboard_cache
     with _dashboard_cache_lock:
-        _dashboard_cache = None
+        _dashboard_cache.clear()
 
 
 def normalize_nip(value: object) -> str | None:
@@ -188,6 +215,55 @@ def validate_period(period: str) -> str:
     if not PERIOD_PATTERN.fullmatch(normalized):
         raise ValueError("Period must use the Q1-YYYY format, for example Q3-2026.")
     return normalized
+
+
+def _period_sort_key(period: str) -> tuple[int, int]:
+    return int(period[3:]), int(period[1])
+
+
+def _previous_period(period: str) -> str:
+    quarter = int(period[1])
+    year = int(period[3:])
+    if quarter == 1:
+        return f"Q4-{year - 1}"
+    return f"Q{quarter - 1}-{year}"
+
+
+def _performance_datasets(db: Session) -> list[PerformanceKinerjaDataset]:
+    return db.scalars(select(PerformanceKinerjaDataset)).all()
+
+
+def _select_dataset(
+    datasets: list[PerformanceKinerjaDataset],
+    period: str | None = None,
+) -> PerformanceKinerjaDataset | None:
+    if period is not None:
+        normalized_period = validate_period(period)
+        dataset = next(
+            (item for item in datasets if item.period == normalized_period),
+            None,
+        )
+        if dataset is None:
+            raise ValueError(f"No performance dataset is stored for {normalized_period}.")
+        return dataset
+    if not datasets:
+        return None
+    return max(datasets, key=lambda item: _period_sort_key(item.period))
+
+
+def _dataset_status(dataset: PerformanceKinerjaDataset) -> dict[str, Any]:
+    uploaded_at = dataset.uploaded_at
+    if uploaded_at.tzinfo is None:
+        uploaded_at = uploaded_at.replace(tzinfo=timezone.utc)
+    else:
+        uploaded_at = uploaded_at.astimezone(timezone.utc)
+    return {
+        "period": dataset.period,
+        "row_count": dataset.row_count,
+        "uploaded_at": uploaded_at,
+        "uploaded_by_user": dataset.uploaded_by_user,
+        "uploaded_by_name": dataset.uploaded_by_name,
+    }
 
 
 def _parse_decimal(
@@ -367,15 +443,43 @@ def _read_full_csv(content: bytes) -> list[dict[str, Any]]:
     return parsed
 
 
-def _lookup_employee_records(nips: set[str]) -> dict[str, dict[str, str]]:
+def _lookup_employee_records(
+    nips: set[str],
+    employee_source: str = "fetch_pbnopen",
+) -> dict[str, dict[str, Any]]:
+    employee_reference = EMPLOYEE_REFERENCE_TABLES.get(employee_source)
+    if employee_reference is None:
+        raise ValueError(
+            "Employee source must be 'fetch_pbnopen' or 'dt_employee_q2_2026'."
+        )
+    employee_table, uses_eselon_reference, uses_unit_kerja_reference = employee_reference
     if not nips:
         return {}
+    eselon_expression = "r.`value`" if uses_eselon_reference else "e.`eselon`"
+    eselon_join = (
+        "LEFT JOIN pbncleaner.ref_eselon AS r ON e.eselon_id = r.eselon_id"
+        if uses_eselon_reference
+        else ""
+    )
+    unit_kerja_expression = (
+        "u.unit_kerja_id" if uses_unit_kerja_reference else "e.unit_kerja_id"
+    )
+    unit_kerja_join = (
+        "LEFT JOIN pbncleaner.ref_unit_kerja AS u "
+        "ON TRIM(e.`Unit Kerja`) = TRIM(u.`value`)"
+        if uses_unit_kerja_reference
+        else ""
+    )
     statement = text(
-        """
-        SELECT `NIP`, `Nama Gelar` AS nama, `Unit Eselon II` AS unit_eselon_ii,
-               `Unit Eselon III` AS unit_eselon_iii, `eselon` AS eselon
-        FROM pbncleaner.fetch_pbnopen
-        WHERE TRIM(REPLACE(CAST(`NIP` AS CHAR), CHAR(9), '')) IN :nips
+        f"""
+        SELECT e.`NIP`, e.`Nama Gelar` AS nama, e.`Unit Eselon II` AS unit_eselon_ii,
+               e.`Unit Eselon III` AS unit_eselon_iii,
+               e.`Unit Eselon IV` AS unit_eselon_iv, {eselon_expression} AS eselon,
+               {unit_kerja_expression} AS unit_kerja_id
+        FROM pbncleaner.{employee_table} AS e
+        {eselon_join}
+        {unit_kerja_join}
+        WHERE TRIM(REPLACE(CAST(e.`NIP` AS CHAR), CHAR(9), '')) IN :nips
         """
     ).bindparams(bindparam("nips", expanding=True))
     try:
@@ -383,7 +487,7 @@ def _lookup_employee_records(nips: set[str]) -> dict[str, dict[str, str]]:
             rows = connection.execute(statement, {"nips": sorted(nips)}).mappings().all()
     except SQLAlchemyError as exc:
         raise RuntimeError(
-            "Could not look up employees in 'pbncleaner.fetch_pbnopen'. "
+            f"Could not look up employees in 'pbncleaner.{employee_table}'. "
             "Check database connectivity and the NIP column."
         ) from exc
 
@@ -399,14 +503,22 @@ def _lookup_employee_records(nips: set[str]) -> dict[str, dict[str, str]]:
             "nama": str(row["nama"] or "").strip(),
             "unit_eselon_ii": str(row["unit_eselon_ii"] or "").strip(),
             "unit_eselon_iii": str(row.get("unit_eselon_iii") or "").strip(),
+            "unit_eselon_iv": str(row.get("unit_eselon_iv") or "").strip(),
             "eselon": str(row["eselon"] or "").strip(),
+            "unit_kerja_id": (
+                int(row["unit_kerja_id"])
+                if row["unit_kerja_id"] is not None
+                else None
+            ),
         }
     for nip in duplicates:
         matches[nip] = {
             "nama": "",
             "unit_eselon_ii": UNIDENTIFIED,
             "unit_eselon_iii": UNIDENTIFIED,
+            "unit_eselon_iv": UNIDENTIFIED,
             "eselon": UNIDENTIFIED,
+            "unit_kerja_id": None,
         }
     return matches
 
@@ -414,6 +526,7 @@ def _lookup_employee_records(nips: set[str]) -> dict[str, dict[str, str]]:
 def _prepare_full_upload(
     content: bytes,
     period: str,
+    employee_source: str = "fetch_pbnopen",
 ) -> tuple[str, list[dict[str, Any]], int, int]:
     normalized_period = validate_period(period)
     records = _read_full_csv(content)
@@ -421,19 +534,27 @@ def _prepare_full_upload(
         record.pop("_normalized_penalty_count", 0)
         for record in records
     )
-    employees = _lookup_employee_records({record["nip"] for record in records})
+    employees = _lookup_employee_records(
+        {record["nip"] for record in records},
+        employee_source=employee_source,
+    )
     unidentified_count = 0
     for record in records:
         employee = employees.get(record["nip"])
         if employee is None:
             record["unit_eselon_ii"] = UNIDENTIFIED
             record["unit_eselon_iii"] = UNIDENTIFIED
+            record["unit_eselon_iv"] = UNIDENTIFIED
             record["eselon"] = UNIDENTIFIED
+            record["unit_kerja_id"] = None
             unidentified_count += 1
             continue
+        record["nama"] = employee.get("nama") or record["nama"]
         record["unit_eselon_ii"] = employee["unit_eselon_ii"] or UNIDENTIFIED
         record["unit_eselon_iii"] = employee.get("unit_eselon_iii") or UNIDENTIFIED
+        record["unit_eselon_iv"] = employee.get("unit_eselon_iv") or UNIDENTIFIED
         record["eselon"] = employee["eselon"] or UNIDENTIFIED
+        record["unit_kerja_id"] = employee.get("unit_kerja_id")
         if (
             record["unit_eselon_ii"] == UNIDENTIFIED
             and record["eselon"] == UNIDENTIFIED
@@ -442,9 +563,13 @@ def _prepare_full_upload(
     return normalized_period, records, unidentified_count, normalized_penalty_count
 
 
-def validate_full_upload(content: bytes, period: str) -> dict[str, Any]:
+def validate_full_upload(
+    content: bytes,
+    period: str,
+    employee_source: str = "fetch_pbnopen",
+) -> dict[str, Any]:
     normalized_period, records, unidentified_count, normalized_penalty_count = (
-        _prepare_full_upload(content, period)
+        _prepare_full_upload(content, period, employee_source)
     )
     return {
         "period": normalized_period,
@@ -460,16 +585,20 @@ def replace_full_upload(
     period: str,
     uploaded_by_user: str,
     uploaded_by_name: str,
+    employee_source: str = "fetch_pbnopen",
 ) -> dict[str, Any]:
     normalized_period, records, unidentified_count, normalized_penalty_count = (
-        _prepare_full_upload(content, period)
+        _prepare_full_upload(content, period, employee_source)
     )
 
     try:
-        dataset = db.get(PerformanceKinerjaDataset, 1)
+        dataset = db.scalar(
+            select(PerformanceKinerjaDataset).where(
+                PerformanceKinerjaDataset.period == normalized_period
+            )
+        )
         if dataset is None:
             dataset = PerformanceKinerjaDataset(
-                id=1,
                 period=normalized_period,
                 row_count=len(records),
                 uploaded_at=datetime.now(timezone.utc),
@@ -490,7 +619,7 @@ def replace_full_upload(
                 )
             )
         for record in records:
-            db.add(PerformanceKinerjaRecord(dataset_id=1, **record))
+            db.add(PerformanceKinerjaRecord(dataset_id=dataset.id, **record))
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -588,13 +717,13 @@ def _validate_adjustment_target(
     records: list[dict[str, Any]],
 ) -> PerformanceKinerjaDataset:
     normalized_period = validate_period(period)
-    dataset = db.get(PerformanceKinerjaDataset, 1)
-    if dataset is None:
-        raise ValueError("There is no active performance dataset to adjust.")
-    if dataset.period != normalized_period:
-        raise ValueError(
-            f"The active dataset is {dataset.period}; select that period before uploading adjustments."
+    dataset = db.scalar(
+        select(PerformanceKinerjaDataset).where(
+            PerformanceKinerjaDataset.period == normalized_period
         )
+    )
+    if dataset is None:
+        raise ValueError(f"There is no performance dataset for {normalized_period} to adjust.")
     existing_nips = set(
         db.scalars(
             select(PerformanceKinerjaRecord.nip).where(
@@ -772,6 +901,11 @@ def _make_unit_metrics(
     label: str,
     records: list[PerformanceKinerjaRecord],
 ) -> dict[str, Any]:
+    unit_kerja_ids = [
+        record.unit_kerja_id
+        for record in records
+        if record.unit_kerja_id is not None
+    ]
     nkp_awal_count = sum(
         1 for record in records if _status(record.nkp_awal) == "Sangat Istimewa"
     )
@@ -780,6 +914,15 @@ def _make_unit_metrics(
     )
     return {
         "label": label,
+        "unit_kerja_id": min(unit_kerja_ids) if unit_kerja_ids else None,
+        "nkp_awal_status_counts": {
+            status: sum(1 for record in records if _status(record.nkp_awal) == status)
+            for status in STATUS_LABELS
+        },
+        "nkp_akhir_status_counts": {
+            status: sum(1 for record in records if _status(record.nkp_akhir) == status)
+            for status in STATUS_LABELS
+        },
         "employee_count": len(records),
         "average_npk": _average([record.npk for record in records]),
         "average_nhk": _average([record.nhk for record in records]),
@@ -808,11 +951,151 @@ def _make_unit_metrics(
         "status_gap_count": sum(
             1 for record in records if _status(record.nkp_awal) != _status(record.nkp_akhir)
         ),
+        "comparison": {},
     }
+
+
+def _unit_comparison_values(
+    current: dict[str, Any],
+    previous: dict[str, Any] | None,
+) -> dict[str, dict[str, float | None]]:
+    numeric_paths = [
+        "employee_count",
+        "average_npk",
+        "average_nhk",
+        "average_nkp_awal",
+        "nkp_awal_sangat_istimewa_count",
+        "nkp_awal_sangat_istimewa_percentage",
+        "hukdis_count",
+        "dampak_pelanggaran_count",
+        "dampak_perilaku_count",
+        "correction.count",
+        "correction.positive_count",
+        "correction.negative_count",
+        "correction.average",
+        "correction.maximum",
+        "correction.minimum",
+        "average_nkp_akhir",
+        "nkp_akhir_sangat_istimewa_count",
+        "nkp_akhir_sangat_istimewa_percentage",
+        "status_gap_count",
+    ]
+    count_paths = {
+        "employee_count",
+        "nkp_awal_sangat_istimewa_count",
+        "hukdis_count",
+        "dampak_pelanggaran_count",
+        "dampak_perilaku_count",
+        "correction.count",
+        "correction.positive_count",
+        "correction.negative_count",
+        "nkp_akhir_sangat_istimewa_count",
+        "status_gap_count",
+    }
+    numeric_paths.extend(
+        f"{field}.{status}"
+        for field in ("nkp_awal_status_counts", "nkp_akhir_status_counts")
+        for status in STATUS_LABELS
+    )
+    count_paths.update(
+        f"{field}.{status}"
+        for field in ("nkp_awal_status_counts", "nkp_akhir_status_counts")
+        for status in STATUS_LABELS
+    )
+
+    def metric_value(metrics: dict[str, Any] | None, path: str) -> float | None:
+        value: Any = metrics
+        for part in path.split("."):
+            if not isinstance(value, dict):
+                return None
+            value = value.get(part)
+        if value is None:
+            return None
+        return float(value)
+
+    comparisons: dict[str, dict[str, float | None]] = {}
+    for path in numeric_paths:
+        current_value = metric_value(current, path)
+        previous_value = metric_value(previous, path)
+        if previous is None and path in count_paths:
+            previous_value = 0.0
+        if current_value is None or previous_value is None:
+            delta = None
+            percentage_change = None
+        else:
+            current_decimal = Decimal(str(current_value))
+            previous_decimal = Decimal(str(previous_value))
+            delta_decimal = current_decimal - previous_decimal
+            delta = float(delta_decimal.quantize(TWO_PLACES, rounding=ROUND_HALF_UP))
+            percentage_change = (
+                float(
+                    (delta_decimal / abs(previous_decimal) * Decimal("100")).quantize(
+                        TWO_PLACES,
+                        rounding=ROUND_HALF_UP,
+                    )
+                )
+                if previous_decimal != ZERO
+                else None
+            )
+        comparisons[path] = {
+            "current": current_value,
+            "previous": previous_value,
+            "delta": delta,
+            "percentage_change": percentage_change,
+        }
+    return comparisons
+
+
+def _units_with_comparisons(
+    units: list[dict[str, Any]],
+    previous_units: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    previous_by_label = {
+        unit["label"]: unit
+        for unit in previous_units or []
+    }
+
+    def add_comparison(
+        unit: dict[str, Any],
+        previous: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        previous_children = {
+            child["label"]: child
+            for child in (previous or {}).get("children", [])
+        }
+        return {
+            **unit,
+            "comparison": _unit_comparison_values(unit, previous),
+            "children": [
+                add_comparison(child, previous_children.get(child["label"]))
+                for child in unit.get("children", [])
+            ],
+        }
+
+    return [
+        add_comparison(unit, previous_by_label.get(unit["label"]))
+        for unit in units
+    ]
 
 
 def _dashboard_dataset_signature(dataset: PerformanceKinerjaDataset) -> tuple[Any, ...]:
     return (dataset.id, dataset.period, dataset.row_count, dataset.uploaded_at)
+
+
+def _unit_order_key(
+    label: str,
+    records: list[PerformanceKinerjaRecord],
+) -> tuple[bool, int, str]:
+    unit_kerja_ids = [
+        record.unit_kerja_id
+        for record in records
+        if record.unit_kerja_id is not None
+    ]
+    return (
+        not unit_kerja_ids,
+        min(unit_kerja_ids) if unit_kerja_ids else 0,
+        label.casefold(),
+    )
 
 
 def _build_dashboard_cache(
@@ -824,126 +1107,222 @@ def _build_dashboard_cache(
         .where(PerformanceKinerjaRecord.dataset_id == dataset.id)
         .order_by(PerformanceKinerjaRecord.nama, PerformanceKinerjaRecord.nip)
     ).all()
-    employees = _lookup_employee_records({record.nip for record in records})
-    resolved_records: list[tuple[PerformanceKinerjaRecord, str, str, str]] = []
+    resolved_records: list[tuple[PerformanceKinerjaRecord, str, str, str, str]] = []
     for record in records:
-        employee = employees.get(record.nip, {})
-        unit = employee.get("unit_eselon_ii", "").strip() or record.unit_eselon_ii or UNIDENTIFIED
-        eselon = employee.get("eselon", "").strip() or record.eselon or UNIDENTIFIED
-        unit_eselon_iii = (
-            employee.get("unit_eselon_iii", "").strip()
-            or record.unit_eselon_iii
-            or UNIDENTIFIED
-        )
-        resolved_records.append((record, unit, eselon, unit_eselon_iii))
+        unit = (record.unit_eselon_ii or "").strip() or UNIDENTIFIED
+        eselon = (record.eselon or "").strip() or UNIDENTIFIED
+        unit_eselon_iii = (record.unit_eselon_iii or "").strip() or UNIDENTIFIED
+        unit_eselon_iv = (record.unit_eselon_iv or "").strip() or UNIDENTIFIED
+        resolved_records.append((record, unit, eselon, unit_eselon_iii, unit_eselon_iv))
 
     grouped_units: dict[str, list[PerformanceKinerjaRecord]] = defaultdict(list)
     grouped_unit_iii: dict[str, dict[str, list[PerformanceKinerjaRecord]]] = defaultdict(
         lambda: defaultdict(list)
     )
-    for record, unit, _, unit_eselon_iii in resolved_records:
+    grouped_unit_iv: dict[
+        str,
+        dict[str, dict[str, list[PerformanceKinerjaRecord]]],
+    ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for record, unit, _, unit_eselon_iii, unit_eselon_iv in resolved_records:
         grouped_units[unit].append(record)
         grouped_unit_iii[unit][unit_eselon_iii].append(record)
+        grouped_unit_iv[unit][unit_eselon_iii][unit_eselon_iv].append(record)
 
-    uploaded_at = dataset.uploaded_at
-    if uploaded_at.tzinfo is None:
-        uploaded_at = uploaded_at.replace(tzinfo=timezone.utc)
-    else:
-        uploaded_at = uploaded_at.astimezone(timezone.utc)
-    return _PerformanceDashboardCache(
+    cache = _PerformanceDashboardCache(
         bind=db.get_bind(),
         dataset_signature=_dashboard_dataset_signature(dataset),
         built_at=monotonic(),
-        dataset={
-            "period": dataset.period,
-            "row_count": dataset.row_count,
-            "uploaded_at": uploaded_at,
-            "uploaded_by_user": dataset.uploaded_by_user,
-            "uploaded_by_name": dataset.uploaded_by_name,
-        },
+        dataset=_dataset_status(dataset),
         resolved_records=resolved_records,
         unit_options=sorted(
-            {unit for _, unit, _, _ in resolved_records},
+            {unit for _, unit, _, _, _ in resolved_records},
             key=str.casefold,
         ),
         eselon_options=sorted(
-            {eselon for _, _, eselon, _ in resolved_records},
+            {eselon for _, _, eselon, _, _ in resolved_records},
             key=str.casefold,
         ),
         units=[
             {
                 **_make_unit_metrics(unit, grouped_units[unit]),
                 "children": [
-                    _make_unit_metrics(child, grouped_unit_iii[unit][child])
-                    for child in sorted(grouped_unit_iii[unit], key=str.casefold)
+                    {
+                        **_make_unit_metrics(child, grouped_unit_iii[unit][child]),
+                        "children": [
+                            _make_unit_metrics(
+                                grandchild,
+                                grouped_unit_iv[unit][child][grandchild],
+                            )
+                            for grandchild in sorted(
+                                grouped_unit_iv[unit][child],
+                                key=lambda label: _unit_order_key(
+                                    label,
+                                    grouped_unit_iv[unit][child][label],
+                                ),
+                            )
+                        ],
+                    }
+                    for child in sorted(
+                        grouped_unit_iii[unit],
+                        key=lambda label: _unit_order_key(
+                            label,
+                            grouped_unit_iii[unit][label],
+                        ),
+                    )
                 ],
             }
-            for unit in sorted(grouped_units, key=str.casefold)
+            for unit in sorted(
+                grouped_units,
+                key=lambda label: _unit_order_key(label, grouped_units[label]),
+            )
         ],
     )
+    cache.record_filter_options = _record_filter_options(cache)
+    cache.record_numeric_ranges = _record_numeric_ranges(cache)
+    return cache
 
 
 def _get_dashboard_cache(
     db: Session,
     dataset: PerformanceKinerjaDataset,
 ) -> _PerformanceDashboardCache:
-    global _dashboard_cache
     bind = db.get_bind()
     signature = _dashboard_dataset_signature(dataset)
+    cache_key = (bind, dataset.id)
     with _dashboard_cache_lock:
+        cache = _dashboard_cache.get(cache_key)
         if (
-            _dashboard_cache is not None
-            and _dashboard_cache.bind is bind
-            and _dashboard_cache.dataset_signature == signature
-            and monotonic() - _dashboard_cache.built_at < CACHE_TTL_SECONDS
+            cache is not None
+            and cache.dataset_signature == signature
+            and monotonic() - cache.built_at < CACHE_TTL_SECONDS
         ):
-            return _dashboard_cache
-        _dashboard_cache = _build_dashboard_cache(db, dataset)
-        return _dashboard_cache
+            _dashboard_cache.move_to_end(cache_key)
+            return cache
+        cache = _build_dashboard_cache(db, dataset)
+        _dashboard_cache[cache_key] = cache
+        _dashboard_cache.move_to_end(cache_key)
+        while len(_dashboard_cache) > MAX_CACHED_DATASETS:
+            _dashboard_cache.popitem(last=False)
+        return cache
+
+
+def _dashboard_filtered_records(
+    cache: _PerformanceDashboardCache,
+    unit_eselon_ii: str | None,
+    eselons: tuple[str, ...],
+) -> list[PerformanceKinerjaRecord]:
+    return [
+        record
+        for record, unit, eselon, _, _ in cache.resolved_records
+        if (unit_eselon_ii is None or unit == unit_eselon_ii)
+        and (not eselons or eselon in eselons)
+    ]
+
+
+def _cached_filtered_overview(
+    cache: _PerformanceDashboardCache,
+    filter_key: tuple[str | None, tuple[str, ...]],
+    records: list[PerformanceKinerjaRecord],
+) -> dict[str, Any]:
+    with _dashboard_cache_lock:
+        overview = cache.filtered_overviews.get(filter_key)
+        if overview is not None:
+            cache.filtered_overviews.move_to_end(filter_key)
+            return overview
+
+        overview = _make_group("Semua Pegawai", records)
+        cache.filtered_overviews[filter_key] = overview
+        if len(cache.filtered_overviews) > MAX_CACHED_FILTERS:
+            cache.filtered_overviews.popitem(last=False)
+        return overview
 
 
 def get_dashboard(
     db: Session,
     unit_eselon_ii: str | None,
     eselons: list[str],
+    period: str | None = None,
 ) -> dict[str, Any]:
-    dataset = db.get(PerformanceKinerjaDataset, 1)
+    datasets = sorted(
+        _performance_datasets(db),
+        key=lambda item: _period_sort_key(item.period),
+    )
+    dataset = _select_dataset(datasets, period)
+    available_periods = [
+        {"period": item.period, "row_count": item.row_count}
+        for item in datasets
+    ]
     if dataset is None:
         return {
             "dataset": None,
+            "previous_period": None,
+            "available_periods": available_periods,
             "total_employees": 0,
             "unit_eselon_ii_options": [],
             "eselon_options": [],
             "overview": _make_group("Semua Pegawai", []),
+            "overview_previous": None,
+            "overview_comparison": {},
             "units": [],
         }
 
     cache = _get_dashboard_cache(db, dataset)
+    previous_period = _previous_period(dataset.period)
+    previous_dataset = next(
+        (item for item in datasets if item.period == previous_period),
+        None,
+    )
+    previous_cache = (
+        _get_dashboard_cache(db, previous_dataset)
+        if previous_dataset is not None
+        else None
+    )
     selected_eselons = tuple(sorted(set(eselons), key=str.casefold))
     filter_key = (unit_eselon_ii, selected_eselons)
-    with _dashboard_cache_lock:
-        overview = cache.filtered_overviews.get(filter_key)
-        if overview is not None:
-            cache.filtered_overviews.move_to_end(filter_key)
-        else:
-            filtered_records = [
-                record
-                for record, unit, eselon, _ in cache.resolved_records
-                if (unit_eselon_ii is None or unit == unit_eselon_ii)
-                and (not selected_eselons or eselon in selected_eselons)
-            ]
-            overview = _make_group("Semua Pegawai", filtered_records)
-            cache.filtered_overviews[filter_key] = overview
-            if len(cache.filtered_overviews) > MAX_CACHED_FILTERS:
-                cache.filtered_overviews.popitem(last=False)
+    filtered_records = _dashboard_filtered_records(
+        cache,
+        unit_eselon_ii,
+        selected_eselons,
+    )
+    overview = _cached_filtered_overview(cache, filter_key, filtered_records)
+    overview_previous = None
+    overview_comparison = {}
+    if previous_cache is not None:
+        previous_records = _dashboard_filtered_records(
+            previous_cache,
+            unit_eselon_ii,
+            selected_eselons,
+        )
+        overview_previous = _cached_filtered_overview(
+            previous_cache,
+            filter_key,
+            previous_records,
+        )
+        overview_comparison = _unit_comparison_values(
+            _make_unit_metrics("Overview", filtered_records),
+            _make_unit_metrics("Overview", previous_records),
+        )
 
     return {
         "dataset": cache.dataset,
+        "previous_period": (
+            previous_dataset.period if previous_dataset is not None else None
+        ),
+        "available_periods": available_periods,
         "total_employees": len(cache.resolved_records),
         "unit_eselon_ii_options": cache.unit_options,
         "eselon_options": cache.eselon_options,
         "overview": overview,
-        "units": cache.units,
+        "overview_previous": overview_previous,
+        "overview_comparison": overview_comparison,
+        "units": (
+            _units_with_comparisons(
+                cache.units,
+                previous_cache.units if previous_cache is not None else None,
+            )
+            if previous_cache is not None
+            else cache.units
+        ),
     }
 
 
@@ -993,59 +1372,45 @@ def update_insight(
     return get_insight(db)
 
 
-def get_analysis(db: Session, group_by: str) -> dict[str, Any]:
+def get_analysis(
+    db: Session,
+    group_by: str,
+    period: str | None = None,
+) -> dict[str, Any]:
     allowed_groupings = {"overall", "unit_eselon_ii", "eselon_level", "unit_and_eselon"}
     if group_by not in allowed_groupings:
         raise ValueError("Unsupported grouping.")
-    dataset = db.get(PerformanceKinerjaDataset, 1)
+    dataset = _select_dataset(_performance_datasets(db), period)
     if dataset is None:
         return {"dataset": None, "group_by": group_by, "total_employees": 0, "groups": []}
 
-    records = db.scalars(
-        select(PerformanceKinerjaRecord)
-        .where(PerformanceKinerjaRecord.dataset_id == dataset.id)
-        .order_by(PerformanceKinerjaRecord.nama, PerformanceKinerjaRecord.nip)
-    ).all()
-    employees = _lookup_employee_records({record.nip for record in records})
-    grouped: dict[str, list[PerformanceKinerjaRecord]] = defaultdict(list)
-    for record in records:
-        employee = employees.get(record.nip, {})
-        unit = (
-            employee.get("unit_eselon_ii", "").strip()
-            or record.unit_eselon_ii
-            or UNIDENTIFIED
-        )
-        eselon = employee.get("eselon", "").strip() or record.eselon or UNIDENTIFIED
-        if group_by == "overall":
-            label = "Semua Pegawai"
-        elif group_by == "unit_eselon_ii":
-            label = unit
-        elif group_by == "eselon_level":
-            label = eselon
-        else:
-            label = f"{unit} · {eselon}"
-        grouped[label].append(record)
+    cache = _get_dashboard_cache(db, dataset)
+    with _dashboard_cache_lock:
+        analysis = cache.analyses.get(group_by)
+        if analysis is None:
+            grouped: dict[str, list[PerformanceKinerjaRecord]] = defaultdict(list)
+            for record, unit, eselon, _, _ in cache.resolved_records:
+                if group_by == "overall":
+                    label = "Semua Pegawai"
+                elif group_by == "unit_eselon_ii":
+                    label = unit
+                elif group_by == "eselon_level":
+                    label = eselon
+                else:
+                    label = f"{unit} · {eselon}"
+                grouped[label].append(record)
 
-    uploaded_at = dataset.uploaded_at
-    if uploaded_at.tzinfo is None:
-        uploaded_at = uploaded_at.replace(tzinfo=timezone.utc)
-    else:
-        uploaded_at = uploaded_at.astimezone(timezone.utc)
-    return {
-        "dataset": {
-            "period": dataset.period,
-            "row_count": dataset.row_count,
-            "uploaded_at": uploaded_at,
-            "uploaded_by_user": dataset.uploaded_by_user,
-            "uploaded_by_name": dataset.uploaded_by_name,
-        },
-        "group_by": group_by,
-        "total_employees": len(records),
-        "groups": [
-            _make_group(label, grouped[label])
-            for label in sorted(grouped, key=str.casefold)
-        ],
-    }
+            analysis = {
+                "dataset": cache.dataset,
+                "group_by": group_by,
+                "total_employees": len(cache.resolved_records),
+                "groups": [
+                    _make_group(label, grouped[label])
+                    for label in sorted(grouped, key=str.casefold)
+                ],
+            }
+            cache.analyses[group_by] = analysis
+        return analysis
 
 
 def get_records(
@@ -1056,8 +1421,9 @@ def get_records(
     filters: dict[str, str] | None = None,
     sort_by: str = "nama",
     sort_order: str = "asc",
+    period: str | None = None,
 ) -> dict[str, Any]:
-    dataset = db.get(PerformanceKinerjaDataset, 1)
+    dataset = _select_dataset(_performance_datasets(db), period)
     if dataset is None:
         _validate_record_query(filters, sort_by, sort_order)
         return {
@@ -1066,8 +1432,11 @@ def get_records(
             "page_size": page_size,
             "total": 0,
             "records": [],
+            "filter_options": {},
+            "numeric_ranges": {},
         }
 
+    cache = _get_dashboard_cache(db, dataset)
     result_records = _query_performance_records(
         db,
         dataset,
@@ -1082,8 +1451,65 @@ def get_records(
         "page_size": page_size,
         "total": len(result_records),
         "records": result_records[(page - 1) * page_size : page * page_size],
+        "filter_options": cache.record_filter_options,
+        "numeric_ranges": cache.record_numeric_ranges,
     }
 
+
+def _record_filter_options(
+    cache: _PerformanceDashboardCache,
+) -> dict[str, list[str]]:
+    options = {field: set() for field in RECORD_FILTER_OPTION_FIELDS}
+    for record, unit, eselon, unit_eselon_iii, unit_eselon_iv in cache.resolved_records:
+        values = _performance_record_data(
+            record,
+            {
+                "unit_eselon_ii": unit,
+                "unit_eselon_iii": unit_eselon_iii,
+                "unit_eselon_iv": unit_eselon_iv,
+                "eselon": eselon,
+            },
+        )
+        for field in RECORD_FILTER_OPTION_FIELDS:
+            value = values[field]
+            if value is not None and str(value).strip():
+                options[field].add(str(value))
+    return {
+        field: sorted(values, key=str.casefold)
+        for field, values in options.items()
+    }
+
+
+def _record_numeric_ranges(
+    cache: _PerformanceDashboardCache,
+) -> dict[str, tuple[float | None, float | None]]:
+    numeric_fields = tuple(field for field, _ in RECORD_EXPORT_COLUMNS if field in {
+        "nhk",
+        "npk",
+        "nhk_kalibrasi",
+        "npk_kalibrasi",
+        "nkp_awal",
+        "nilai_hukuman_disiplin",
+        "nilai_dampak_pelanggaran_disiplin",
+        "nilai_dampak_perilaku",
+        "nilai_koreksi",
+        "nko",
+        "nkp_akhir",
+    })
+    values_by_field: dict[str, list[float]] = {field: [] for field in numeric_fields}
+    for record, _, _, _, _ in cache.resolved_records:
+        for field in numeric_fields:
+            value = getattr(record, field)
+            if value is not None:
+                values_by_field[field].append(float(value))
+    return {
+        field: (
+            (min(values), max(values))
+            if values
+            else (None, None)
+        )
+        for field, values in values_by_field.items()
+    }
 
 def _performance_record_data(
     record: PerformanceKinerjaRecord,
@@ -1100,6 +1526,11 @@ def _performance_record_data(
         "unit_eselon_iii": (
             employee.get("unit_eselon_iii", "").strip()
             or record.unit_eselon_iii
+            or UNIDENTIFIED
+        ),
+        "unit_eselon_iv": (
+            employee.get("unit_eselon_iv", "").strip()
+            or record.unit_eselon_iv
             or UNIDENTIFIED
         ),
         "eselon": employee.get("eselon", "").strip() or record.eselon or UNIDENTIFIED,
@@ -1143,12 +1574,13 @@ def _query_performance_records(
     cache = _get_dashboard_cache(db, dataset)
     normalized_search = search.strip().casefold()
     result_records = []
-    for record, unit, eselon, unit_eselon_iii in cache.resolved_records:
+    for record, unit, eselon, unit_eselon_iii, unit_eselon_iv in cache.resolved_records:
         values = _performance_record_data(
             record,
             {
                 "unit_eselon_ii": unit,
                 "unit_eselon_iii": unit_eselon_iii,
+                "unit_eselon_iv": unit_eselon_iv,
                 "eselon": eselon,
             },
         )
@@ -1157,10 +1589,32 @@ def _query_performance_records(
             and normalized_search not in values["nip"].casefold()
         ):
             continue
-        if any(
-            values[key] is None or expected not in str(values[key]).casefold()
-            for key, expected in normalized_filters.items()
-        ):
+        is_filtered_out = False
+        for key, expected in normalized_filters.items():
+            if key.endswith("__min") or key.endswith("__max"):
+                field, bound = key.rsplit("__", maxsplit=1)
+                value = values[field]
+                if value is None:
+                    is_filtered_out = True
+                    break
+                numeric_value = float(value)
+                numeric_bound = float(expected)
+                if (bound == "min" and numeric_value < numeric_bound) or (
+                    bound == "max" and numeric_value > numeric_bound
+                ):
+                    is_filtered_out = True
+                    break
+            elif values[key] is None:
+                is_filtered_out = True
+                break
+            elif key in RECORD_FILTER_OPTION_FIELDS:
+                if str(values[key]).casefold() != expected:
+                    is_filtered_out = True
+                    break
+            elif expected not in str(values[key]).casefold():
+                is_filtered_out = True
+                break
+        if is_filtered_out:
             continue
         result_records.append(values)
 
@@ -1194,8 +1648,19 @@ def _validate_record_query(
         for key, value in (filters or {}).items()
         if value.strip()
     }
-    if unknown_fields := normalized_filters.keys() - allowed_fields:
+    allowed_filter_fields = allowed_fields | {
+        f"{field}__{bound}"
+        for field in _NUMERIC_FIELDS.values()
+        for bound in ("min", "max")
+    }
+    if unknown_fields := normalized_filters.keys() - allowed_filter_fields:
         raise ValueError(f"Unsupported filter column: {sorted(unknown_fields)[0]}.")
+    for key, value in normalized_filters.items():
+        if key.endswith("__min") or key.endswith("__max"):
+            try:
+                float(value)
+            except ValueError as exc:
+                raise ValueError("Numeric range filters must contain valid numbers.") from exc
     return normalized_filters, normalized_sort_order
 
 
@@ -1217,13 +1682,16 @@ def _style_export_header(worksheet) -> None:
         )
 
 
-def create_unit_analysis_workbook(db: Session) -> bytes:
+def create_unit_analysis_workbook(
+    db: Session,
+    period: str | None = None,
+) -> bytes:
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "Unit Eselon II"
     worksheet.append(UNIT_EXPORT_HEADERS)
 
-    dataset = db.get(PerformanceKinerjaDataset, 1)
+    dataset = _select_dataset(_performance_datasets(db), period)
     if dataset is not None:
         cache = _get_dashboard_cache(db, dataset)
         for unit in cache.units:
@@ -1238,6 +1706,18 @@ def create_unit_analysis_workbook(db: Session) -> bytes:
                     ]
                 )
                 worksheet.row_dimensions[worksheet.max_row].outlineLevel = 1
+                for grandchild in child["children"]:
+                    worksheet.append(
+                        [
+                            _excel_safe_value(value)
+                            for value in _unit_export_values(
+                                grandchild,
+                                unit["label"],
+                                child["label"],
+                            )
+                        ]
+                    )
+                    worksheet.row_dimensions[worksheet.max_row].outlineLevel = 2
 
     _style_export_header(worksheet)
     stream = BytesIO()
@@ -1248,12 +1728,14 @@ def create_unit_analysis_workbook(db: Session) -> bytes:
 
 def _unit_export_values(
     metrics: dict[str, Any],
-    parent_label: str | None = None,
+    unit_ii_label: str | None = None,
+    unit_iii_label: str | None = None,
 ) -> tuple[Any, ...]:
     correction = metrics["correction"]
     return (
-        parent_label or metrics["label"],
-        metrics["label"] if parent_label else "",
+        unit_ii_label or metrics["label"],
+        unit_iii_label or (metrics["label"] if unit_ii_label else ""),
+        metrics["label"] if unit_iii_label else "",
         metrics["employee_count"],
         metrics["average_npk"],
         metrics["average_nhk"],
@@ -1282,13 +1764,14 @@ def create_performance_records_workbook(
     filters: dict[str, str] | None = None,
     sort_by: str = "nama",
     sort_order: str = "asc",
+    period: str | None = None,
 ) -> bytes:
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "Daftar Pegawai"
     worksheet.append([label for _, label in RECORD_EXPORT_COLUMNS])
 
-    dataset = db.get(PerformanceKinerjaDataset, 1)
+    dataset = _select_dataset(_performance_datasets(db), period)
     if dataset is not None:
         records = _query_performance_records(
             db,

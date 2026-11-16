@@ -22,6 +22,19 @@ const themeOptions: Array<{ value: ThemeName; label: string }> = [
 
 const PATCH_NOTES = [
   {
+    version: '1.4.0',
+    label: '1.4.0',
+    items: [
+      'Generate ND menjadikan alur semua sheet sebagai menu utama, dengan impor gabungan/terpilih/terpisah, Lite View, lebar kolom tersimpan, dan tombol alih Daring/Luring. Pilihan moda awal mengikuti pemetaan unit.',
+      'Pratinjau menampilkan kota serta filter pencocokan/moda; pilihan peserta mencegah NIP ganda. Tersedia ekspor monitoring Pelantikan ke Excel.',
+      'Pratinjau Generate ND dapat memilih dokumen per Unit dan moda; satu dokumen diunduh sebagai DOCX, beberapa dokumen sebagai ZIP. Tersedia juga pembuatan lampiran ND Pengantar.',
+      'Analisis Kinerja menyimpan beberapa triwulan dalam tab periode terpisah. Unggah ulang hanya mengganti triwulan yang sama, sementara periode lainnya tetap tersedia.',
+      'Unit Eselon II dapat membandingkan metrik dan status NKP dengan triwulan kalender sebelumnya; Overview menampilkan persentase distribusi status.',
+      'Filter pegawai menggunakan nilai yang tersedia di data dan rentang numerik. Form unggah/penyesuaian dipindahkan ke dialog ringkas; hasil dashboard di-cache dan diperbarui saat data berubah.',
+      'Admin mendapat peran God User Level 4 untuk pratinjau dan pemeliharaan tabel sumber/referensi serta sinkronisasi pegawai; hanya Level 4 yang dapat memberikan peran ini, dan Super Admin Level 3 tidak mendapat akses database.',
+    ],
+  },
+  {
     version: '1.3.0',
     label: '1.3.0',
     items: [
@@ -70,6 +83,7 @@ const PATCH_NOTES = [
 type PatchNoteVersion = (typeof PATCH_NOTES)[number]['version'];
 
 function getAuthorityLabel(authLevel: number): string {
+  if (authLevel === 4) return 'God User · Level 4';
   if (authLevel === 3) return 'Super Admin · Level 3';
   if (authLevel === 2) return 'Admin · Level 2';
   return 'User · Level 1';
@@ -86,7 +100,7 @@ export function AppToolbar() {
   const { mode, user, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState(() => dateTimeFormatter.format(new Date()));
   const [activeDialog, setActiveDialog] = useState<ToolbarDialog>(null);
-  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.3.0');
+  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.4.0');
   const [apiTestState, setApiTestState] = useState<ApiTestState>('idle');
   const [apiDiagnostics, setApiDiagnostics] = useState<apiClient.ApiDiagnostic[]>([]);
   const [apiElapsedMs, setApiElapsedMs] = useState<number | null>(null);
@@ -440,7 +454,7 @@ export function AppToolbar() {
               title="Patch Notes"
               aria-label="Buka Patch Notes"
               onClick={() => {
-                setSelectedPatchVersion('1.3.0');
+                setSelectedPatchVersion('1.4.0');
                 setActiveDialog('patch');
               }}
               className="rounded-lg p-2 text-slate-300 transition hover:bg-surface-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-brand-400"
