@@ -22,6 +22,18 @@ const themeOptions: Array<{ value: ThemeName; label: string }> = [
 
 const PATCH_NOTES = [
   {
+    version: '1.4.1',
+    label: '1.4.1',
+    items: [
+      'Super Admin dapat menyinkronkan koreksi langsung dari EPRIDE, memilih tahun/TW sumber, melihat pratinjau, dan menangani konflik per NIP. Daftar periode diperbarui saat dialog Kelola Dataset dibuka.',
+      'NKP Perhitungan disimpan per pegawai dengan bobot 70/30 atau 90/10. Status mengikuti skor yang dibulatkan ke dua desimal tampilan; migrasi startup mengisi skor lama dan memperbarui status tersimpan.',
+      'Skor dan status NKP Perhitungan tersedia di Daftar Pegawai, Lite View, dan ekspor. Perbandingan unit kini menampilkan distribusi status NKP Perhitungan dan NKP Akhir.',
+      'Gap Status menghitung jumlah NKP Akhir Sangat Istimewa dikurangi NKP Perhitungan Sangat Istimewa. Nilai positif berwarna hijau, nol memakai warna teks bawaan, dan nilai negatif merah; Gap Status tersedia di Lite View.',
+      'Tabel Unit Eselon II dan Daftar Pegawai memiliki area gulir dengan tinggi terbatas dan header beku. Baris filter Daftar Pegawai tetap terlihat, di Full View maupun Lite View.',
+      'Tombol Compare pada Overview kini menggunakan ikon timbangan.',
+    ],
+  },
+  {
     version: '1.4.0',
     label: '1.4.0',
     items: [
@@ -100,7 +112,7 @@ export function AppToolbar() {
   const { mode, user, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState(() => dateTimeFormatter.format(new Date()));
   const [activeDialog, setActiveDialog] = useState<ToolbarDialog>(null);
-  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.4.0');
+  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.4.1');
   const [apiTestState, setApiTestState] = useState<ApiTestState>('idle');
   const [apiDiagnostics, setApiDiagnostics] = useState<apiClient.ApiDiagnostic[]>([]);
   const [apiElapsedMs, setApiElapsedMs] = useState<number | null>(null);
@@ -454,7 +466,7 @@ export function AppToolbar() {
               title="Patch Notes"
               aria-label="Buka Patch Notes"
               onClick={() => {
-                setSelectedPatchVersion('1.4.0');
+                setSelectedPatchVersion('1.4.1');
                 setActiveDialog('patch');
               }}
               className="rounded-lg p-2 text-slate-300 transition hover:bg-surface-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-brand-400"
