@@ -97,6 +97,7 @@ RECORD_FILTER_OPTION_FIELDS = (
     "unit_eselon_iii",
     "unit_eselon_iv",
     "eselon",
+    "status_nkp_perhitungan",
     "rating_hasil_kerja_awal",
     "rating_perilaku_kerja_awal",
     "predikat_kinerja_awal",
@@ -131,6 +132,8 @@ RECORD_EXPORT_COLUMNS = (
     ("nilai_dampak_perilaku", "Nilai Dampak Perilaku"),
     ("nilai_koreksi", "Nilai Koreksi"),
     ("nko", "NKO"),
+    ("nkp_perhitungan", "NKP Perhitungan"),
+    ("status_nkp_perhitungan", "Status NKP Perhitungan"),
     ("nkp_akhir", "NKP Akhir"),
     ("rating_hasil_kerja", "Rating Hasil Kerja"),
     ("rating_perilaku_kerja", "Rating Perilaku Kerja"),
@@ -145,8 +148,8 @@ UNIT_EXPORT_HEADERS = (
     "Rata-rata NPK",
     "Rata-rata NHK",
     "Rata-rata NKP Awal",
-    "NKP Awal Sangat Istimewa",
-    "Persentase NKP Awal Sangat Istimewa",
+    "NKP Perhitungan Sangat Istimewa",
+    "Persentase NKP Perhitungan Sangat Istimewa",
     "Hukdis",
     "Dampak Pelanggaran",
     "Dampak Perilaku",
@@ -359,6 +362,24 @@ def get_status(nkp_akhir: Decimal | None) -> str:
     return "Rendah"
 
 
+def _get_nkp_perhitungan_status(nkp_perhitungan: Decimal | None) -> str:
+    if nkp_perhitungan is None:
+        return "Tidak tersedia"
+    displayed_score = nkp_perhitungan.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+    return get_status(displayed_score)
+
+
+def _calculate_nkp_perhitungan(
+    nkp_awal: Decimal | None,
+    nko: Decimal | None,
+) -> Decimal | None:
+    if nkp_awal is None or nko is None:
+        return None
+    if nkp_awal >= nko:
+        return Decimal("0.70") * nkp_awal + Decimal("0.30") * nko
+    return Decimal("0.90") * nkp_awal + Decimal("0.10") * nko
+
+
 def _read_full_csv(content: bytes) -> list[dict[str, Any]]:
     try:
         text_content = content.decode("utf-8-sig")
@@ -543,6 +564,14 @@ def _prepare_full_upload(
     )
     unidentified_count = 0
     for record in records:
+        nkp_perhitungan = _calculate_nkp_perhitungan(
+            record["nkp_awal"],
+            record["nko"],
+        )
+        record["nkp_perhitungan"] = nkp_perhitungan
+        record["status_nkp_perhitungan"] = _get_nkp_perhitungan_status(
+            nkp_perhitungan
+        )
         employee = employees.get(record["nip"])
         if employee is None:
             record["unit_eselon_ii"] = UNIDENTIFIED
@@ -992,8 +1021,9 @@ def _make_unit_metrics(
         for record in records
         if record.unit_kerja_id is not None
     ]
-    nkp_awal_count = sum(
-        1 for record in records if _status(record.nkp_awal) == "Sangat Istimewa"
+    nkp_perhitungan_count = sum(
+        1 for record in records
+        if record.status_nkp_perhitungan == "Sangat Istimewa"
     )
     nkp_akhir_count = sum(
         1 for record in records if _status(record.nkp_akhir) == "Sangat Istimewa"
@@ -1005,6 +1035,13 @@ def _make_unit_metrics(
             status: sum(1 for record in records if _status(record.nkp_awal) == status)
             for status in STATUS_LABELS
         },
+        "nkp_perhitungan_status_counts": {
+            status: sum(
+                1 for record in records
+                if record.status_nkp_perhitungan == status
+            )
+            for status in STATUS_LABELS
+        },
         "nkp_akhir_status_counts": {
             status: sum(1 for record in records if _status(record.nkp_akhir) == status)
             for status in STATUS_LABELS
@@ -1013,8 +1050,11 @@ def _make_unit_metrics(
         "average_npk": _average([record.npk for record in records]),
         "average_nhk": _average([record.nhk for record in records]),
         "average_nkp_awal": _average([record.nkp_awal for record in records]),
-        "nkp_awal_sangat_istimewa_count": nkp_awal_count,
-        "nkp_awal_sangat_istimewa_percentage": _percentage(nkp_awal_count, len(records)),
+        "nkp_perhitungan_sangat_istimewa_count": nkp_perhitungan_count,
+        "nkp_perhitungan_sangat_istimewa_percentage": _percentage(
+            nkp_perhitungan_count,
+            len(records),
+        ),
         "hukdis_count": sum(
             1 for record in records
             if record.nilai_hukuman_disiplin is not None
@@ -1034,9 +1074,7 @@ def _make_unit_metrics(
         "average_nkp_akhir": _average([record.nkp_akhir for record in records]),
         "nkp_akhir_sangat_istimewa_count": nkp_akhir_count,
         "nkp_akhir_sangat_istimewa_percentage": _percentage(nkp_akhir_count, len(records)),
-        "status_gap_count": sum(
-            1 for record in records if _status(record.nkp_awal) != _status(record.nkp_akhir)
-        ),
+        "status_gap_count": nkp_akhir_count - nkp_perhitungan_count,
         "comparison": {},
     }
 
@@ -1050,8 +1088,8 @@ def _unit_comparison_values(
         "average_npk",
         "average_nhk",
         "average_nkp_awal",
-        "nkp_awal_sangat_istimewa_count",
-        "nkp_awal_sangat_istimewa_percentage",
+        "nkp_perhitungan_sangat_istimewa_count",
+        "nkp_perhitungan_sangat_istimewa_percentage",
         "hukdis_count",
         "dampak_pelanggaran_count",
         "dampak_perilaku_count",
@@ -1068,7 +1106,7 @@ def _unit_comparison_values(
     ]
     count_paths = {
         "employee_count",
-        "nkp_awal_sangat_istimewa_count",
+        "nkp_perhitungan_sangat_istimewa_count",
         "hukdis_count",
         "dampak_pelanggaran_count",
         "dampak_perilaku_count",
@@ -1080,12 +1118,12 @@ def _unit_comparison_values(
     }
     numeric_paths.extend(
         f"{field}.{status}"
-        for field in ("nkp_awal_status_counts", "nkp_akhir_status_counts")
+        for field in ("nkp_perhitungan_status_counts", "nkp_akhir_status_counts")
         for status in STATUS_LABELS
     )
     count_paths.update(
         f"{field}.{status}"
-        for field in ("nkp_awal_status_counts", "nkp_akhir_status_counts")
+        for field in ("nkp_perhitungan_status_counts", "nkp_akhir_status_counts")
         for status in STATUS_LABELS
     )
 
@@ -1690,6 +1728,7 @@ def _record_numeric_ranges(
         "nhk_kalibrasi",
         "npk_kalibrasi",
         "nkp_awal",
+        "nkp_perhitungan",
         "nilai_hukuman_disiplin",
         "nilai_dampak_pelanggaran_disiplin",
         "nilai_dampak_perilaku",
@@ -1740,6 +1779,8 @@ def _performance_record_data(
         "nhk_kalibrasi": _format_decimal(record.nhk_kalibrasi),
         "npk_kalibrasi": _format_decimal(record.npk_kalibrasi),
         "nkp_awal": _format_decimal(record.nkp_awal),
+        "nkp_perhitungan": _format_decimal(record.nkp_perhitungan),
+        "status_nkp_perhitungan": record.status_nkp_perhitungan,
         "rating_hasil_kerja_awal": record.rating_hasil_kerja_awal,
         "rating_perilaku_kerja_awal": record.rating_perilaku_kerja_awal,
         "predikat_kinerja_awal": record.predikat_kinerja_awal,
@@ -1863,7 +1904,7 @@ def _validate_record_query(
     }
     allowed_filter_fields = allowed_fields | {
         f"{field}__{bound}"
-        for field in _NUMERIC_FIELDS.values()
+        for field in (*_NUMERIC_FIELDS.values(), "nkp_perhitungan")
         for bound in ("min", "max")
     }
     if unknown_fields := normalized_filters.keys() - allowed_filter_fields:
@@ -1953,8 +1994,8 @@ def _unit_export_values(
         metrics["average_npk"],
         metrics["average_nhk"],
         metrics["average_nkp_awal"],
-        metrics["nkp_awal_sangat_istimewa_count"],
-        metrics["nkp_awal_sangat_istimewa_percentage"],
+        metrics["nkp_perhitungan_sangat_istimewa_count"],
+        metrics["nkp_perhitungan_sangat_istimewa_percentage"],
         metrics["hukdis_count"],
         metrics["dampak_pelanggaran_count"],
         metrics["dampak_perilaku_count"],

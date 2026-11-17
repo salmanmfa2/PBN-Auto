@@ -1,11 +1,24 @@
 import logging
 import os
 import re
+from decimal import Decimal
 from pathlib import Path
 from typing import Generator
 
 from dotenv import load_dotenv
-from sqlalchemy import MetaData, Table, create_engine, inspect, insert, select, text, update
+from sqlalchemy import (
+    MetaData,
+    Table,
+    case,
+    create_engine,
+    func,
+    inspect,
+    insert,
+    or_,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
@@ -79,6 +92,27 @@ def _migrate_performance_schema(database_engine: Engine | None = None) -> None:
                     "ADD COLUMN unit_kerja_id INT NULL"
                 )
             )
+    performance_columns_to_add = {
+        "nkp_perhitungan": "NUMERIC(18, 10) NULL",
+        "status_nkp_perhitungan": (
+            "VARCHAR(32) NOT NULL DEFAULT 'Tidak tersedia'"
+        ),
+    }
+    for name, column_type in performance_columns_to_add.items():
+        if name in record_columns:
+            continue
+        if database_engine.dialect.name not in {"mysql", "mariadb", "sqlite"}:
+            raise RuntimeError(
+                f"Cannot add {name} data on {database_engine.dialect.name}."
+            )
+        with database_engine.begin() as connection:
+            connection.execute(
+                text(
+                    f"ALTER TABLE performance_kinerja_records "
+                    f"ADD COLUMN {name} {column_type}"
+                )
+            )
+
     primary_key = inspect(database_engine).get_pk_constraint(record_table.name).get(
         "constrained_columns",
         [],
@@ -150,6 +184,50 @@ def _migrate_performance_schema(database_engine: Engine | None = None) -> None:
                     "ON performance_kinerja_datasets (period)"
                 )
             )
+
+    nkp_awal = record_table.c.nkp_awal
+    nko = record_table.c.nko
+    nkp_perhitungan_formula = case(
+        (
+            nkp_awal >= nko,
+            nkp_awal * Decimal("0.70") + nko * Decimal("0.30"),
+        ),
+        else_=nkp_awal * Decimal("0.90") + nko * Decimal("0.10"),
+    )
+    displayed_nkp_perhitungan = func.round(
+        record_table.c.nkp_perhitungan,
+        2,
+    )
+    status_nkp_perhitungan = case(
+        (record_table.c.nkp_perhitungan.is_(None), "Tidak tersedia"),
+        (displayed_nkp_perhitungan >= Decimal("115"), "Sangat Istimewa"),
+        (displayed_nkp_perhitungan >= Decimal("110"), "Istimewa"),
+        (displayed_nkp_perhitungan >= Decimal("100"), "Tinggi"),
+        (displayed_nkp_perhitungan >= Decimal("90"), "Sedang"),
+        else_="Rendah",
+    )
+    with database_engine.begin() as connection:
+        connection.execute(
+            update(record_table)
+            .where(
+                record_table.c.nkp_perhitungan.is_(None),
+                nkp_awal.is_not(None),
+                nko.is_not(None),
+            )
+            .values(
+                nkp_perhitungan=nkp_perhitungan_formula,
+            )
+        )
+        connection.execute(
+            update(record_table)
+            .where(
+                or_(
+                    record_table.c.status_nkp_perhitungan.is_(None),
+                    record_table.c.status_nkp_perhitungan != status_nkp_perhitungan,
+                )
+            )
+            .values(status_nkp_perhitungan=status_nkp_perhitungan)
+        )
 
 
 def _auth_level_constraint_is_current(expression: str) -> bool:

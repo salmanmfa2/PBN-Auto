@@ -116,13 +116,14 @@ class PerformanceUnitMetrics(BaseModel):
     label: str
     unit_kerja_id: int | None
     nkp_awal_status_counts: dict[str, int]
+    nkp_perhitungan_status_counts: dict[str, int]
     nkp_akhir_status_counts: dict[str, int]
     employee_count: int
     average_npk: float | None
     average_nhk: float | None
     average_nkp_awal: float | None
-    nkp_awal_sangat_istimewa_count: int
-    nkp_awal_sangat_istimewa_percentage: float
+    nkp_perhitungan_sangat_istimewa_count: int
+    nkp_perhitungan_sangat_istimewa_percentage: float
     hukdis_count: int
     dampak_pelanggaran_count: int
     dampak_perilaku_count: int
@@ -191,6 +192,8 @@ class PerformanceRecordRead(BaseModel):
     nilai_dampak_perilaku: float | None
     nilai_koreksi: float | None
     nko: float | None
+    nkp_perhitungan: float | None
+    status_nkp_perhitungan: str
     nkp_akhir: float | None
     rating_hasil_kerja: str | None
     rating_perilaku_kerja: str | None

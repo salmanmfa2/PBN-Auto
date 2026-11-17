@@ -286,13 +286,14 @@ export interface PerformanceUnitMetrics {
   label: string;
   unit_kerja_id: number | null;
   nkp_awal_status_counts: Record<string, number>;
+  nkp_perhitungan_status_counts: Record<string, number>;
   nkp_akhir_status_counts: Record<string, number>;
   employee_count: number;
   average_npk: number | null;
   average_nhk: number | null;
   average_nkp_awal: number | null;
-  nkp_awal_sangat_istimewa_count: number;
-  nkp_awal_sangat_istimewa_percentage: number;
+  nkp_perhitungan_sangat_istimewa_count: number;
+  nkp_perhitungan_sangat_istimewa_percentage: number;
   hukdis_count: number;
   dampak_pelanggaran_count: number;
   dampak_perilaku_count: number;
@@ -355,6 +356,8 @@ export interface PerformanceRecord {
   nilai_dampak_perilaku: number | null;
   nilai_koreksi: number | null;
   nko: number | null;
+  nkp_perhitungan: number | null;
+  status_nkp_perhitungan: string;
   nkp_akhir: number | null;
   rating_hasil_kerja: string | null;
   rating_perilaku_kerja: string | null;

@@ -75,6 +75,13 @@ class PerformanceKinerjaRecord(Base):
     nilai_dampak_perilaku: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     nilai_koreksi: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     nko: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    nkp_perhitungan: Mapped[Decimal | None] = mapped_column(Numeric(18, 10), nullable=True)
+    status_nkp_perhitungan: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="Tidak tersedia",
+        server_default="Tidak tersedia",
+    )
     nkp_akhir: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     rating_hasil_kerja: Mapped[str | None] = mapped_column(Text, nullable=True)
     rating_perilaku_kerja: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -93,7 +93,7 @@ const UNIT_COLUMN_DEFINITIONS: UnitColumnDefinition[] = [
   { key: 'averageNpk', label: 'Rata-rata NPK', minWidth: 100, lite: true, expansionWeight: 0.05, sortValue: (metrics) => metrics.average_npk },
   { key: 'averageNhk', label: 'Rata-rata NHK', minWidth: 100, lite: false, expansionWeight: 0.05, sortValue: (metrics) => metrics.average_nhk },
   { key: 'averageNkpAwal', label: 'Rata-rata NKP Awal', minWidth: 120, lite: false, sortValue: (metrics) => metrics.average_nkp_awal },
-  { key: 'nkpAwalExceptional', label: 'NKP Awal Sangat Istimewa', minWidth: 170, lite: false, sortValue: (metrics) => metrics.nkp_awal_sangat_istimewa_count },
+  { key: 'nkpAwalExceptional', label: 'NKP Perhitungan Sangat Istimewa', minWidth: 190, lite: false, sortValue: (metrics) => metrics.nkp_perhitungan_sangat_istimewa_count },
   { key: 'hukdis', label: 'Hukdis', minWidth: 80, lite: false, sortValue: (metrics) => metrics.hukdis_count },
   { key: 'dampakPelanggaran', label: 'Dampak Pelanggaran', minWidth: 145, lite: false, sortValue: (metrics) => metrics.dampak_pelanggaran_count },
   { key: 'dampakPerilaku', label: 'Dampak Perilaku', minWidth: 135, lite: false, sortValue: (metrics) => metrics.dampak_perilaku_count },
@@ -104,7 +104,7 @@ const UNIT_COLUMN_DEFINITIONS: UnitColumnDefinition[] = [
   { key: 'minimumCorrection', label: 'Min. Koreksi', minWidth: 100, lite: false, sortValue: (metrics) => metrics.correction.minimum },
   { key: 'averageNkpAkhir', label: 'Rata-rata NKP Akhir', minWidth: 140, lite: true, expansionWeight: 0.1, sortValue: (metrics) => metrics.average_nkp_akhir },
   { key: 'nkpAkhirExceptional', label: 'NKP Akhir Sangat Istimewa', minWidth: 180, lite: true, expansionWeight: 0.1, sortValue: (metrics) => metrics.nkp_akhir_sangat_istimewa_count },
-  { key: 'statusGap', label: 'Gap Status', minWidth: 90, lite: false, sortValue: (metrics) => metrics.status_gap_count },
+  { key: 'statusGap', label: 'Gap Status', minWidth: 90, lite: true, sortValue: (metrics) => metrics.status_gap_count },
   { key: 'compare', label: 'Bandingkan', minWidth: 90, lite: true, expansionWeight: 0.05 },
 ];
 
@@ -245,6 +245,8 @@ const RECORD_COLUMNS: Array<{ key: keyof PerformanceRecord; label: string }> = [
   { key: 'nilai_dampak_perilaku', label: 'Nilai Dampak Perilaku' },
   { key: 'nilai_koreksi', label: 'Nilai Koreksi' },
   { key: 'nko', label: 'NKO' },
+  { key: 'nkp_perhitungan', label: 'NKP Perhitungan' },
+  { key: 'status_nkp_perhitungan', label: 'Status NKP Perhitungan' },
   { key: 'nkp_akhir', label: 'NKP Akhir' },
   { key: 'rating_hasil_kerja', label: 'Rating Hasil Kerja' },
   { key: 'rating_perilaku_kerja', label: 'Rating Perilaku Kerja' },
@@ -280,6 +282,7 @@ const NUMERIC_RECORD_COLUMNS = new Set<keyof PerformanceRecord>([
   'nilai_dampak_perilaku',
   'nilai_koreksi',
   'nko',
+  'nkp_perhitungan',
   'nkp_akhir',
 ]);
 
@@ -619,6 +622,21 @@ function UnitMetricCells({
   metrics: PerformanceUnitMetrics;
   liteView: boolean;
 }) {
+  const statusGapCell = (
+    <td
+      className={`px-3 py-3 ${
+        metrics.status_gap_count > 0
+          ? 'text-emerald-400'
+          : metrics.status_gap_count < 0
+            ? 'text-rose-400'
+            : ''
+      }`}
+      title="NKP Akhir Sangat Istimewa dikurangi NKP Perhitungan Sangat Istimewa"
+    >
+      {numberFormatter.format(metrics.status_gap_count)}
+    </td>
+  );
+
   if (liteView) {
     return (
       <>
@@ -636,6 +654,7 @@ function UnitMetricCells({
           {numberFormatter.format(metrics.nkp_akhir_sangat_istimewa_count)}
           <span className="ml-1 text-slate-400">({formatNumber(metrics.nkp_akhir_sangat_istimewa_percentage)}%)</span>
         </td>
+        {statusGapCell}
       </>
     );
   }
@@ -647,8 +666,8 @@ function UnitMetricCells({
       <td className="px-3 py-3">{formatNumber(metrics.average_nhk)}</td>
       <td className="px-3 py-3">{formatNumber(metrics.average_nkp_awal)}</td>
       <td className="px-3 py-3">
-        {numberFormatter.format(metrics.nkp_awal_sangat_istimewa_count)}
-        <span className="ml-1 text-slate-400">({formatNumber(metrics.nkp_awal_sangat_istimewa_percentage)}%)</span>
+        {numberFormatter.format(metrics.nkp_perhitungan_sangat_istimewa_count)}
+        <span className="ml-1 text-slate-400">({formatNumber(metrics.nkp_perhitungan_sangat_istimewa_percentage)}%)</span>
       </td>
       <td className="px-3 py-3">{numberFormatter.format(metrics.hukdis_count)}</td>
       <td className="px-3 py-3">{numberFormatter.format(metrics.dampak_pelanggaran_count)}</td>
@@ -668,12 +687,7 @@ function UnitMetricCells({
         {numberFormatter.format(metrics.nkp_akhir_sangat_istimewa_count)}
         <span className="ml-1 text-slate-400">({formatNumber(metrics.nkp_akhir_sangat_istimewa_percentage)}%)</span>
       </td>
-      <td
-        className="px-3 py-3"
-        title="Jumlah pegawai dengan status akhir yang berbeda dari status awal"
-      >
-        {numberFormatter.format(metrics.status_gap_count)}
-      </td>
+      {statusGapCell}
     </>
   );
 }
@@ -683,8 +697,8 @@ const UNIT_COMPARISON_LABELS: Record<string, string> = {
   average_npk: 'Rata-rata NPK',
   average_nhk: 'Rata-rata NHK',
   average_nkp_awal: 'Rata-rata NKP awal',
-  nkp_awal_sangat_istimewa_count: 'NKP awal sangat istimewa · jumlah',
-  nkp_awal_sangat_istimewa_percentage: 'NKP awal sangat istimewa · persentase',
+  nkp_perhitungan_sangat_istimewa_count: 'NKP perhitungan sangat istimewa · jumlah',
+  nkp_perhitungan_sangat_istimewa_percentage: 'NKP perhitungan sangat istimewa · persentase',
   hukdis_count: 'Hukdis · jumlah pegawai',
   dampak_pelanggaran_count: 'Dampak pelanggaran · jumlah pegawai',
   dampak_perilaku_count: 'Dampak perilaku · jumlah pegawai',
@@ -697,12 +711,12 @@ const UNIT_COMPARISON_LABELS: Record<string, string> = {
   average_nkp_akhir: 'Rata-rata NKP akhir',
   nkp_akhir_sangat_istimewa_count: 'NKP akhir sangat istimewa · jumlah',
   nkp_akhir_sangat_istimewa_percentage: 'NKP akhir sangat istimewa · persentase',
-  status_gap_count: 'Perubahan status awal ke akhir · jumlah',
+  status_gap_count: 'Gap status NKP Akhir − NKP Perhitungan · jumlah',
 };
 
 function comparisonLabel(key: string): string {
   const [field, status] = key.split('.', 2);
-  if (field === 'nkp_awal_status_counts') return `Status NKP awal · ${status}`;
+  if (field === 'nkp_perhitungan_status_counts') return `Status NKP Perhitungan · ${status}`;
   if (field === 'nkp_akhir_status_counts') return `Status NKP akhir · ${status}`;
   return UNIT_COMPARISON_LABELS[key] ?? key;
 }
@@ -2154,12 +2168,25 @@ export default function PerformanceAnalysisPage() {
                     aria-label="Bandingkan periode terpilih dengan periode sebelumnya"
                     onClick={() => setIsOverviewCompareMode((current) => !current)}
                     disabled={!analysis?.dataset}
-                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
                       isOverviewCompareMode
                         ? 'border-sky-400 bg-sky-500/15 text-sky-200'
                         : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
                     }`}
                   >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="size-4"
+                    >
+                      <path d="M12 3v18m-8 0h16M4 7h16M5 7l-3 8h6L5 7Zm14 0-3 8h6l-3-8Z" />
+                      <path d="M4 15c.8 1 1.8 1.5 3 1.5S9.2 16 10 15m4 0c.8 1 1.8 1.5 3 1.5s2.2-.5 3-1.5" />
+                    </svg>
                     Compare
                   </button>
                 </div>
@@ -2561,7 +2588,10 @@ export default function PerformanceAnalysisPage() {
             ) : (
               <div
                 ref={setUnitTableElement}
-                className="mt-5 overflow-x-auto rounded-xl border border-slate-700"
+                role="region"
+                aria-label="Tabel analisis berdasarkan Unit Eselon II"
+                tabIndex={0}
+                className="mt-5 max-h-[70vh] overflow-auto overscroll-contain rounded-xl border border-slate-700"
               >
                 <table
                   className="text-left text-xs"
@@ -2575,7 +2605,7 @@ export default function PerformanceAnalysisPage() {
                       />
                     ))}
                   </colgroup>
-                  <thead className="sticky top-0 bg-slate-900 text-slate-300">
+                  <thead className="sticky top-0 z-20 bg-slate-900 text-slate-300">
                     <tr>
                       {visibleUnitColumns.map((column) => (
                         <th
@@ -2819,9 +2849,14 @@ export default function PerformanceAnalysisPage() {
             </p>
           ) : (
             <>
-              <div className="mt-4 overflow-x-auto rounded-xl border border-slate-700">
+              <div
+                role="region"
+                aria-label="Tabel daftar pegawai"
+                tabIndex={0}
+                className="mt-4 max-h-[70vh] overflow-auto overscroll-contain rounded-xl border border-slate-700"
+              >
                 <table className="w-full min-w-[2800px] text-left text-xs">
-                  <thead className="sticky top-0 bg-slate-900 text-slate-300">
+                  <thead className="sticky top-0 z-20 bg-slate-900 text-slate-300">
                     <tr>
                       {visibleRecordColumns.map((column) => {
                         const active = recordSort.key === column.key;

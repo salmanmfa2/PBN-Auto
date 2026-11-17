@@ -159,6 +159,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         record = self.get_record(NIP, "Q3-2026")
         self.assertEqual(record.nkp_awal, 84)
+        self.assertEqual(record.nkp_perhitungan, service.Decimal("84.6000000000"))
+        self.assertEqual(record.status_nkp_perhitungan, "Rendah")
         self.assertEqual(record.nkp_akhir, 119)
         self.assertEqual(record.unit_eselon_iii, "Subdirektorat Contoh")
         self.assertEqual(record.unit_eselon_iv, "Seksi Contoh")
@@ -180,6 +182,48 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(service.get_status(service.Decimal(value)), expected)
         self.assertEqual(service.get_status(None), "Tidak tersedia")
+
+    def test_nkp_perhitungan_uses_nko_weighting_and_existing_bands(self) -> None:
+        above_nko = service._calculate_nkp_perhitungan(
+            service.Decimal("120"),
+            service.Decimal("100"),
+        )
+        below_nko = service._calculate_nkp_perhitungan(
+            service.Decimal("100"),
+            service.Decimal("120"),
+        )
+
+        self.assertEqual(above_nko, service.Decimal("114.00"))
+        self.assertEqual(below_nko, service.Decimal("102.00"))
+        self.assertEqual(service.get_status(above_nko), "Istimewa")
+        self.assertEqual(service.get_status(below_nko), "Tinggi")
+        self.assertIsNone(
+            service._calculate_nkp_perhitungan(None, service.Decimal("120"))
+        )
+
+    def test_nkp_perhitungan_status_uses_displayed_two_decimal_score(self) -> None:
+        self.assertEqual(
+            service._get_nkp_perhitungan_status(service.Decimal("114.998")),
+            "Sangat Istimewa",
+        )
+        self.assertEqual(
+            service._get_nkp_perhitungan_status(service.Decimal("114.994")),
+            "Istimewa",
+        )
+        self.assertEqual(service._get_nkp_perhitungan_status(None), "Tidak tersedia")
+
+    def test_full_import_status_uses_displayed_nkp_perhitungan(self) -> None:
+        service.replace_full_upload(
+            self.session,
+            full_csv(nkp_awal="114.51", nko="119.39"),
+            "Q3-2026",
+            uploaded_by_user="admin",
+            uploaded_by_name="Admin",
+        )
+
+        record = self.get_record(NIP, "Q3-2026")
+        self.assertEqual(record.nkp_perhitungan, service.Decimal("114.9980000000"))
+        self.assertEqual(record.status_nkp_perhitungan, "Sangat Istimewa")
 
     def test_full_import_rejects_duplicate_nips_without_replacing_data(self) -> None:
         self.import_active_dataset()
@@ -419,16 +463,22 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             )
             connection.exec_driver_sql(
                 "INSERT INTO performance_kinerja_datasets VALUES "
-                "(1, 'Q3-2026', 1, '2026-09-01 00:00:00', 'admin', 'Admin')"
+                "(1, 'Q3-2026', 2, '2026-09-01 00:00:00', 'admin', 'Admin')"
             )
             connection.exec_driver_sql(
                 "CREATE TABLE performance_kinerja_records ("
                 "nip VARCHAR(18) PRIMARY KEY NOT NULL, dataset_id INTEGER NOT NULL, "
-                "nama TEXT NOT NULL)"
+                "nama TEXT NOT NULL, nkp_awal NUMERIC(18, 8), nko NUMERIC(18, 8))"
             )
             connection.exec_driver_sql(
-                "INSERT INTO performance_kinerja_records VALUES "
-                f"('{NIP}', 1, 'Pegawai Lama')"
+                "INSERT INTO performance_kinerja_records "
+                "(nip, dataset_id, nama, nkp_awal, nko) VALUES "
+                f"('{NIP}', 1, 'Pegawai Lama', 120, 100)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO performance_kinerja_records "
+                "(nip, dataset_id, nama, nkp_awal, nko) VALUES "
+                "('123456789012345679', 1, 'Pegawai Ambang', 114.51, 119.39)"
             )
 
         _migrate_performance_schema(legacy_engine)
@@ -452,7 +502,28 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             self.assertEqual(record.nama, "Pegawai Lama")
             self.assertEqual(record.unit_eselon_iv, "Unidentified")
             self.assertIsNone(record.unit_kerja_id)
+            self.assertEqual(record.nkp_perhitungan, service.Decimal("114.0000000000"))
+            self.assertEqual(record.status_nkp_perhitungan, "Istimewa")
+            boundary_record = session.get(
+                PerformanceKinerjaRecord,
+                (1, "123456789012345679"),
+            )
+            self.assertEqual(boundary_record.status_nkp_perhitungan, "Sangat Istimewa")
             self.assertEqual(session.get(PerformanceKinerjaDataset, 1).period, "Q3-2026")
+
+        with legacy_engine.begin() as connection:
+            connection.exec_driver_sql(
+                "UPDATE performance_kinerja_records "
+                "SET status_nkp_perhitungan = 'Istimewa' "
+                "WHERE nip = '123456789012345679'"
+            )
+        _migrate_performance_schema(legacy_engine)
+        with Session(legacy_engine) as session:
+            boundary_record = session.get(
+                PerformanceKinerjaRecord,
+                (1, "123456789012345679"),
+            )
+            self.assertEqual(boundary_record.status_nkp_perhitungan, "Sangat Istimewa")
 
     def test_employee_lookup_supports_current_and_q2_sources_with_eselon_iv(self) -> None:
         self.employee_lookup_patcher.stop()
@@ -989,6 +1060,12 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         first.nhk = service.Decimal("90")
         first.nkp_awal = service.Decimal("116")
         first.nkp_akhir = service.Decimal("115")
+        first.nko = service.Decimal("120")
+        first.nkp_perhitungan = service._calculate_nkp_perhitungan(
+            first.nkp_awal,
+            first.nko,
+        )
+        first.status_nkp_perhitungan = service.get_status(first.nkp_perhitungan)
         first.nilai_koreksi = service.Decimal("0")
         self.session.add_all(
             [
@@ -1004,6 +1081,12 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     npk=service.Decimal("80"),
                     nkp_awal=service.Decimal("114"),
                     nkp_akhir=service.Decimal("110"),
+                    nko=service.Decimal("100"),
+                    nkp_perhitungan=service._calculate_nkp_perhitungan(
+                        service.Decimal("114"),
+                        service.Decimal("100"),
+                    ),
+                    status_nkp_perhitungan="Tinggi",
                     nilai_koreksi=service.Decimal("-2"),
                 ),
                 PerformanceKinerjaRecord(
@@ -1016,8 +1099,18 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     nhk=service.Decimal("90"),
                     npk=service.Decimal("110"),
                     nkp_awal=service.Decimal("120"),
-                    nkp_akhir=service.Decimal("114"),
+                    nkp_akhir=service.Decimal("115"),
                     nilai_koreksi=service.Decimal("3"),
+                ),
+                PerformanceKinerjaRecord(
+                    nip="123456789012345681",
+                    dataset_id=1,
+                    nama="Pegawai C",
+                    unit_eselon_ii="Unit C",
+                    eselon="III",
+                    nkp_perhitungan=service.Decimal("115"),
+                    status_nkp_perhitungan="Sangat Istimewa",
+                    nkp_akhir=service.Decimal("114"),
                 ),
             ]
         )
@@ -1042,8 +1135,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         unit_a = next(unit for unit in result["units"] if unit["label"] == "Unit A")
         self.assertEqual(unit_a["employee_count"], 2)
         self.assertEqual(unit_a["average_npk"], 90)
-        self.assertEqual(unit_a["nkp_awal_sangat_istimewa_count"], 1)
-        self.assertEqual(unit_a["nkp_awal_sangat_istimewa_percentage"], 50)
+        self.assertEqual(unit_a["nkp_perhitungan_sangat_istimewa_count"], 1)
+        self.assertEqual(unit_a["nkp_perhitungan_sangat_istimewa_percentage"], 50)
         self.assertEqual(unit_a["status_gap_count"], 0)
         self.assertEqual(unit_a["correction"]["count"], 1)
         self.assertEqual(unit_a["correction"]["negative_count"], 1)
@@ -1067,6 +1160,46 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         unit_b = next(unit for unit in result["units"] if unit["label"] == "Unit B")
         self.assertEqual(unit_b["status_gap_count"], 1)
+        unit_c = next(unit for unit in result["units"] if unit["label"] == "Unit C")
+        self.assertEqual(unit_c["status_gap_count"], -1)
+
+    def test_unit_comparison_uses_nkp_perhitungan_status_distribution(self) -> None:
+        current = service._make_unit_metrics(
+            "Unit A",
+            [
+                PerformanceKinerjaRecord(
+                    nip="123456789012345679",
+                    dataset_id=1,
+                    nama="Current",
+                    unit_eselon_ii="Unit A",
+                    nkp_awal=service.Decimal("80"),
+                    nkp_perhitungan=service.Decimal("115"),
+                    status_nkp_perhitungan="Sangat Istimewa",
+                ),
+            ],
+        )
+        previous = service._make_unit_metrics(
+            "Unit A",
+            [
+                PerformanceKinerjaRecord(
+                    nip="123456789012345680",
+                    dataset_id=2,
+                    nama="Previous",
+                    unit_eselon_ii="Unit A",
+                    nkp_awal=service.Decimal("120"),
+                    nkp_perhitungan=service.Decimal("114.99"),
+                    status_nkp_perhitungan="Istimewa",
+                ),
+            ],
+        )
+
+        comparison = service._unit_comparison_values(current, previous)
+
+        very_special = comparison["nkp_perhitungan_status_counts.Sangat Istimewa"]
+        special = comparison["nkp_perhitungan_status_counts.Istimewa"]
+        self.assertEqual(very_special["delta"], 1)
+        self.assertEqual(special["delta"], -1)
+        self.assertNotIn("nkp_awal_status_counts.Sangat Istimewa", comparison)
 
     def test_get_records_filters_and_sorts_across_the_dataset(self) -> None:
         self.import_active_dataset()
@@ -1245,7 +1378,9 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         unit_sheet = unit_workbook["Unit Eselon II"]
         record_sheet = records_workbook["Daftar Pegawai"]
         filtered_sheet = filtered_workbook["Daftar Pegawai"]
+        record_headers = [cell.value for cell in record_sheet[1]]
         self.assertEqual(unit_sheet.max_row, 4)
+        self.assertEqual(unit_sheet["H1"].value, "NKP Perhitungan Sangat Istimewa")
         self.assertEqual(unit_sheet["V1"].value, "Gap Status")
         self.assertEqual(unit_sheet["A2"].value, "Unit A")
         self.assertEqual(unit_sheet["V2"].value, 0)
@@ -1256,6 +1391,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(record_sheet["B2"].value, NIP)
         self.assertEqual(record_sheet["B2"].number_format, "@")
         self.assertEqual(record_sheet["E2"].value, "Seksi A")
+        self.assertIn("NKP Perhitungan", record_headers)
+        self.assertIn("Status NKP Perhitungan", record_headers)
         self.assertEqual(record_sheet["B3"].value, second_nip)
         self.assertEqual(filtered_sheet.max_row, 2)
         self.assertEqual(filtered_sheet["B2"].value, second_nip)
@@ -1278,6 +1415,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(result["records"][0]["unit_eselon_ii"], "Unidentified")
         self.assertEqual(result["records"][0]["eselon"], "Unidentified")
         self.assertEqual(result["records"][0]["status"], "Rendah")
+        self.assertEqual(result["records"][0]["nkp_perhitungan"], 85.5)
+        self.assertEqual(result["records"][0]["status_nkp_perhitungan"], "Rendah")
 
 
 class PerformanceKinerjaAuthorizationTests(unittest.TestCase):

@@ -19,7 +19,7 @@ Version 1.3.0 records the web application changes not covered by [Update Notes 1
 
 - The analysis is organized into three tabs: **Overview**, **Unit Eselon II**, and **Daftar Pegawai**.
 - Overview includes score and status summaries, an NPK histogram covering 80–120, filters for Unit Eselon II and Eselon, and correction/discipline-impact counts.
-- The Unit Eselon II table expands to Unit Eselon III and includes score/status summaries, correction and discipline-impact metrics, and **Gap Status** (employees whose derived status differs between NKP Awal and NKP Akhir).
+- The Unit Eselon II table expands to Unit Eselon III and includes score/status summaries, correction and discipline-impact metrics, and **Gap Status** (NKP Akhir Sangat Istimewa count minus NKP Perhitungan Sangat Istimewa count; positive is green, zero uses the default text color, and negative is red).
 - The employee list supports search, per-column filtering, sorting, and pagination. Filter results remain mounted during refresh to avoid page-position jumps, and dashboard summaries are cached to speed up filtering.
 - Excel exports are available for the Unit Eselon II analysis and employee list. The employee export follows the active search, filters, and sort and includes all matching records, not only the current page.
 - Admin and Super Admin can edit a shared Insight Text; all dashboard viewers can read it.

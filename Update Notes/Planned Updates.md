@@ -47,7 +47,7 @@
 - On the overview, filter by Unit Eselon II and Eselon (with an all option); show KPI cards, NPK histogram, NKP Akhir status distribution, and Hukdis/Dampak counts.
 - Provide Eselon as a single-select dropdown with a `Semua Eselon` option. Cache dashboard grouping/filter results and invalidate the cache after performance data changes or employee-source synchronization.
 - Allow Unit Eselon II rows to expand into Unit Eselon III and compare average NPK, NHK, NKP Awal/Akhir, initial/final Sangat Istimewa counts and percentages, penalty counts, and correction statistics.
-- Show Gap Status as the number of employees whose derived status differs between NKP Awal and NKP Akhir, for both Unit Eselon II and Unit Eselon III summaries.
+- Show Gap Status as the difference between the Unit's NKP Akhir Sangat Istimewa count and NKP Perhitungan Sangat Istimewa count, for Unit Eselon II and its expanded summaries. Use green for positive values, the default text color for zero, and red for negative values.
 - Count Nilai Koreksi entries only when the value is nonzero, and separate positive Penambahan from negative Pengurangan. For `-1, -2, 3, 0, 0, 0.23, 2, 1`, the count is 6: 2 Pengurangan and 4 Penambahan. Keep the existing average, minimum, and maximum calculations over nonblank values.
 - Let Admin and Super Admin edit one shared Insight Text; Guest and User can read it.
 - Provide a searchable, paginated table of extracted employee rows alongside analytics, including the imported fields, group values, and derived status.
