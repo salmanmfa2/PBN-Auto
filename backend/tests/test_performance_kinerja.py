@@ -319,11 +319,26 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.import_active_dataset()
         current_record = self.get_record(NIP, "Q3-2026")
         current_record.unit_eselon_ii = "Unit A"
+        current_record.unit_eselon_iii = "Subunit A"
+        current_record.unit_eselon_iv = "Section A"
         current_record.eselon = "III"
         current_record.npk = service.Decimal("100")
         current_record.nkp_akhir = service.Decimal("115")
         current_record.nilai_koreksi = service.Decimal("0")
         self.session.commit()
+        current_dataset = self.get_dataset("Q3-2026")
+        self.session.add(
+            PerformanceKinerjaRecord(
+                nip="123456789012345681",
+                dataset_id=current_dataset.id,
+                nama="Pegawai Subunit B",
+                unit_eselon_ii="Unit A",
+                unit_eselon_iii="Subunit B",
+                unit_eselon_iv="Section A",
+                eselon="III",
+            )
+        )
+        current_dataset.row_count = 2
 
         service.replace_full_upload(
             self.session,
@@ -334,6 +349,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         previous_record = self.get_record(NIP, "Q2-2026")
         previous_record.unit_eselon_ii = "Unit A"
+        previous_record.unit_eselon_iii = "Subunit A"
+        previous_record.unit_eselon_iv = "Section A"
         previous_record.eselon = "III"
         previous_dataset = self.get_dataset("Q2-2026")
         self.session.add(
@@ -348,7 +365,18 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 nilai_koreksi=service.Decimal("3"),
             )
         )
-        previous_dataset.row_count = 2
+        self.session.add(
+            PerformanceKinerjaRecord(
+                nip="123456789012345682",
+                dataset_id=previous_dataset.id,
+                nama="Pegawai Seksi B",
+                unit_eselon_ii="Unit A",
+                unit_eselon_iii="Subunit A",
+                unit_eselon_iv="Section B",
+                eselon="III",
+            )
+        )
+        previous_dataset.row_count = 3
         self.session.commit()
 
         with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
@@ -357,10 +385,19 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 "Unit A",
                 ["III"],
                 "Q3-2026",
+                unit_eselon_iii="Subunit A",
+                unit_eselon_iv="Section A",
             )
 
         self.assertEqual(dashboard["overview"]["employee_count"], 1)
         self.assertEqual(dashboard["overview_previous"]["employee_count"], 1)
+        self.assertEqual(dashboard["unit_eselon_ii_options"], ["Unit A"])
+        self.assertEqual(
+            dashboard["unit_eselon_iii_options"],
+            ["Subunit A", "Subunit B"],
+        )
+        self.assertEqual(dashboard["unit_eselon_iv_options"], ["Section A"])
+        self.assertEqual(dashboard["eselon_options"], ["III"])
         self.assertEqual(
             dashboard["overview_comparison"]["employee_count"]["current"],
             1,
@@ -771,11 +808,22 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         self.session.commit()
         with patch.object(service, "_lookup_employee_records", return_value={}):
-            result = service.get_dashboard(self.session, "Unit A", ["IV"])
+            result = service.get_dashboard(
+                self.session,
+                "Unit A",
+                ["IV"],
+                unit_eselon_iii="Unit A - IV",
+                unit_eselon_iv="Unit A - IV - IV",
+            )
 
         self.assertEqual(result["overview"]["employee_count"], 1)
-        self.assertEqual(result["unit_eselon_ii_options"], ["Unit A", "Unit B"])
-        self.assertEqual(result["eselon_options"], ["III", "IV"])
+        self.assertEqual(result["unit_eselon_ii_options"], ["Unit A"])
+        self.assertEqual(result["unit_eselon_iii_options"], ["Unit A - IV"])
+        self.assertEqual(
+            result["unit_eselon_iv_options"],
+            ["Unit A - IV - IV"],
+        )
+        self.assertEqual(result["eselon_options"], ["IV"])
         unit_a = next(unit for unit in result["units"] if unit["label"] == "Unit A")
         self.assertEqual(unit_a["employee_count"], 2)
         self.assertEqual(unit_a["average_npk"], 90)
@@ -863,6 +911,24 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 sort_by="nama",
                 sort_order="asc",
             )
+            filtered_by_unit_ii = service.get_records(
+                self.session,
+                page=1,
+                page_size=10,
+                search="",
+                filters={"unit_eselon_ii": "Unit A"},
+                sort_by="nama",
+                sort_order="asc",
+            )
+            filtered_by_search = service.get_records(
+                self.session,
+                page=1,
+                page_size=10,
+                search="Zelda",
+                filters={},
+                sort_by="nama",
+                sort_order="asc",
+            )
 
         self.assertEqual(descending["total"], 2)
         self.assertEqual(descending["records"][0]["nip"], "123456789012345679")
@@ -871,7 +937,22 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             ["Alpha", "Zelda"],
         )
         self.assertEqual(filtered_by_unit_iv["total"], 2)
-        self.assertEqual(filtered_by_unit_iv["filter_options"]["unit_eselon_iv"], ["Seksi A", "Seksi B"])
+        self.assertEqual(
+            filtered_by_unit_iv["filter_options"]["unit_eselon_iv"],
+            ["Seksi A", "Seksi B"],
+        )
+        self.assertEqual(
+            filtered_by_unit_iv["filter_options"]["unit_eselon_ii"],
+            ["Unit A"],
+        )
+        self.assertEqual(
+            filtered_by_unit_ii["filter_options"]["unit_eselon_iv"],
+            ["Seksi A"],
+        )
+        self.assertEqual(
+            filtered_by_search["filter_options"]["unit_eselon_ii"],
+            ["Unit A"],
+        )
 
     def test_dashboard_uses_snapshots_and_refreshes_after_adjustments(self) -> None:
         self.import_active_dataset()

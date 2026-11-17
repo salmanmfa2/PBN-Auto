@@ -280,6 +280,8 @@ export interface PerformanceDashboardResponse {
   available_periods: PerformancePeriodOption[];
   total_employees: number;
   unit_eselon_ii_options: string[];
+  unit_eselon_iii_options: string[];
+  unit_eselon_iv_options: string[];
   eselon_options: string[];
   overview: PerformanceAnalysisGroup;
   overview_previous: PerformanceAnalysisGroup | null;

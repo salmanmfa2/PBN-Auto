@@ -355,6 +355,8 @@ export async function getPerformanceDashboard(
   unitEselonII: string,
   eselons: string[],
   period?: string,
+  unitEselonIII?: string,
+  unitEselonIV?: string,
 ): Promise<PerformanceDashboardResponse> {
   try {
     const { data } = await api.get<PerformanceDashboardResponse>(
@@ -362,6 +364,8 @@ export async function getPerformanceDashboard(
       {
         params: {
           unit_eselon_ii: unitEselonII || undefined,
+          unit_eselon_iii: unitEselonIII || undefined,
+          unit_eselon_iv: unitEselonIV || undefined,
           eselon: eselons,
           period,
         },

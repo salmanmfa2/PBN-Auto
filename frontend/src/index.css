@@ -200,6 +200,26 @@ html[data-theme="light"] .performance-analysis-page [class~="text-amber-300"] {
   color: #92400e;
 }
 
+html[data-theme="light"] .performance-analysis-page .performance-action-toolbar [class~="text-slate-400"] {
+  color: #94a3b8;
+}
+
+html[data-theme="light"] .performance-analysis-page .performance-action-toolbar [class~="text-emerald-300"] {
+  color: #6ee7b7;
+}
+
+html[data-theme="light"] .performance-analysis-page .performance-action-toolbar [class~="text-rose-300"] {
+  color: #fda4af;
+}
+
+html[data-theme="light"] .performance-analysis-page .performance-action-toolbar [class~="hover:bg-slate-800"]:hover {
+  background-color: #1e293b;
+}
+
+html[data-theme="light"] .performance-analysis-page .performance-action-toolbar [class~="hover:text-slate-200"]:hover {
+  color: #e2e8f0;
+}
+
 html[data-theme="light"] [class~="bg-slate-950"],
 html[data-theme="light"] [class~="bg-slate-950/50"],
 html[data-theme="light"] [class~="bg-slate-900/40"],

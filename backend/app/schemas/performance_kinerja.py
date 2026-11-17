@@ -108,6 +108,8 @@ class PerformanceDashboardResponse(BaseModel):
     available_periods: list[PerformancePeriodOption]
     total_employees: int
     unit_eselon_ii_options: list[str]
+    unit_eselon_iii_options: list[str]
+    unit_eselon_iv_options: list[str]
     eselon_options: list[str]
     overview: PerformanceAnalysisGroup
     overview_previous: PerformanceAnalysisGroup | None

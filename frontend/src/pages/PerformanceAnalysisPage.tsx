@@ -153,6 +153,45 @@ function sortUnitHierarchy(
     })),
   }));
 }
+
+function filterUnitHierarchyBySearch(
+  units: PerformanceDashboardResponse['units'],
+  search: string,
+): {
+  units: PerformanceDashboardResponse['units'];
+  expandedKeys: Set<string>;
+} {
+  const query = search.trim().toLocaleLowerCase('id');
+  const expandedKeys = new Set<string>();
+  if (!query) return { units, expandedKeys };
+
+  const matches = (label: string) => label.toLocaleLowerCase('id').includes(query);
+  const filteredUnits: PerformanceDashboardResponse['units'] = [];
+  for (const unit of units) {
+    const unitMatches = matches(unit.label);
+    const filteredChildren: typeof unit.children = [];
+    for (const child of unit.children) {
+      const childMatches = matches(child.label);
+      const matchingGrandchildren = child.children.filter((grandchild) => (
+        matches(grandchild.label)
+      ));
+      if (matchingGrandchildren.length) {
+        filteredChildren.push({ ...child, children: matchingGrandchildren });
+        expandedKeys.add(JSON.stringify([unit.label, child.label]));
+      } else if (childMatches) {
+        filteredChildren.push(child);
+      }
+    }
+    if (filteredChildren.length) {
+      filteredUnits.push({ ...unit, children: filteredChildren });
+      expandedKeys.add(JSON.stringify([unit.label]));
+    } else if (unitMatches) {
+      filteredUnits.push(unit);
+    }
+  }
+  return { units: filteredUnits, expandedKeys };
+}
+
 type UnitColumnWidths = Record<UnitColumnKey, number>;
 const UNIT_COLUMN_WIDTHS_STORAGE_KEY = 'pbn.performance.unit-column-widths';
 const MAX_UNIT_COLUMN_WIDTH = 640;
@@ -429,7 +468,6 @@ function StatusDistribution({
   total,
   previousCounts,
   previousTotal,
-  comparisons,
   currentPeriod,
   previousPeriod,
 }: {
@@ -437,7 +475,6 @@ function StatusDistribution({
   total: number;
   previousCounts?: Record<string, number>;
   previousTotal?: number;
-  comparisons?: Record<string, PerformanceMetricComparison>;
   currentPeriod?: string;
   previousPeriod?: string;
 }) {
@@ -466,14 +503,12 @@ function StatusDistribution({
             const previousPercentage = previousTotal
               ? (previousCount / previousTotal) * 100
               : 0;
-            const comparison = comparisons?.[`nkp_akhir_status_counts.${status}`];
-            const changeColor = comparison?.delta === null || comparison?.delta === undefined
-              ? 'text-slate-400'
-              : comparison.delta > 0
-                ? 'text-emerald-400'
-                : comparison.delta < 0
-                  ? 'text-rose-400'
-                  : 'text-slate-400';
+            const percentagePointDelta = currentPercentage - previousPercentage;
+            const changeColor = percentagePointDelta > 0
+              ? 'text-emerald-400'
+              : percentagePointDelta < 0
+                ? 'text-rose-400'
+                : 'text-slate-400';
             return (
               <li
                 key={status}
@@ -508,11 +543,7 @@ function StatusDistribution({
                     </span>
                   </span>
                   <span className={`block ${changeColor}`}>
-                    Δ {formatSignedNumber(comparison?.delta ?? null)}
-                    {comparison?.percentage_change === null
-                      || comparison?.percentage_change === undefined
-                      ? ''
-                      : ` (${formatSignedNumber(comparison.percentage_change)}%)`}
+                    Δ {formatSignedNumber(percentagePointDelta)} pp
                   </span>
                 </span>
               </li>
@@ -821,8 +852,10 @@ export default function PerformanceAnalysisPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'units' | 'employees'>('overview');
   const [isOverviewCompareMode, setIsOverviewCompareMode] = useState(false);
   const [expandedUnits, setExpandedUnits] = useState<string[]>([]);
+  const [collapsedSearchUnitKeys, setCollapsedSearchUnitKeys] = useState<string[]>([]);
   const [unitSort, setUnitSort] = useState<UnitSortState>(null);
   const [isUnitLiteView, setIsUnitLiteView] = useState(false);
+  const [unitSearch, setUnitSearch] = useState('');
   const [unitColumnWidths, setUnitColumnWidths] = useState<UnitColumnWidths>(
     () => ({ ...DEFAULT_UNIT_COLUMN_WIDTHS }),
   );
@@ -848,6 +881,8 @@ export default function PerformanceAnalysisPage() {
     0,
   );
   const [selectedUnit, setSelectedUnit] = useState('');
+  const [selectedEselonIII, setSelectedEselonIII] = useState('');
+  const [selectedEselonIV, setSelectedEselonIV] = useState('');
   const [selectedEselon, setSelectedEselon] = useState('');
   const [recordData, setRecordData] = useState<PerformanceRecordsResponse | null>(null);
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
@@ -888,6 +923,32 @@ export default function PerformanceAnalysisPage() {
     () => sortUnitHierarchy(analysis?.units ?? [], unitSort),
     [analysis?.units, unitSort],
   );
+  const searchedUnitHierarchy = useMemo(
+    () => filterUnitHierarchyBySearch(sortedUnits, unitSearch),
+    [sortedUnits, unitSearch],
+  );
+  const isUnitExpanded = (key: string) => (
+    expandedUnits.includes(key)
+    || (
+      Boolean(unitSearch.trim())
+      && searchedUnitHierarchy.expandedKeys.has(key)
+      && !collapsedSearchUnitKeys.includes(key)
+    )
+  );
+  const toggleUnitExpanded = (key: string) => {
+    const expanded = isUnitExpanded(key);
+    const autoExpanded = (
+      Boolean(unitSearch.trim()) && searchedUnitHierarchy.expandedKeys.has(key)
+    );
+    setExpandedUnits((current) => expanded
+      ? current.filter((value) => value !== key)
+      : current.includes(key) ? current : [...current, key]);
+    if (autoExpanded) {
+      setCollapsedSearchUnitKeys((current) => expanded
+        ? current.includes(key) ? current : [...current, key]
+        : current.filter((value) => value !== key));
+    }
+  };
 
   useEffect(() => {
     if (!unitTableElement) return;
@@ -1048,6 +1109,8 @@ export default function PerformanceAnalysisPage() {
         selectedUnit,
         selectedEselon ? [selectedEselon] : [],
         requestedPeriod ?? selectedPeriod,
+        selectedEselonIII,
+        selectedEselonIV,
       );
       if (requestId !== analysisRequestId.current) return;
       setAnalysis(result);
@@ -1062,7 +1125,7 @@ export default function PerformanceAnalysisPage() {
     } finally {
       if (requestId === analysisRequestId.current) setIsLoading(false);
     }
-  }, [selectedEselon, selectedPeriod, selectedUnit]);
+  }, [selectedEselon, selectedEselonIII, selectedEselonIV, selectedPeriod, selectedUnit]);
 
   useEffect(() => {
     void refreshAnalysis();
@@ -1741,7 +1804,7 @@ export default function PerformanceAnalysisPage() {
                 </p>
               </div>
               {analysis?.dataset && (
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                   <label className="block min-w-64 text-sm text-slate-300">
                     Unit Eselon II
                     <select
@@ -1751,6 +1814,32 @@ export default function PerformanceAnalysisPage() {
                     >
                       <option value="">Semua Unit Eselon II</option>
                       {analysis.unit_eselon_ii_options.map((unit) => (
+                        <option key={unit} value={unit}>{unit}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block min-w-64 text-sm text-slate-300">
+                    Unit Eselon III
+                    <select
+                      value={selectedEselonIII}
+                      onChange={(event) => setSelectedEselonIII(event.target.value)}
+                      className="input mt-1.5"
+                    >
+                      <option value="">Semua Unit Eselon III</option>
+                      {analysis.unit_eselon_iii_options.map((unit) => (
+                        <option key={unit} value={unit}>{unit}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block min-w-64 text-sm text-slate-300">
+                    Unit Eselon IV
+                    <select
+                      value={selectedEselonIV}
+                      onChange={(event) => setSelectedEselonIV(event.target.value)}
+                      className="input mt-1.5"
+                    >
+                      <option value="">Semua Unit Eselon IV</option>
+                      {analysis.unit_eselon_iv_options.map((unit) => (
                         <option key={unit} value={unit}>{unit}</option>
                       ))}
                     </select>
@@ -1882,7 +1971,6 @@ export default function PerformanceAnalysisPage() {
                           ? analysis.overview_previous?.employee_count
                           : undefined
                       }
-                      comparisons={analysis.overview_comparison}
                       currentPeriod={analysis.dataset.period}
                       previousPeriod={analysis.previous_period ?? undefined}
                     />
@@ -1996,63 +2084,100 @@ export default function PerformanceAnalysisPage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-1" role="group" aria-label="Mode tampilan unit">
-                  <button
-                    type="button"
-                    aria-pressed={!isUnitLiteView}
-                    onClick={() => setIsUnitLiteView(false)}
-                    className={`rounded-md px-3 py-1.5 text-sm transition ${!isUnitLiteView ? 'bg-sky-500/20 text-sky-100' : 'text-slate-400 hover:text-slate-200'}`}
-                  >
-                    Full View
-                  </button>
+                <label className="relative block w-56">
+                  <span className="sr-only">Cari unit Eselon II, III, atau IV</span>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400">
+                    <circle cx="10.8" cy="10.8" r="6.8" />
+                    <path d="m16 16 4.5 4.5" />
+                  </svg>
+                  <input
+                    type="search"
+                    value={unitSearch}
+                    onChange={(event) => {
+                      setUnitSearch(event.target.value);
+                      setCollapsedSearchUnitKeys([]);
+                    }}
+                    maxLength={100}
+                    aria-label="Cari unit Eselon II, III, atau IV"
+                    placeholder="Cari nama unit"
+                    className="input h-9 pl-9"
+                  />
+                </label>
+                <div role="group" aria-label="Aksi analisis unit" className="performance-action-toolbar inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
                   <button
                     type="button"
                     aria-pressed={isUnitLiteView}
-                    onClick={() => setIsUnitLiteView(true)}
-                    className={`rounded-md px-3 py-1.5 text-sm transition ${isUnitLiteView ? 'bg-sky-500/20 text-sky-100' : 'text-slate-400 hover:text-slate-200'}`}
+                    onClick={() => setIsUnitLiteView((current) => !current)}
+                    title={isUnitLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
+                    className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                      isUnitLiteView
+                        ? 'bg-brand-500/20 text-brand-200'
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    }`}
                   >
-                    Lite View
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                      <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    <span>Lite View</span>
+                    <span className="sr-only">{isUnitLiteView ? 'aktif' : 'nonaktif'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaults = { ...DEFAULT_UNIT_COLUMN_WIDTHS };
+                      unitColumnWidthsRef.current = defaults;
+                      setUnitColumnWidths(defaults);
+                      persistUnitColumnWidths(defaults);
+                    }}
+                    aria-label="Atur ulang lebar kolom"
+                    title="Atur ulang lebar kolom"
+                    className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                      <path d="M4 7v5h5M20 17v-5h-5" />
+                      <path d="M5.5 12a7 7 0 0 1 12-4.9L20 9m-1.5 3a7 7 0 0 1-12 4.9L4 15" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!analysis) return;
+                      setComparisonTarget({
+                        label: 'Seluruh Dataset',
+                        comparison: analysis.overview_comparison,
+                      });
+                    }}
+                    disabled={
+                      !analysis?.previous_period
+                      || Object.keys(analysis.overview_comparison).length === 0
+                    }
+                    aria-label="Bandingkan seluruh dataset dengan periode sebelumnya"
+                    title={
+                      analysis?.previous_period
+                        ? 'Bandingkan seluruh dataset dengan periode sebelumnya'
+                        : 'Periode sebelumnya tidak tersedia'
+                    }
+                    className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                      <path d="M4 19V5m0 14h16" />
+                      <path d="M8 15v-3m4 3V7m4 8v-5" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void exportUnitAnalysis()}
+                    disabled={!analysis?.dataset || unitExportBusy}
+                    aria-label={unitExportBusy ? 'Mengekspor analisis unit' : 'Unduh analisis unit sebagai Excel'}
+                    title={unitExportBusy ? 'Mengekspor analisis unit' : 'Unduh analisis unit sebagai Excel'}
+                    className="size-9 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`mx-auto size-5 ${unitExportBusy ? 'animate-pulse' : ''}`}>
+                      <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
+                    </svg>
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!analysis) return;
-                    setComparisonTarget({
-                      label: 'Seluruh Dataset',
-                      comparison: analysis.overview_comparison,
-                    });
-                  }}
-                  disabled={
-                    !analysis?.previous_period
-                    || Object.keys(analysis.overview_comparison).length === 0
-                  }
-                  title={
-                    analysis?.previous_period
-                      ? 'Bandingkan seluruh dataset dengan periode sebelumnya'
-                      : 'Periode sebelumnya tidak tersedia'
-                  }
-                  className="inline-flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                    <path d="M4 19V5m0 14h16" />
-                    <path d="M8 15v-3m4 3V7m4 8v-5" />
-                  </svg>
-                  Bandingkan Seluruh Dataset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void exportUnitAnalysis()}
-                  disabled={!analysis?.dataset || unitExportBusy}
-                  aria-label={unitExportBusy ? 'Mengekspor analisis unit' : 'Unduh analisis unit sebagai Excel'}
-                  title="Unduh analisis unit sebagai Excel"
-                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50"
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                    <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
-                  </svg>
-                  <span>{unitExportBusy ? 'Mengekspor…' : 'Unduh Excel'}</span>
-                </button>
               </div>
             </div>
             {unitExportError && (
@@ -2127,20 +2252,24 @@ export default function PerformanceAnalysisPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
-                    {sortedUnits.map((unit) => {
+                    {searchedUnitHierarchy.units.length === 0 ? (
+                      <tr>
+                        <td colSpan={visibleUnitColumns.length} className="px-3 py-8 text-center text-slate-400">
+                          {unitSearch.trim()
+                            ? 'Tidak ada unit yang cocok dengan pencarian.'
+                            : 'Tidak ada unit untuk ditampilkan.'}
+                        </td>
+                      </tr>
+                    ) : searchedUnitHierarchy.units.map((unit) => {
                       const unitKey = JSON.stringify([unit.label]);
-                      const expanded = expandedUnits.includes(unitKey);
+                      const expanded = isUnitExpanded(unitKey);
                       return (
                         <Fragment key={unitKey}>
                           <tr className="bg-slate-800/40 hover:bg-slate-800/70">
                             <td className="sticky left-0 bg-surface-800 px-3 py-3 font-medium">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setExpandedUnits((current) => expanded
-                                    ? current.filter((value) => value !== unitKey)
-                                    : [...current, unitKey]);
-                                }}
+                                onClick={() => toggleUnitExpanded(unitKey)}
                                 aria-expanded={expanded}
                                 disabled={unit.children.length === 0}
                                 className="mr-2 text-sky-300 disabled:text-slate-600"
@@ -2164,18 +2293,14 @@ export default function PerformanceAnalysisPage() {
                           </tr>
                           {expanded && unit.children.map((child) => {
                             const childKey = JSON.stringify([unit.label, child.label]);
-                            const childExpanded = expandedUnits.includes(childKey);
+                            const childExpanded = isUnitExpanded(childKey);
                             return (
                               <Fragment key={childKey}>
                                 <tr className="hover:bg-slate-800/40">
                                   <td className="sticky left-0 bg-surface-900 px-3 py-3 pl-10 text-slate-300">
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        setExpandedUnits((current) => childExpanded
-                                          ? current.filter((value) => value !== childKey)
-                                          : [...current, childKey]);
-                                      }}
+                                      onClick={() => toggleUnitExpanded(childKey)}
                                       aria-expanded={childExpanded}
                                       disabled={child.children.length === 0}
                                       className="mr-2 text-sky-300 disabled:text-slate-600"
@@ -2264,30 +2389,36 @@ export default function PerformanceAnalysisPage() {
                   placeholder="Masukkan nama atau NIP"
                 />
               </label>
-              <button
-                type="button"
-                onClick={clearRecordFilters}
-                disabled={
-                  !recordSearch
-                  && !Object.values(recordFilterDrafts).some((value) => value?.trim())
-                }
-                className="btn-secondary disabled:opacity-50"
-              >
-                Bersihkan filter
-              </button>
-              <button
-                type="button"
-                onClick={() => void exportRecords()}
-                disabled={!recordData?.period || recordsExportBusy}
-                aria-label={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
-                title="Unduh daftar pegawai sebagai Excel"
-                className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50"
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                  <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
-                </svg>
-                <span>{recordsExportBusy ? 'Mengekspor…' : 'Unduh Excel'}</span>
-              </button>
+              <div role="group" aria-label="Aksi daftar pegawai" className="performance-action-toolbar inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
+                <button
+                  type="button"
+                  onClick={clearRecordFilters}
+                  disabled={
+                    !recordSearch
+                    && !Object.values(recordFilterDrafts).some((value) => value?.trim())
+                  }
+                  aria-label="Bersihkan pencarian dan filter"
+                  title="Bersihkan pencarian dan filter"
+                  className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                    <path d="M4 6h16M7 6l1 14h8l1-14M9 6V4h6v2" />
+                    <path d="m10 10 4 4m0-4-4 4" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportRecords()}
+                  disabled={!recordData?.period || recordsExportBusy}
+                  aria-label={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
+                  title={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
+                  className="size-9 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`mx-auto size-5 ${recordsExportBusy ? 'animate-pulse' : ''}`}>
+                    <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
           {recordsExportError && (

@@ -78,12 +78,21 @@ def get_performance_analysis(
 @router.get("/dashboard", response_model=PerformanceDashboardResponse)
 def get_performance_dashboard(
     unit_eselon_ii: str | None = None,
+    unit_eselon_iii: str | None = None,
+    unit_eselon_iv: str | None = None,
     eselon: list[str] = Query(default=[]),
     period: str | None = Query(default=None, max_length=7),
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.get_dashboard(db, unit_eselon_ii, eselon, period)
+        return service.get_dashboard(
+            db,
+            unit_eselon_ii,
+            eselon,
+            period,
+            unit_eselon_iii=unit_eselon_iii,
+            unit_eselon_iv=unit_eselon_iv,
+        )
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:

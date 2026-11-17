@@ -176,15 +176,18 @@ class _PerformanceDashboardCache:
     dataset: dict[str, Any]
     resolved_records: list[tuple[PerformanceKinerjaRecord, str, str, str, str]]
     unit_options: list[str]
+    unit_eselon_iii_options: list[str]
+    unit_eselon_iv_options: list[str]
     eselon_options: list[str]
     units: list[dict[str, Any]]
     record_filter_options: dict[str, list[str]] = field(default_factory=dict)
     record_numeric_ranges: dict[str, tuple[float | None, float | None]] = field(
         default_factory=dict
     )
-    filtered_overviews: OrderedDict[tuple[str | None, tuple[str, ...]], dict[str, Any]] = field(
-        default_factory=OrderedDict
-    )
+    filtered_overviews: OrderedDict[
+        tuple[str | None, str | None, str | None, tuple[str, ...]],
+        dict[str, Any],
+    ] = field(default_factory=OrderedDict)
     analyses: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
@@ -1138,6 +1141,14 @@ def _build_dashboard_cache(
             {unit for _, unit, _, _, _ in resolved_records},
             key=str.casefold,
         ),
+        unit_eselon_iii_options=sorted(
+            {unit for _, _, _, unit, _ in resolved_records},
+            key=str.casefold,
+        ),
+        unit_eselon_iv_options=sorted(
+            {unit for _, _, _, _, unit in resolved_records},
+            key=str.casefold,
+        ),
         eselon_options=sorted(
             {eselon for _, _, eselon, _, _ in resolved_records},
             key=str.casefold,
@@ -1209,19 +1220,64 @@ def _get_dashboard_cache(
 def _dashboard_filtered_records(
     cache: _PerformanceDashboardCache,
     unit_eselon_ii: str | None,
+    unit_eselon_iii: str | None,
+    unit_eselon_iv: str | None,
     eselons: tuple[str, ...],
 ) -> list[PerformanceKinerjaRecord]:
     return [
         record
-        for record, unit, eselon, _, _ in cache.resolved_records
+        for record, unit, eselon, unit_iii, unit_iv in cache.resolved_records
         if (unit_eselon_ii is None or unit == unit_eselon_ii)
+        and (unit_eselon_iii is None or unit_iii == unit_eselon_iii)
+        and (unit_eselon_iv is None or unit_iv == unit_eselon_iv)
         and (not eselons or eselon in eselons)
     ]
 
 
+def _dashboard_filter_options(
+    cache: _PerformanceDashboardCache,
+    unit_eselon_ii: str | None,
+    unit_eselon_iii: str | None,
+    unit_eselon_iv: str | None,
+    eselons: tuple[str, ...],
+) -> dict[str, list[str]]:
+    selected_filters: dict[str, str | tuple[str, ...] | None] = {
+        "unit_eselon_ii": unit_eselon_ii,
+        "unit_eselon_iii": unit_eselon_iii,
+        "unit_eselon_iv": unit_eselon_iv,
+        "eselon": eselons,
+    }
+    option_values = {field: set() for field in selected_filters}
+    for _, unit, eselon, unit_iii, unit_iv in cache.resolved_records:
+        values = {
+            "unit_eselon_ii": unit,
+            "unit_eselon_iii": unit_iii,
+            "unit_eselon_iv": unit_iv,
+            "eselon": eselon,
+        }
+        for field in selected_filters:
+            if any(
+                selected_value
+                and field != other_field
+                and (
+                    values[other_field] not in selected_value
+                    if isinstance(selected_value, tuple)
+                    else values[other_field] != selected_value
+                )
+                for other_field, selected_value in selected_filters.items()
+            ):
+                continue
+            option_values[field].add(values[field])
+
+    return {
+        field: sorted(values, key=str.casefold)
+        for field, values in option_values.items()
+    }
+
+
 def _cached_filtered_overview(
     cache: _PerformanceDashboardCache,
-    filter_key: tuple[str | None, tuple[str, ...]],
+    filter_key: tuple[str | None, str | None, str | None, tuple[str, ...]],
     records: list[PerformanceKinerjaRecord],
 ) -> dict[str, Any]:
     with _dashboard_cache_lock:
@@ -1242,6 +1298,8 @@ def get_dashboard(
     unit_eselon_ii: str | None,
     eselons: list[str],
     period: str | None = None,
+    unit_eselon_iii: str | None = None,
+    unit_eselon_iv: str | None = None,
 ) -> dict[str, Any]:
     datasets = sorted(
         _performance_datasets(db),
@@ -1259,6 +1317,8 @@ def get_dashboard(
             "available_periods": available_periods,
             "total_employees": 0,
             "unit_eselon_ii_options": [],
+            "unit_eselon_iii_options": [],
+            "unit_eselon_iv_options": [],
             "eselon_options": [],
             "overview": _make_group("Semua Pegawai", []),
             "overview_previous": None,
@@ -1278,10 +1338,24 @@ def get_dashboard(
         else None
     )
     selected_eselons = tuple(sorted(set(eselons), key=str.casefold))
-    filter_key = (unit_eselon_ii, selected_eselons)
+    filter_options = _dashboard_filter_options(
+        cache,
+        unit_eselon_ii,
+        unit_eselon_iii,
+        unit_eselon_iv,
+        selected_eselons,
+    )
+    filter_key = (
+        unit_eselon_ii,
+        unit_eselon_iii,
+        unit_eselon_iv,
+        selected_eselons,
+    )
     filtered_records = _dashboard_filtered_records(
         cache,
         unit_eselon_ii,
+        unit_eselon_iii,
+        unit_eselon_iv,
         selected_eselons,
     )
     overview = _cached_filtered_overview(cache, filter_key, filtered_records)
@@ -1291,6 +1365,8 @@ def get_dashboard(
         previous_records = _dashboard_filtered_records(
             previous_cache,
             unit_eselon_ii,
+            unit_eselon_iii,
+            unit_eselon_iv,
             selected_eselons,
         )
         overview_previous = _cached_filtered_overview(
@@ -1310,8 +1386,10 @@ def get_dashboard(
         ),
         "available_periods": available_periods,
         "total_employees": len(cache.resolved_records),
-        "unit_eselon_ii_options": cache.unit_options,
-        "eselon_options": cache.eselon_options,
+        "unit_eselon_ii_options": filter_options["unit_eselon_ii"],
+        "unit_eselon_iii_options": filter_options["unit_eselon_iii"],
+        "unit_eselon_iv_options": filter_options["unit_eselon_iv"],
+        "eselon_options": filter_options["eselon"],
         "overview": overview,
         "overview_previous": overview_previous,
         "overview_comparison": overview_comparison,
@@ -1437,11 +1515,12 @@ def get_records(
         }
 
     cache = _get_dashboard_cache(db, dataset)
+    normalized_filters, _ = _validate_record_query(filters, sort_by, sort_order)
     result_records = _query_performance_records(
         db,
         dataset,
         search=search,
-        filters=filters,
+        filters=normalized_filters,
         sort_by=sort_by,
         sort_order=sort_order,
     )
@@ -1451,7 +1530,11 @@ def get_records(
         "page_size": page_size,
         "total": len(result_records),
         "records": result_records[(page - 1) * page_size : page * page_size],
-        "filter_options": cache.record_filter_options,
+        "filter_options": _filtered_record_filter_options(
+            cache,
+            normalized_filters,
+            search,
+        ),
         "numeric_ranges": cache.record_numeric_ranges,
     }
 
@@ -1477,6 +1560,41 @@ def _record_filter_options(
     return {
         field: sorted(values, key=str.casefold)
         for field, values in options.items()
+    }
+
+
+def _filtered_record_filter_options(
+    cache: _PerformanceDashboardCache,
+    filters: dict[str, str],
+    search: str,
+) -> dict[str, list[str]]:
+    normalized_search = search.strip().casefold()
+    if not filters and not normalized_search:
+        return cache.record_filter_options
+
+    option_values = {field: set() for field in RECORD_FILTER_OPTION_FIELDS}
+    for record, unit, eselon, unit_eselon_iii, unit_eselon_iv in cache.resolved_records:
+        values = _performance_record_data(
+            record,
+            {
+                "unit_eselon_ii": unit,
+                "unit_eselon_iii": unit_eselon_iii,
+                "unit_eselon_iv": unit_eselon_iv,
+                "eselon": eselon,
+            },
+        )
+        if not _matches_record_search(values, normalized_search):
+            continue
+        for field in RECORD_FILTER_OPTION_FIELDS:
+            if not _matches_record_filters(values, filters, excluded_field=field):
+                continue
+            value = values[field]
+            if value is not None and str(value).strip():
+                option_values[field].add(str(value))
+
+    return {
+        field: sorted(values, key=str.casefold)
+        for field, values in option_values.items()
     }
 
 
@@ -1584,37 +1702,9 @@ def _query_performance_records(
                 "eselon": eselon,
             },
         )
-        if normalized_search and (
-            normalized_search not in values["nama"].casefold()
-            and normalized_search not in values["nip"].casefold()
-        ):
+        if not _matches_record_search(values, normalized_search):
             continue
-        is_filtered_out = False
-        for key, expected in normalized_filters.items():
-            if key.endswith("__min") or key.endswith("__max"):
-                field, bound = key.rsplit("__", maxsplit=1)
-                value = values[field]
-                if value is None:
-                    is_filtered_out = True
-                    break
-                numeric_value = float(value)
-                numeric_bound = float(expected)
-                if (bound == "min" and numeric_value < numeric_bound) or (
-                    bound == "max" and numeric_value > numeric_bound
-                ):
-                    is_filtered_out = True
-                    break
-            elif values[key] is None:
-                is_filtered_out = True
-                break
-            elif key in RECORD_FILTER_OPTION_FIELDS:
-                if str(values[key]).casefold() != expected:
-                    is_filtered_out = True
-                    break
-            elif expected not in str(values[key]).casefold():
-                is_filtered_out = True
-                break
-        if is_filtered_out:
+        if not _matches_record_filters(values, normalized_filters):
             continue
         result_records.append(values)
 
@@ -1629,6 +1719,46 @@ def _query_performance_records(
         reverse=normalized_sort_order == "desc",
     )
     return present_records + missing_records
+
+
+def _matches_record_search(
+    values: dict[str, Any],
+    normalized_search: str,
+) -> bool:
+    return not normalized_search or (
+        normalized_search in values["nama"].casefold()
+        or normalized_search in values["nip"].casefold()
+    )
+
+
+def _matches_record_filters(
+    values: dict[str, Any],
+    filters: dict[str, str],
+    *,
+    excluded_field: str | None = None,
+) -> bool:
+    for key, expected in filters.items():
+        if key == excluded_field:
+            continue
+        if key.endswith("__min") or key.endswith("__max"):
+            field, bound = key.rsplit("__", maxsplit=1)
+            value = values[field]
+            if value is None:
+                return False
+            numeric_value = float(value)
+            numeric_bound = float(expected)
+            if (bound == "min" and numeric_value < numeric_bound) or (
+                bound == "max" and numeric_value > numeric_bound
+            ):
+                return False
+        elif values[key] is None:
+            return False
+        elif key in RECORD_FILTER_OPTION_FIELDS:
+            if str(values[key]).casefold() != expected:
+                return False
+        elif expected not in str(values[key]).casefold():
+            return False
+    return True
 
 
 def _validate_record_query(
