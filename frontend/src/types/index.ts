@@ -201,6 +201,46 @@ export interface PerformanceUploadValidation {
   normalized_penalty_count: number;
 }
 
+export interface PerformanceCorrectionSourceYear {
+  year: number;
+  available_tw: number[];
+}
+
+export interface PerformanceCorrectionSourceRow {
+  form_id: string;
+  id_unit: string;
+  submitted_at: string | null;
+}
+
+export interface PerformanceCorrectionConflictCandidate {
+  value: string;
+  sources: PerformanceCorrectionSourceRow[];
+}
+
+export interface PerformanceCorrectionConflict {
+  nip: string;
+  candidates: PerformanceCorrectionConflictCandidate[];
+}
+
+export interface PerformanceCorrectionSyncPreview {
+  period: string;
+  source_year: number;
+  source_tw: number;
+  row_count: number;
+  source_row_count: number;
+  source_nip_count: number;
+  matched_count: number;
+  unmatched_count: number;
+  duplicate_nip_group_count: number;
+  ignored_unit_row_count: number;
+  source_only_nip_count: number;
+  conflicts: PerformanceCorrectionConflict[];
+}
+
+export interface PerformanceCorrectionSyncResult extends PerformanceCorrectionSyncPreview {
+  resolved_conflict_count: number;
+}
+
 export interface PerformanceHistogramBin {
   start: number;
   end: number;

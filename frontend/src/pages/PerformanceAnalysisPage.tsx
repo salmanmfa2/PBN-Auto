@@ -21,6 +21,9 @@ import type {
   PerformanceRecordsResponse,
   PerformanceEmployeeSource,
   PerformanceUnitMetrics,
+  PerformanceCorrectionSyncPreview,
+  PerformanceCorrectionSyncResult,
+  PerformanceCorrectionSourceYear,
   PerformanceUploadValidation,
 } from '../types';
 import { Spinner } from '../components/Spinner';
@@ -69,6 +72,13 @@ type UnitSortState = {
   key: UnitSortKey;
   direction: 'asc' | 'desc';
 } | null;
+type ModuleLoadTaskId = 'dashboard' | 'records' | 'insight';
+type ModuleLoadTask = {
+  status: 'loading' | 'complete' | 'failed';
+  durationMs: number | null;
+  error: string | null;
+};
+type ModuleLoadTasks = Record<ModuleLoadTaskId, ModuleLoadTask>;
 type UnitColumnDefinition = {
   key: UnitColumnKey;
   label: string;
@@ -241,6 +251,24 @@ const RECORD_COLUMNS: Array<{ key: keyof PerformanceRecord; label: string }> = [
   { key: 'predikat_kinerja', label: 'Predikat Kinerja' },
   { key: 'status', label: 'Status' },
 ];
+const RECORD_LITE_HIDDEN_COLUMNS = new Set<keyof PerformanceRecord>([
+  'rating_hasil_kerja_awal',
+  'rating_perilaku_kerja_awal',
+  'predikat_kinerja_awal',
+  'rating_hasil_kerja',
+  'rating_perilaku_kerja',
+  'predikat_kinerja',
+]);
+const INITIAL_MODULE_LOAD_TASKS: ModuleLoadTasks = {
+  dashboard: { status: 'loading', durationMs: null, error: null },
+  records: { status: 'loading', durationMs: null, error: null },
+  insight: { status: 'loading', durationMs: null, error: null },
+};
+const MODULE_LOAD_TASK_LABELS: Array<{ id: ModuleLoadTaskId; label: string }> = [
+  { id: 'dashboard', label: 'Dashboard dan filter Overview' },
+  { id: 'records', label: 'Daftar Pegawai dan filter' },
+  { id: 'insight', label: 'Insight' },
+];
 const NUMERIC_RECORD_COLUMNS = new Set<keyof PerformanceRecord>([
   'nhk',
   'npk',
@@ -258,6 +286,12 @@ const NUMERIC_RECORD_COLUMNS = new Set<keyof PerformanceRecord>([
 const numberFormatter = new Intl.NumberFormat('id-ID', {
   maximumFractionDigits: 2,
 });
+
+function formatLoadTime(milliseconds: number): string {
+  return milliseconds < 1000
+    ? `${Math.round(milliseconds)} ms`
+    : `${(milliseconds / 1000).toFixed(1)} dtk`;
+}
 
 function currentPeriod(): string {
   const now = new Date();
@@ -855,7 +889,14 @@ export default function PerformanceAnalysisPage() {
   const [collapsedSearchUnitKeys, setCollapsedSearchUnitKeys] = useState<string[]>([]);
   const [unitSort, setUnitSort] = useState<UnitSortState>(null);
   const [isUnitLiteView, setIsUnitLiteView] = useState(false);
+  const [isRecordsLiteView, setIsRecordsLiteView] = useState(false);
   const [unitSearch, setUnitSearch] = useState('');
+  const [moduleLoadTasks, setModuleLoadTasks] = useState<ModuleLoadTasks>(
+    () => ({ ...INITIAL_MODULE_LOAD_TASKS }),
+  );
+  const [moduleLoadElapsedMs, setModuleLoadElapsedMs] = useState(0);
+  const [moduleLoadDurationMs, setModuleLoadDurationMs] = useState<number | null>(null);
+  const moduleLoadStartedAtRef = useRef(performance.now());
   const [unitColumnWidths, setUnitColumnWidths] = useState<UnitColumnWidths>(
     () => ({ ...DEFAULT_UNIT_COLUMN_WIDTHS }),
   );
@@ -870,6 +911,9 @@ export default function PerformanceAnalysisPage() {
   } | null>(null);
   const visibleUnitColumns = UNIT_COLUMN_DEFINITIONS.filter(
     (column) => !isUnitLiteView || column.lite,
+  );
+  const visibleRecordColumns = RECORD_COLUMNS.filter(
+    (column) => !isRecordsLiteView || !RECORD_LITE_HIDDEN_COLUMNS.has(column.key),
   );
   const visibleUnitColumnWidths = fitUnitColumnWidths(
     unitColumnWidths,
@@ -926,6 +970,11 @@ export default function PerformanceAnalysisPage() {
   const searchedUnitHierarchy = useMemo(
     () => filterUnitHierarchyBySearch(sortedUnits, unitSearch),
     [sortedUnits, unitSearch],
+  );
+  const completedModuleLoadTasks = Object.values(moduleLoadTasks)
+    .filter((task) => task.status !== 'loading').length;
+  const moduleLoadProgress = Math.round(
+    (completedModuleLoadTasks / Object.keys(moduleLoadTasks).length) * 100,
   );
   const isUnitExpanded = (key: string) => (
     expandedUnits.includes(key)
@@ -1088,22 +1137,97 @@ export default function PerformanceAnalysisPage() {
   const [fullError, setFullError] = useState<string | null>(null);
   const [fullNotice, setFullNotice] = useState<string | null>(null);
 
-  const [adjustmentFile, setAdjustmentFile] = useState<File | null>(null);
-  const [adjustmentValidation, setAdjustmentValidation] = useState<PerformanceUploadValidation | null>(null);
-  const [adjustmentBusy, setAdjustmentBusy] = useState(false);
-  const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
-  const [adjustmentNotice, setAdjustmentNotice] = useState<string | null>(null);
+  const [correctionSyncAction, setCorrectionSyncAction] =
+    useState<'checking' | 'syncing' | null>(null);
+  const [correctionSyncError, setCorrectionSyncError] = useState<string | null>(null);
+  const [correctionSyncNotice, setCorrectionSyncNotice] = useState<string | null>(null);
+  const [correctionSyncPreview, setCorrectionSyncPreview] =
+    useState<PerformanceCorrectionSyncPreview | null>(null);
+  const [correctionSourcePeriods, setCorrectionSourcePeriods] =
+    useState<PerformanceCorrectionSourceYear[]>([]);
+  const [correctionSourcePeriodsLoading, setCorrectionSourcePeriodsLoading] = useState(false);
+  const [correctionSourcePeriodsError, setCorrectionSourcePeriodsError] =
+    useState<string | null>(null);
+  const [correctionSourceYear, setCorrectionSourceYear] = useState<number | null>(null);
+  const [correctionSourceTw, setCorrectionSourceTw] = useState<number | null>(null);
+  const [correctionConflictResolutions, setCorrectionConflictResolutions] =
+    useState<Record<string, string>>({});
   const [isDataManagementOpen, setIsDataManagementOpen] = useState(false);
   const fullFileInput = useRef<HTMLInputElement>(null);
-  const adjustmentFileInput = useRef<HTMLInputElement>(null);
   const analysisRequestId = useRef(0);
   const recordFilterTimer = useRef<number | null>(null);
   const recordRequestId = useRef(0);
+
+  useEffect(() => {
+    if (!isDataManagementOpen || (user?.auth_level ?? 0) < 3) return undefined;
+    let active = true;
+    setCorrectionSourcePeriodsLoading(true);
+    setCorrectionSourcePeriodsError(null);
+    setCorrectionSourcePeriods([]);
+    setCorrectionSourceYear(null);
+    setCorrectionSourceTw(null);
+    setCorrectionSyncPreview(null);
+    setCorrectionConflictResolutions({});
+    void apiClient.getPerformanceCorrectionSourcePeriods().then((periods) => {
+      if (!active) return;
+      setCorrectionSourcePeriods(periods);
+      const latestPeriod = periods[0];
+      setCorrectionSourceYear(latestPeriod?.year ?? null);
+      setCorrectionSourceTw(
+        latestPeriod?.available_tw[latestPeriod.available_tw.length - 1] ?? null,
+      );
+      setCorrectionSyncPreview(null);
+      setCorrectionConflictResolutions({});
+    }).catch((loadError: unknown) => {
+      if (active) setCorrectionSourcePeriodsError(errorMessage(loadError));
+    }).finally(() => {
+      if (active) setCorrectionSourcePeriodsLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isDataManagementOpen, user?.auth_level]);
+
+  const completeModuleLoadTask = useCallback((
+    task: ModuleLoadTaskId,
+    error: string | null = null,
+  ) => {
+    const durationMs = Math.round(performance.now() - moduleLoadStartedAtRef.current);
+    setModuleLoadTasks((current) => {
+      if (current[task].status !== 'loading') return current;
+      return {
+        ...current,
+        [task]: {
+          status: error ? 'failed' : 'complete',
+          durationMs,
+          error,
+        },
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (moduleLoadDurationMs !== null) return;
+    const timer = window.setInterval(() => {
+      setModuleLoadElapsedMs(
+        Math.round(performance.now() - moduleLoadStartedAtRef.current),
+      );
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [moduleLoadDurationMs]);
+
+  useEffect(() => {
+    if (Object.values(moduleLoadTasks).some((task) => task.status === 'loading')) return;
+    const durationMs = Math.round(performance.now() - moduleLoadStartedAtRef.current);
+    setModuleLoadDurationMs(durationMs);
+    setModuleLoadElapsedMs(durationMs);
+  }, [moduleLoadTasks]);
 
   const refreshAnalysis = useCallback(async (requestedPeriod?: string) => {
     const requestId = ++analysisRequestId.current;
     setIsLoading(true);
     setError(null);
+    let loadFailure: string | null = null;
     try {
       const result = await apiClient.getPerformanceDashboard(
         selectedUnit,
@@ -1120,12 +1244,23 @@ export default function PerformanceAnalysisPage() {
       }
     } catch (loadError) {
       if (requestId === analysisRequestId.current) {
-        setError(errorMessage(loadError));
+        loadFailure = errorMessage(loadError);
+        setError(loadFailure);
       }
     } finally {
-      if (requestId === analysisRequestId.current) setIsLoading(false);
+      if (requestId === analysisRequestId.current) {
+        setIsLoading(false);
+        completeModuleLoadTask('dashboard', loadFailure);
+      }
     }
-  }, [selectedEselon, selectedEselonIII, selectedEselonIV, selectedPeriod, selectedUnit]);
+  }, [
+    completeModuleLoadTask,
+    selectedEselon,
+    selectedEselonIII,
+    selectedEselonIV,
+    selectedPeriod,
+    selectedUnit,
+  ]);
 
   useEffect(() => {
     void refreshAnalysis();
@@ -1135,6 +1270,7 @@ export default function PerformanceAnalysisPage() {
     const requestId = ++recordRequestId.current;
     setIsLoadingRecords(true);
     setRecordError(null);
+    let loadFailure: string | null = null;
     try {
       const result = await apiClient.getPerformanceRecords(
         recordPage,
@@ -1148,12 +1284,16 @@ export default function PerformanceAnalysisPage() {
       if (requestId === recordRequestId.current) setRecordData(result);
     } catch (loadError) {
       if (requestId === recordRequestId.current) {
-        setRecordError(errorMessage(loadError));
+        loadFailure = errorMessage(loadError);
+        setRecordError(loadFailure);
       }
     } finally {
-      if (requestId === recordRequestId.current) setIsLoadingRecords(false);
+      if (requestId === recordRequestId.current) {
+        setIsLoadingRecords(false);
+        completeModuleLoadTask('records', loadFailure);
+      }
     }
-  }, [recordFilters, recordPage, recordSearch, recordSort, selectedPeriod]);
+  }, [completeModuleLoadTask, recordFilters, recordPage, recordSearch, recordSort, selectedPeriod]);
 
   useEffect(() => {
     void refreshRecords();
@@ -1191,10 +1331,15 @@ export default function PerformanceAnalysisPage() {
         if (active) {
           setInsight(result);
           setInsightDraft(result.content);
+          completeModuleLoadTask('insight');
         }
       })
       .catch((loadError: unknown) => {
-        if (active) setInsightError(errorMessage(loadError));
+        if (active) {
+          const message = errorMessage(loadError);
+          setInsightError(message);
+          completeModuleLoadTask('insight', message);
+        }
       })
       .finally(() => {
         if (active) setInsightLoading(false);
@@ -1202,7 +1347,7 @@ export default function PerformanceAnalysisPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [completeModuleLoadTask]);
 
   const saveInsight = async () => {
     setInsightBusy(true);
@@ -1265,6 +1410,10 @@ export default function PerformanceAnalysisPage() {
         `${result.row_count} pegawai berhasil dimuat untuk ${result.period} menggunakan referensi ${getPerformanceEmployeeSourceLabel(fullEmployeeSource)}.`
         + (uploadNotes.length ? ` Catatan: ${uploadNotes.join('; ')}.` : ''),
       );
+      setCorrectionSyncPreview(null);
+      setCorrectionConflictResolutions({});
+      setCorrectionSyncError(null);
+      setCorrectionSyncNotice(null);
       setSelectedPeriod(result.period);
       if (selectedPeriod === result.period) {
         await Promise.all([
@@ -1279,21 +1428,6 @@ export default function PerformanceAnalysisPage() {
       setFullError(errorMessage(replaceError));
     } finally {
       setFullBusy(false);
-    }
-  };
-
-  const downloadTemplate = async () => {
-    setAdjustmentError(null);
-    try {
-      const blob = await apiClient.downloadPerformanceAdjustmentTemplate();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'template-penyesuaian-kinerja.xlsx';
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (downloadError) {
-      setAdjustmentError(errorMessage(downloadError));
     }
   };
 
@@ -1392,52 +1526,101 @@ export default function PerformanceAnalysisPage() {
     }));
   };
 
-  const validateAdjustments = async () => {
-    if (!adjustmentFile || !analysisPeriod) return;
-    setAdjustmentBusy(true);
-    setAdjustmentError(null);
-    setAdjustmentNotice(null);
-    setAdjustmentValidation(null);
+  const checkPerformanceCorrections = async () => {
+    if (!analysisPeriod || correctionSourceYear === null || correctionSourceTw === null) return;
+    setCorrectionSyncAction('checking');
+    setCorrectionSyncError(null);
+    setCorrectionSyncNotice(null);
+    setCorrectionSyncPreview(null);
+    setCorrectionConflictResolutions({});
+    setCorrectionConflictResolutions({});
     try {
-      setAdjustmentValidation(
-        await apiClient.validatePerformanceAdjustments(adjustmentFile, analysisPeriod),
+      setCorrectionSyncPreview(
+        await apiClient.checkPerformanceCorrections(
+          analysisPeriod,
+          correctionSourceYear,
+          correctionSourceTw,
+        ),
       );
-    } catch (validationError) {
-      setAdjustmentError(errorMessage(validationError));
+    } catch (checkError) {
+      setCorrectionSyncError(errorMessage(checkError));
     } finally {
-      setAdjustmentBusy(false);
+      setCorrectionSyncAction(null);
     }
   };
 
-  const applyAdjustments = async () => {
-    if (!adjustmentFile || !adjustmentValidation || !analysisPeriod) return;
-    if (!window.confirm(`Terapkan penyesuaian untuk ${adjustmentValidation.row_count} pegawai pada ${analysisPeriod}?`)) {
+  const syncPerformanceCorrections = async () => {
+    if (
+      !analysisPeriod
+      || correctionSourceYear === null
+      || correctionSourceTw === null
+      || correctionSyncPreview?.period !== analysisPeriod
+      || correctionSyncPreview.source_year !== correctionSourceYear
+      || correctionSyncPreview.source_tw !== correctionSourceTw
+    ) return;
+    const unresolvedConflicts = correctionSyncPreview.conflicts.filter(
+      (conflict) => !correctionConflictResolutions[conflict.nip],
+    );
+    if (unresolvedConflicts.length > 0) return;
+    if (!window.confirm(
+      `Sinkronkan Nilai Koreksi untuk dataset ${analysisPeriod} memakai sumber EPRIDE ${correctionSourceYear} TW${correctionSourceTw}? NIP yang tidak ditemukan di EPRIDE akan diberi koreksi 0.`,
+    )) {
       return;
     }
-    setAdjustmentBusy(true);
-    setAdjustmentError(null);
-    setAdjustmentNotice(null);
+    setCorrectionSyncAction('syncing');
+    setCorrectionSyncError(null);
+    setCorrectionSyncNotice(null);
     try {
-      const result = await apiClient.replacePerformanceAdjustments(adjustmentFile, analysisPeriod);
-      setAdjustmentNotice(
-        `Penyesuaian ${result.row_count} pegawai berhasil diterapkan.`
-        + (result.normalized_penalty_count > 0
-          ? ` ${result.normalized_penalty_count} nilai Hukdis/Dampak disimpan sebagai potongan negatif.`
+      const result: PerformanceCorrectionSyncResult =
+        await apiClient.syncPerformanceCorrections(
+          analysisPeriod,
+          correctionSourceYear,
+          correctionSourceTw,
+          correctionConflictResolutions,
+        );
+      setCorrectionSyncNotice(
+        `Sinkronisasi ${result.period} berhasil: ${result.matched_count} NIP cocok; `
+        + `${result.unmatched_count} NIP tidak ditemukan dan koreksinya diatur ke 0.`
+        + (result.resolved_conflict_count > 0
+          ? ` ${result.resolved_conflict_count} konflik diselesaikan sesuai pilihan.`
+          : '')
+        + (result.duplicate_nip_group_count > 0
+          ? ` ${result.duplicate_nip_group_count} kelompok NIP duplikat diproses sesuai aturan.`
+          : '')
+        + (result.ignored_unit_row_count > 0
+          ? ` ${result.ignored_unit_row_count} baris diabaikan karena idUnit bukan 13 digit.`
+          : '')
+        + (result.source_only_nip_count > 0
+          ? ` ${result.source_only_nip_count} NIP sumber tidak ada dalam dataset.`
           : ''),
       );
-      setAdjustmentFile(null);
-      if (adjustmentFileInput.current) adjustmentFileInput.current.value = '';
-      setAdjustmentValidation(null);
+      setCorrectionSyncPreview(null);
+      setCorrectionConflictResolutions({});
       await Promise.all([
-        refreshAnalysis(analysisPeriod),
-        refreshRecords(analysisPeriod),
+        refreshAnalysis(result.period),
+        refreshRecords(result.period),
       ]);
     } catch (applyError) {
-      setAdjustmentError(errorMessage(applyError));
+      setCorrectionSyncError(errorMessage(applyError));
+      setCorrectionSyncPreview(null);
     } finally {
-      setAdjustmentBusy(false);
+      setCorrectionSyncAction(null);
     }
   };
+
+  const selectedCorrectionSourcePeriod = correctionSourcePeriods.find(
+    (sourcePeriod) => sourcePeriod.year === correctionSourceYear,
+  );
+  const availableCorrectionSourceTws = selectedCorrectionSourcePeriod?.available_tw ?? [];
+  const correctionPreviewMatchesSelection = Boolean(
+    correctionSyncPreview
+    && correctionSyncPreview.period === analysisPeriod
+    && correctionSyncPreview.source_year === correctionSourceYear
+    && correctionSyncPreview.source_tw === correctionSourceTw,
+  );
+  const unresolvedCorrectionConflicts = correctionSyncPreview?.conflicts.filter(
+    (conflict) => !correctionConflictResolutions[conflict.nip],
+  ).length ?? 0;
 
   return (
     <main className="performance-analysis-page min-h-screen bg-surface-900 px-4 pb-14 pt-24 text-slate-100 sm:px-6">
@@ -1463,6 +1646,65 @@ export default function PerformanceAnalysisPage() {
             </div>
           )}
         </header>
+
+        <section
+          className="card space-y-3 p-4"
+          aria-busy={moduleLoadDurationMs === null}
+          aria-label="Proses pemuatan awal Analisis Kinerja"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">
+                {moduleLoadDurationMs === null
+                  ? 'Memuat modul Analisis Kinerja'
+                  : 'Modul Analisis Kinerja siap'}
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                {moduleLoadDurationMs === null
+                  ? `Waktu berjalan ${formatLoadTime(moduleLoadElapsedMs)}`
+                  : `Pemuatan awal selesai dalam ${formatLoadTime(moduleLoadDurationMs)}`}
+              </p>
+            </div>
+            <span className="text-xs font-medium text-slate-400">
+              {completedModuleLoadTasks}/{MODULE_LOAD_TASK_LABELS.length} proses · {moduleLoadProgress}%
+            </span>
+          </div>
+          <div
+            role="progressbar"
+            aria-label="Kemajuan pemuatan awal"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={moduleLoadProgress}
+            className="h-2.5 overflow-hidden rounded-full bg-slate-800"
+          >
+            <div
+              className="h-full rounded-full bg-sky-400 transition-[width] duration-300"
+              style={{ width: `${moduleLoadProgress}%` }}
+            />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {MODULE_LOAD_TASK_LABELS.map(({ id, label }) => {
+              const task = moduleLoadTasks[id];
+              return (
+                <div key={id} className="min-w-0 rounded-lg bg-slate-900/50 px-3 py-2">
+                  <p className="truncate text-xs font-medium text-slate-300">{label}</p>
+                  <p className={`mt-1 text-xs ${
+                    task.status === 'failed' ? 'text-rose-300' : 'text-slate-400'
+                  }`}>
+                    {task.status === 'loading'
+                      ? 'Memuat…'
+                      : task.status === 'failed'
+                        ? `Gagal setelah ${formatLoadTime(task.durationMs ?? 0)}`
+                        : `Selesai setelah ${formatLoadTime(task.durationMs ?? 0)}`}
+                  </p>
+                  {task.error && (
+                    <p className="mt-1 break-words text-xs text-rose-300">{task.error}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
         {error && (
           <div role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
@@ -1492,7 +1734,9 @@ export default function PerformanceAnalysisPage() {
                       setYear(item.period.slice(3));
                       setRecordPage(1);
                       setFullValidation(null);
-                      setAdjustmentValidation(null);
+                      setCorrectionSyncError(null);
+                      setCorrectionSyncNotice(null);
+                      setCorrectionSyncPreview(null);
                     }}
                     className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
                       active
@@ -1517,8 +1761,8 @@ export default function PerformanceAnalysisPage() {
               <button
                 type="button"
                 onClick={() => setIsDataManagementOpen(true)}
-                aria-label="Kelola dataset dan penyesuaian nilai"
-                title="Kelola dataset dan penyesuaian nilai"
+                aria-label="Kelola dataset dan sinkronkan koreksi"
+                title="Kelola dataset dan sinkronkan koreksi"
                 className="inline-flex items-center gap-2 rounded-xl border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-sm font-medium text-sky-200 transition hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
@@ -1544,7 +1788,7 @@ export default function PerformanceAnalysisPage() {
                   <header className="mb-5 flex items-center justify-between gap-4">
                     <div>
                       <h2 id="performance-data-management-title" className="text-lg font-semibold">Kelola dataset kinerja</h2>
-                      <p className="mt-1 text-sm text-slate-400">Unggah dataset lengkap atau terapkan penyesuaian nilai.</p>
+                      <p className="mt-1 text-sm text-slate-400">Unggah dataset lengkap atau sinkronkan koreksi dari EPRIDE.</p>
                     </div>
                     <button
                       type="button"
@@ -1573,7 +1817,6 @@ export default function PerformanceAnalysisPage() {
                     onChange={(event) => {
                       setQuarter(event.target.value);
                       setFullValidation(null);
-                      setAdjustmentValidation(null);
                     }}
                     className="input mt-1.5"
                   >
@@ -1594,7 +1837,6 @@ export default function PerformanceAnalysisPage() {
                     onChange={(event) => {
                       setYear(event.target.value);
                       setFullValidation(null);
-                      setAdjustmentValidation(null);
                     }}
                     className="input mt-1.5"
                   />
@@ -1672,54 +1914,178 @@ export default function PerformanceAnalysisPage() {
             </div>
 
             <div className="card p-5">
-              <h2 className="font-semibold">Penyesuaian nilai</h2>
+              <h2 className="font-semibold">Sinkronkan koreksi dari EPRIDE</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Kosongkan sel untuk mempertahankan nilai saat ini. Nilai Hukdis/Dampak positif akan dinormalisasi sebagai potongan negatif.
-                Periode penyesuaian: {analysisPeriod ?? 'belum ada dataset'}.
+                Dataset tujuan: {analysisPeriod ?? 'belum ada dataset'}. Pilih tahun dan TW sumber EPRIDE secara terpisah.
+                Daftar pilihan mengikuti form eligible yang sudah terkirim dan dimuat ulang saat panel ini dibuka.
+                Hanya form terkirim dengan `idUnit` 13 digit yang dipakai; nilai NULL menjadi 0. Nilai di luar -20 sampai 20 menghentikan sinkronisasi.
+                Konflik nilai nonzero harus dipilih manual. NIP dataset yang tidak ditemukan akan diberi koreksi 0; tanpa sinkronisasi, nilai CSV tetap digunakan.
               </p>
-              <button type="button" onClick={() => void downloadTemplate()} className="btn-secondary mt-4">
-                Unduh Template Excel
-              </button>
-              <label className="mt-4 block text-sm text-slate-300">
-                File penyesuaian (.xlsx)
-                <input
-                  ref={adjustmentFileInput}
-                  type="file"
-                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  onChange={(event) => {
-                    setAdjustmentFile(event.target.files?.[0] ?? null);
-                    setAdjustmentValidation(null);
-                    setAdjustmentError(null);
-                  }}
-                  className="mt-1.5 block w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-surface-700 file:px-3 file:py-2 file:text-sm file:text-slate-100"
-                />
-              </label>
-              {adjustmentError && <p role="alert" className="mt-3 break-words text-sm text-rose-300">{adjustmentError}</p>}
-              {adjustmentNotice && <p role="status" className="mt-3 text-sm text-emerald-300">{adjustmentNotice}</p>}
-              {adjustmentValidation && (
-                <div className="mt-3 space-y-1 text-sm">
-                  <p role="status" className="text-emerald-300">
-                    Valid: {adjustmentValidation.row_count} pegawai · {adjustmentValidation.period}
+              {correctionSyncError && <p role="alert" className="mt-3 break-words text-sm text-rose-300">{correctionSyncError}</p>}
+              {correctionSyncNotice && <p role="status" className="mt-3 break-words text-sm text-emerald-300">{correctionSyncNotice}</p>}
+              {correctionSourcePeriodsError && (
+                <p role="alert" className="mt-3 break-words text-sm text-rose-300">
+                  Tidak dapat memuat periode sumber EPRIDE: {correctionSourcePeriodsError}
+                </p>
+              )}
+              {correctionSourcePeriodsLoading && (
+                <p role="status" className="mt-3 text-sm text-slate-400">
+                  <Spinner size="sm" label="Memuat periode sumber EPRIDE…" />
+                </p>
+              )}
+              {!correctionSourcePeriodsLoading
+                && !correctionSourcePeriodsError
+                && correctionSourcePeriods.length === 0 && (
+                  <p role="status" className="mt-3 text-sm text-amber-300">
+                    Belum ada form EPRIDE terkirim dengan idUnit 13 digit.
                   </p>
-                  {adjustmentValidation.normalized_penalty_count > 0 && (
-                    <p className="text-amber-300">
-                      {adjustmentValidation.normalized_penalty_count} nilai Hukdis/Dampak positif akan disimpan sebagai potongan negatif.
-                    </p>
+              )}
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm">
+                  <span className="text-slate-300">Tahun sumber EPRIDE</span>
+                  <select
+                    value={correctionSourceYear ?? ''}
+                    onChange={(event) => {
+                      const nextYear = Number(event.target.value);
+                      const nextPeriod = correctionSourcePeriods.find(
+                        (sourcePeriod) => sourcePeriod.year === nextYear,
+                      );
+                      setCorrectionSourceYear(nextPeriod?.year ?? null);
+                      setCorrectionSourceTw(
+                        nextPeriod?.available_tw[nextPeriod.available_tw.length - 1] ?? null,
+                      );
+                      setCorrectionSyncPreview(null);
+                      setCorrectionConflictResolutions({});
+                      setCorrectionSyncError(null);
+                      setCorrectionSyncNotice(null);
+                    }}
+                    disabled={correctionSourcePeriodsLoading || correctionSourcePeriods.length === 0}
+                    className="mt-1 block w-full rounded-lg border border-slate-600 bg-surface-800 px-3 py-2 text-slate-100 disabled:opacity-50"
+                  >
+                    <option value="">Pilih tahun</option>
+                    {correctionSourcePeriods.map((sourcePeriod) => (
+                      <option key={sourcePeriod.year} value={sourcePeriod.year}>
+                        {sourcePeriod.year}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="text-slate-300">TW sumber EPRIDE</span>
+                  <select
+                    value={correctionSourceTw ?? ''}
+                    onChange={(event) => {
+                      setCorrectionSourceTw(event.target.value ? Number(event.target.value) : null);
+                      setCorrectionSyncPreview(null);
+                      setCorrectionConflictResolutions({});
+                      setCorrectionSyncError(null);
+                      setCorrectionSyncNotice(null);
+                    }}
+                    disabled={correctionSourcePeriodsLoading || availableCorrectionSourceTws.length === 0}
+                    className="mt-1 block w-full rounded-lg border border-slate-600 bg-surface-800 px-3 py-2 text-slate-100 disabled:opacity-50"
+                  >
+                    <option value="">Pilih TW</option>
+                    {availableCorrectionSourceTws.map((tw) => (
+                      <option key={tw} value={tw}>TW{tw}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {correctionSyncPreview && (
+                <div role="status" className="mt-4 space-y-1 text-sm text-slate-300">
+                  <p className="font-medium text-emerald-300">
+                    Sumber EPRIDE {correctionSyncPreview.source_year} TW{correctionSyncPreview.source_tw} untuk dataset {correctionSyncPreview.period}: {numberFormatter.format(correctionSyncPreview.source_row_count)} baris eligible, {numberFormatter.format(correctionSyncPreview.source_nip_count)} NIP unik.
+                  </p>
+                  <p>
+                    Akan diperbarui: {numberFormatter.format(correctionSyncPreview.row_count)} pegawai; cocok {numberFormatter.format(correctionSyncPreview.matched_count)}; tidak ditemukan dan akan diberi koreksi 0: {numberFormatter.format(correctionSyncPreview.unmatched_count)}.
+                  </p>
+                  {correctionSyncPreview.duplicate_nip_group_count > 0 && (
+                    <p>{numberFormatter.format(correctionSyncPreview.duplicate_nip_group_count)} kelompok NIP duplikat akan diproses sesuai aturan koreksi.</p>
+                  )}
+                  {correctionSyncPreview.ignored_unit_row_count > 0 && (
+                    <p>{numberFormatter.format(correctionSyncPreview.ignored_unit_row_count)} baris dengan idUnit bukan 13 digit akan diabaikan.</p>
+                  )}
+                  {correctionSyncPreview.source_only_nip_count > 0 && (
+                    <p>{numberFormatter.format(correctionSyncPreview.source_only_nip_count)} NIP sumber tidak ada dalam dataset.</p>
+                  )}
+                  {correctionSyncPreview.conflicts.length > 0 && (
+                    <div className="mt-3 space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                      <p className="font-medium text-amber-200">
+                        Pilih satu nilai koreksi untuk setiap NIP yang memiliki konflik:
+                      </p>
+                      {correctionSyncPreview.conflicts.map((conflict) => (
+                        <fieldset key={conflict.nip} className="space-y-2">
+                          <legend className="text-slate-100">NIP {conflict.nip}</legend>
+                          {conflict.candidates.map((candidate) => (
+                            <label
+                              key={`${conflict.nip}-${candidate.value}`}
+                              className="flex cursor-pointer gap-2 rounded-md border border-slate-700 p-2"
+                            >
+                              <input
+                                type="radio"
+                                name={`epride-conflict-${conflict.nip}`}
+                                value={candidate.value}
+                                checked={correctionConflictResolutions[conflict.nip] === candidate.value}
+                                onChange={() => setCorrectionConflictResolutions((current) => ({
+                                  ...current,
+                                  [conflict.nip]: candidate.value,
+                                }))}
+                                aria-label={`Pilih koreksi ${candidate.value} untuk NIP ${conflict.nip}`}
+                                className="mt-1 accent-sky-400"
+                              />
+                              <span className="min-w-0">
+                                <span className="block font-medium text-slate-100">
+                                  Nilai koreksi {candidate.value}
+                                </span>
+                                {candidate.sources.map((source, sourceIndex) => (
+                                  <span
+                                    key={`${source.form_id}-${source.id_unit}-${sourceIndex}`}
+                                    className="block break-words text-xs text-slate-400"
+                                  >
+                                    Form {source.form_id || '—'} · idUnit {source.id_unit}
+                                    {source.submitted_at ? ` · ${source.submitted_at}` : ''}
+                                  </span>
+                                ))}
+                              </span>
+                            </label>
+                          ))}
+                        </fieldset>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => void validateAdjustments()}
-                  disabled={!adjustmentFile || !analysisPeriod || adjustmentBusy}
+                  onClick={() => void checkPerformanceCorrections()}
+                  disabled={
+                    !analysisPeriod
+                    || correctionSourceYear === null
+                    || correctionSourceTw === null
+                    || correctionSyncAction !== null
+                    || correctionSourcePeriodsLoading
+                  }
                   className="btn-secondary"
                 >
-                  {adjustmentBusy ? <Spinner size="sm" label="Memvalidasi…" /> : 'Validasi Penyesuaian'}
+                  {correctionSyncAction === 'checking'
+                    ? <Spinner size="sm" label="Memeriksa…" />
+                    : analysisPeriod && correctionSourceYear !== null && correctionSourceTw !== null
+                      ? `Periksa EPRIDE ${correctionSourceYear} TW${correctionSourceTw}`
+                      : 'Periksa EPRIDE'}
                 </button>
-                {adjustmentValidation && (
-                  <button type="button" onClick={() => void applyAdjustments()} disabled={!analysisPeriod || adjustmentBusy} className="btn-primary">
-                    Terapkan Penyesuaian
+                {correctionPreviewMatchesSelection && (
+                  <button
+                    type="button"
+                    onClick={() => void syncPerformanceCorrections()}
+                    disabled={correctionSyncAction !== null || unresolvedCorrectionConflicts > 0}
+                    className="btn-primary"
+                  >
+                    {correctionSyncAction === 'syncing'
+                      ? <Spinner size="sm" label="Menyinkronkan…" />
+                      : unresolvedCorrectionConflicts > 0
+                        ? `Pilih ${unresolvedCorrectionConflicts} konflik`
+                        : `Sinkronkan ${analysisPeriod}`}
                   </button>
                 )}
               </div>
@@ -2392,6 +2758,24 @@ export default function PerformanceAnalysisPage() {
               <div role="group" aria-label="Aksi daftar pegawai" className="performance-action-toolbar inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
                 <button
                   type="button"
+                  aria-pressed={isRecordsLiteView}
+                  onClick={() => setIsRecordsLiteView((current) => !current)}
+                  title={isRecordsLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
+                  className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                    isRecordsLiteView
+                      ? 'bg-brand-500/20 text-brand-200'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                    <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  <span>Lite View</span>
+                  <span className="sr-only">{isRecordsLiteView ? 'aktif' : 'nonaktif'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={clearRecordFilters}
                   disabled={
                     !recordSearch
@@ -2439,7 +2823,7 @@ export default function PerformanceAnalysisPage() {
                 <table className="w-full min-w-[2800px] text-left text-xs">
                   <thead className="sticky top-0 bg-slate-900 text-slate-300">
                     <tr>
-                      {RECORD_COLUMNS.map((column) => {
+                      {visibleRecordColumns.map((column) => {
                         const active = recordSort.key === column.key;
                         const numeric = NUMERIC_RECORD_COLUMNS.has(column.key);
                         const directionLabel = numeric
@@ -2469,7 +2853,7 @@ export default function PerformanceAnalysisPage() {
                       })}
                     </tr>
                     <tr className="border-t border-slate-700">
-                      {RECORD_COLUMNS.map((column) => {
+                      {visibleRecordColumns.map((column) => {
                         const options = recordData.filter_options[column.key];
                         const range = recordData.numeric_ranges[column.key];
                         if (options) {
@@ -2553,7 +2937,7 @@ export default function PerformanceAnalysisPage() {
                     {recordData.records.length ? (
                       recordData.records.map((record) => (
                         <tr key={record.nip} className="hover:bg-slate-800/50">
-                          {RECORD_COLUMNS.map((column) => (
+                          {visibleRecordColumns.map((column) => (
                             <td key={column.key} className="max-w-64 px-3 py-2.5 text-slate-300">
                               {formatRecordValue(record[column.key])}
                             </td>
@@ -2562,7 +2946,7 @@ export default function PerformanceAnalysisPage() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={RECORD_COLUMNS.length} className="px-4 py-8 text-center text-slate-400">
+                        <td colSpan={visibleRecordColumns.length} className="px-4 py-8 text-center text-slate-400">
                           Tidak ada pegawai yang cocok dengan filter.
                         </td>
                       </tr>

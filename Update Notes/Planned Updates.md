@@ -16,11 +16,8 @@
 - Preserve `NKP Awal` and `NKP Akhir` as supplied by the validated full-data source; the source values are the baseline for analysis.
 - Recalculate `NKP Akhir` from the preserved `NKP Awal` and `NKO` only when a validated adjustment upload is applied.
 - Do not change NKO when adjustment values are uploaded.
-- Calculate the weighted base for NKP Akhir:
-  - If `NKO > NKP Awal`: `0.10 × NKO + 0.90 × NKP Awal`
-  - If `NKO < NKP Awal`: `0.70 × NKO + 0.30 × NKP Awal`
-  - If they are equal, either branch produces the same base.
-- Calculate `NKP Akhir = weighted base + Nilai Koreksi + Nilai Hukuman Disiplin + Nilai Dampak Pelanggaran Disiplin`.
+- Calculate the adjusted base as `NKP Awal - abs(Nilai Hukuman Disiplin) - abs(Nilai Dampak Pelanggaran Disiplin) + Nilai Koreksi`; penalty deductions reduce the score regardless of their stored/input sign.
+- If the adjusted base is greater than NKO, calculate `NKP Akhir = 0.70 × adjusted base + 0.30 × NKO`; otherwise calculate `NKP Akhir = 0.90 × adjusted base + 0.10 × NKO`.
 - The adjustments apply to NKP Akhir, not to the imported NKP Awal. Nilai Dampak Perilaku is stored and adjustable but is not included in the NKP Akhir formula.
 - Keep full precision in calculations; round to two decimal places for display/export.
 - Preserve `Rating Hasil Kerja`, `Rating Perilaku Kerja`, and `Predikat Kinerja` from the full upload. Calculate a separate `Status` from NKP Akhir:

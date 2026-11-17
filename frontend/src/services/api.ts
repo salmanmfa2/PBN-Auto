@@ -33,6 +33,9 @@ import type {
   PerformanceRecord,
   PerformanceRecordsResponse,
   PerformanceEmployeeSource,
+  PerformanceCorrectionSyncPreview,
+  PerformanceCorrectionSyncResult,
+  PerformanceCorrectionSourceYear,
   PerformanceUploadValidation,
   ThemeName,
   ChatMessage,
@@ -499,11 +502,17 @@ export async function replacePerformanceFullData(
   }
 }
 
-export async function downloadPerformanceAdjustmentTemplate(): Promise<Blob> {
+export async function syncPerformanceCorrections(
+  period: string,
+  sourceYear: number,
+  sourceTw: number,
+  conflictResolutions: Record<string, string>,
+): Promise<PerformanceCorrectionSyncResult> {
   try {
-    const { data } = await api.get<Blob>(
-      '/performance/adjustments/template',
-      { responseType: 'blob' },
+    const { data } = await api.post<PerformanceCorrectionSyncResult>(
+      '/performance/adjustments/sync',
+      { conflict_resolutions: conflictResolutions },
+      { params: { period, source_year: sourceYear, source_tw: sourceTw } },
     );
     return data;
   } catch (error) {
@@ -511,15 +520,10 @@ export async function downloadPerformanceAdjustmentTemplate(): Promise<Blob> {
   }
 }
 
-export async function validatePerformanceAdjustments(
-  file: File,
-  period: string,
-): Promise<PerformanceUploadValidation> {
+export async function getPerformanceCorrectionSourcePeriods(): Promise<PerformanceCorrectionSourceYear[]> {
   try {
-    const { data } = await api.post<PerformanceUploadValidation>(
-      '/performance/adjustments/validate',
-      createPerformanceUpload(file, period),
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+    const { data } = await api.get<PerformanceCorrectionSourceYear[]>(
+      '/performance/adjustments/source-periods',
     );
     return data;
   } catch (error) {
@@ -527,15 +531,16 @@ export async function validatePerformanceAdjustments(
   }
 }
 
-export async function replacePerformanceAdjustments(
-  file: File,
+export async function checkPerformanceCorrections(
   period: string,
-): Promise<PerformanceUploadValidation> {
+  sourceYear: number,
+  sourceTw: number,
+): Promise<PerformanceCorrectionSyncPreview> {
   try {
-    const { data } = await api.post<PerformanceUploadValidation>(
-      '/performance/adjustments/replace',
-      createPerformanceUpload(file, period),
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+    const { data } = await api.post<PerformanceCorrectionSyncPreview>(
+      '/performance/adjustments/check',
+      null,
+      { params: { period, source_year: sourceYear, source_tw: sourceTw } },
     );
     return data;
   } catch (error) {

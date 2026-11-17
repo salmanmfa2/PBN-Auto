@@ -16,6 +16,10 @@ from app.schemas.performance_kinerja import (
     PerformanceInsightUpdate,
     PerformanceRecordsResponse,
     PerformanceEmployeeSource,
+    PerformanceCorrectionSourceYear,
+    PerformanceCorrectionSyncRequest,
+    PerformanceCorrectionSyncPreview,
+    PerformanceCorrectionSyncResult,
     PerformanceUploadValidation,
 )
 from app.services import performance_kinerja_service as service
@@ -241,43 +245,64 @@ async def replace_full_performance_data(
         raise _database_error("Could not replace the performance dataset for that period.") from exc
 
 
-@router.get("/adjustments/template")
-def download_adjustment_template(_: User = Depends(get_super_admin)):
-    content = service.create_adjustment_template()
-    return StreamingResponse(
-        BytesIO(content),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="template-penyesuaian-kinerja.xlsx"'},
-    )
+@router.get(
+    "/adjustments/source-periods",
+    response_model=list[PerformanceCorrectionSourceYear],
+)
+def get_performance_correction_source_periods(
+    _: User = Depends(get_super_admin),
+):
+    try:
+        return service.get_available_epride_source_periods()
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise _database_error(
+            "Could not load available EPRIDE source periods. Check its database configuration and connection."
+        ) from exc
 
 
-@router.post("/adjustments/validate", response_model=PerformanceUploadValidation)
-async def validate_performance_adjustments(
-    file: UploadFile = File(...),
-    period: str = Form(...),
+@router.post("/adjustments/sync", response_model=PerformanceCorrectionSyncResult)
+def sync_performance_adjustments(
+    request: PerformanceCorrectionSyncRequest,
+    period: str = Query(..., min_length=7, max_length=7),
+    source_year: int = Query(..., ge=2000, le=2100),
+    source_tw: int = Query(..., ge=1, le=4),
     _: User = Depends(get_super_admin),
     db: Session = Depends(get_history_db),
 ):
-    content = await _read_upload(file, ".xlsx")
     try:
-        return service.validate_adjustment_upload(db, content, period)
+        return service.sync_adjustments_from_epride(
+            db,
+            period,
+            source_year,
+            source_tw,
+            request.conflict_resolutions,
+        )
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
-        raise _database_error("Could not validate performance adjustments.") from exc
+        raise _database_error(
+            "Could not sync performance corrections from EPRIDE. Check its database configuration and connection."
+        ) from exc
 
 
-@router.post("/adjustments/replace", response_model=PerformanceUploadValidation)
-async def replace_performance_adjustments(
-    file: UploadFile = File(...),
-    period: str = Form(...),
+@router.post("/adjustments/check", response_model=PerformanceCorrectionSyncPreview)
+def check_performance_adjustments(
+    period: str = Query(..., min_length=7, max_length=7),
+    source_year: int = Query(..., ge=2000, le=2100),
+    source_tw: int = Query(..., ge=1, le=4),
     _: User = Depends(get_super_admin),
     db: Session = Depends(get_history_db),
 ):
-    content = await _read_upload(file, ".xlsx")
     try:
-        return service.replace_adjustments(db, content, period)
+        return service.check_adjustments_from_epride(
+            db,
+            period,
+            source_year,
+            source_tw,
+        )
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
-        raise _database_error("Could not apply performance adjustments.") from exc
+        raise _database_error(
+            "Could not check EPRIDE corrections. Check its database configuration and connection."
+        ) from exc

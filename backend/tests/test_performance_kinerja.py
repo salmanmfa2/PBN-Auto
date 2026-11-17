@@ -5,12 +5,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_super_admin
 from app.history_db import Base, _migrate_performance_schema, get_history_db
 from app.models.performance_kinerja import (
     PerformanceKinerjaDataset,
@@ -73,18 +73,6 @@ def full_csv(
     writer.writerow(service.FULL_DATA_HEADERS)
     writer.writerow(row)
     return output.getvalue().encode("utf-8")
-
-
-def adjustment_xlsx(rows: list[list[object]]) -> bytes:
-    workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.append(service.ADJUSTMENT_HEADERS)
-    for row in rows:
-        worksheet.append(row)
-    stream = BytesIO()
-    workbook.save(stream)
-    workbook.close()
-    return stream.getvalue()
 
 
 class PerformanceKinerjaServiceTests(unittest.TestCase):
@@ -615,64 +603,291 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, f"NIP {NIP}.*Nilai Koreksi"):
             service._read_full_csv(full_csv(koreksi="21"))
 
-    def test_adjustment_blanks_preserve_values_and_recalculate_final_score(self) -> None:
-        self.import_active_dataset()
-        service.replace_adjustments(
-            self.session,
-            adjustment_xlsx([[NIP, -3, None, -4, -1]]),
-            "Q3-2026",
+    def test_epride_filter_ignores_long_unit_ids_and_resolves_zero_duplicates(self) -> None:
+        other_nip = "223456789012345678"
+        result = service._prepare_epride_corrections(
+            [
+                {
+                    "form_id": 1,
+                    "id_unit": "1234567890123",
+                    "nip": NIP,
+                    "nilai_koreksi": "0",
+                },
+                {
+                    "form_id": 2,
+                    "id_unit": "1234567890123",
+                    "nip": NIP,
+                    "nilai_koreksi": "-3",
+                },
+                {
+                    "form_id": 3,
+                    "id_unit": "1234567890123",
+                    "nip": other_nip,
+                    "nilai_koreksi": None,
+                },
+                {
+                    "id_unit": "123456789012345",
+                    "nip": "323456789012345678",
+                    "nilai_koreksi": "115",
+                },
+            ],
+            2026,
+            2,
         )
-        record = self.get_record(NIP, "Q3-2026")
-        self.assertEqual(record.nko, 90)
-        self.assertEqual(record.nkp_awal, 85)
-        self.assertEqual(record.nilai_hukuman_disiplin, -3)
-        self.assertEqual(record.nilai_dampak_pelanggaran_disiplin, -2)
-        self.assertEqual(record.nilai_dampak_perilaku, -4)
-        self.assertEqual(record.nilai_koreksi, -1)
-        self.assertEqual(record.nkp_akhir, 79.5)
 
-    def test_adjustment_positive_penalties_are_normalized(self) -> None:
-        self.import_active_dataset()
-        content = adjustment_xlsx([[NIP, 3, 5, 6, 1]])
-        validation = service.validate_adjustment_upload(self.session, content, "Q3-2026")
-        self.assertEqual(validation["normalized_penalty_count"], 3)
-        result = service.replace_adjustments(self.session, content, "Q3-2026")
-        self.assertEqual(result["normalized_penalty_count"], 3)
-        record = self.get_record(NIP, "Q3-2026")
-        self.assertEqual(record.nilai_hukuman_disiplin, -3)
-        self.assertEqual(record.nilai_dampak_pelanggaran_disiplin, -5)
-        self.assertEqual(record.nilai_dampak_perilaku, -6)
-        self.assertEqual(record.nilai_koreksi, 1)
-
-    def test_adjustment_unknown_duplicate_and_wrong_period_do_not_change_rows(self) -> None:
-        self.import_active_dataset()
-        original = self.get_record(NIP, "Q3-2026").nkp_akhir
-        with self.assertRaisesRegex(ValueError, "Unknown NIPs"):
-            service.replace_adjustments(
-                self.session,
-                adjustment_xlsx([["999999999999999999", -3, None, None, None]]),
-                "Q3-2026",
-            )
-        duplicate_file = adjustment_xlsx([[NIP, -3, None, None, None], [NIP, -4, None, None, None]])
-        with self.assertRaisesRegex(ValueError, "Duplicate NIPs"):
-            service.replace_adjustments(self.session, duplicate_file, "Q3-2026")
-        with self.assertRaisesRegex(ValueError, "There is no performance dataset for Q4-2026"):
-            service.replace_adjustments(
-                self.session,
-                adjustment_xlsx([[NIP, -3, None, None, None]]),
-                "Q4-2026",
-            )
-        self.assertEqual(self.get_record(NIP, "Q3-2026").nkp_akhir, original)
-
-    def test_template_stores_nip_as_text(self) -> None:
-        workbook = load_workbook(BytesIO(service.create_adjustment_template()))
-        self.addCleanup(workbook.close)
-        worksheet = workbook.active
         self.assertEqual(
-            [cell.value for cell in worksheet[1]],
-            list(service.ADJUSTMENT_HEADERS),
+            result,
+            {
+                "corrections": {
+                    NIP: service.Decimal("-3"),
+                    other_nip: service.ZERO,
+                },
+                "conflicts": [],
+                "source_row_count": 3,
+                "source_nip_count": 2,
+                "duplicate_nip_group_count": 1,
+                "ignored_unit_row_count": 1,
+            },
         )
-        self.assertEqual(worksheet["A2"].number_format, "@")
+
+    def test_available_epride_source_periods_are_grouped_and_sorted(self) -> None:
+        with patch.object(
+            service,
+            "fetch_epride_available_source_periods",
+            return_value=[
+                {"year": 2025, "tw": 4},
+                {"year": 2026, "tw": 3},
+                {"year": 2026, "tw": 2},
+            ],
+        ):
+            result = service.get_available_epride_source_periods()
+
+        self.assertEqual(
+            result,
+            [
+                {"year": 2026, "available_tw": [2, 3]},
+                {"year": 2025, "available_tw": [4]},
+            ],
+        )
+
+    def test_epride_sync_updates_matched_and_zeroes_unmatched_records(self) -> None:
+        other_nip = "223456789012345678"
+        self.import_active_dataset()
+        dataset = self.get_dataset("Q3-2026")
+        self.session.add(
+            PerformanceKinerjaRecord(
+                dataset_id=dataset.id,
+                nip=other_nip,
+                nama="Pegawai Tidak Cocok",
+                nkp_awal=service.Decimal("85"),
+                nilai_hukuman_disiplin=service.ZERO,
+                nilai_dampak_pelanggaran_disiplin=service.ZERO,
+                nilai_koreksi=service.Decimal("7"),
+                nko=service.Decimal("90"),
+                nkp_akhir=service.Decimal("90"),
+            )
+        )
+        dataset.row_count = 2
+        self.session.commit()
+
+        with patch.object(
+            service,
+            "fetch_submitted_correction_rows",
+            return_value=[
+                {
+                    "form_id": 17,
+                    "id_unit": "1234567890123",
+                    "nip": NIP,
+                    "nilai_koreksi": "2",
+                }
+            ],
+        ) as fetch_rows:
+            result = service.sync_adjustments_from_epride(
+                self.session,
+                "Q3-2026",
+                2026,
+                2,
+                {},
+            )
+        fetch_rows.assert_called_once_with(year=2026, quarter=2)
+
+        matched = self.get_record(NIP, "Q3-2026")
+        unmatched = self.get_record(other_nip, "Q3-2026")
+        self.assertEqual(result["row_count"], 2)
+        self.assertEqual(result["source_year"], 2026)
+        self.assertEqual(result["source_tw"], 2)
+        self.assertEqual(result["source_row_count"], 1)
+        self.assertEqual(result["matched_count"], 1)
+        self.assertEqual(result["unmatched_count"], 1)
+        self.assertEqual(matched.nilai_koreksi, service.Decimal("2"))
+        self.assertEqual(matched.nkp_akhir, service.Decimal("84.6"))
+        self.assertEqual(unmatched.nilai_koreksi, service.ZERO)
+        self.assertEqual(unmatched.nkp_akhir, service.Decimal("85.5"))
+
+    def test_epride_check_reports_sync_plan_without_changing_csv_values(self) -> None:
+        self.import_active_dataset()
+        record = self.get_record(NIP, "Q3-2026")
+        original_correction = record.nilai_koreksi
+        original_score = record.nkp_akhir
+        with patch.object(
+            service,
+            "fetch_submitted_correction_rows",
+            return_value=[
+                {
+                    "form_id": 18,
+                    "id_unit": "1234567890123",
+                    "nip": NIP,
+                    "nilai_koreksi": "-2",
+                }
+            ],
+        ):
+            preview = service.check_adjustments_from_epride(
+                self.session,
+                "Q3-2026",
+                2025,
+                4,
+            )
+
+        self.assertEqual(preview["period"], "Q3-2026")
+        self.assertEqual(preview["source_year"], 2025)
+        self.assertEqual(preview["source_tw"], 4)
+        self.assertEqual(preview["source_row_count"], 1)
+        self.assertEqual(preview["source_nip_count"], 1)
+        self.assertEqual(preview["matched_count"], 1)
+        self.assertEqual(preview["unmatched_count"], 0)
+        self.assertEqual(record.nilai_koreksi, original_correction)
+        self.assertEqual(record.nkp_akhir, original_score)
+
+    def test_nkp_akhir_formula_weights_adjusted_base_against_nko(self) -> None:
+        nko_above_adjusted_base = service.Decimal("98")
+
+        self.assertEqual(
+            service.calculate_nkp_akhir(
+                service.Decimal("100"),
+                service.Decimal("90"),
+                service.Decimal("-5"),
+                service.Decimal("-2"),
+                service.Decimal("3"),
+            ),
+            service.Decimal("94.20"),
+        )
+        self.assertEqual(
+            service.calculate_nkp_akhir(
+                service.Decimal("100"),
+                nko_above_adjusted_base,
+                service.Decimal("5"),
+                service.Decimal("2"),
+                service.Decimal("3"),
+            ),
+            service.Decimal("96.20"),
+        )
+
+    def test_epride_conflicts_require_and_apply_per_nip_choices(self) -> None:
+        self.import_active_dataset()
+        record = self.get_record(NIP, "Q3-2026")
+        original_correction = record.nilai_koreksi
+        original_score = record.nkp_akhir
+        with patch.object(
+            service,
+            "fetch_submitted_correction_rows",
+            return_value=[
+                {
+                    "form_id": 21,
+                    "submitted_at": "2026-04-15 10:30:00",
+                    "id_unit": "1234567890123",
+                    "nip": NIP,
+                    "nilai_koreksi": "1",
+                },
+                {
+                    "form_id": 22,
+                    "submitted_at": "2026-04-16 10:30:00",
+                    "id_unit": "1234567890123",
+                    "nip": NIP,
+                    "nilai_koreksi": "-2",
+                },
+            ],
+        ):
+            preview = service.check_adjustments_from_epride(
+                self.session,
+                "Q3-2026",
+                2026,
+                2,
+            )
+            self.assertEqual(len(preview["conflicts"]), 1)
+            self.assertEqual(preview["conflicts"][0]["nip"], NIP)
+            self.assertEqual(
+                [candidate["value"] for candidate in preview["conflicts"][0]["candidates"]],
+                ["-2", "1"],
+            )
+            chosen_candidate = next(
+                candidate
+                for candidate in preview["conflicts"][0]["candidates"]
+                if candidate["value"] == "-2"
+            )
+            self.assertEqual(
+                chosen_candidate["sources"],
+                [
+                    {
+                        "form_id": "22",
+                        "id_unit": "1234567890123",
+                        "submitted_at": "2026-04-16 10:30:00",
+                    },
+                ],
+            )
+            with self.assertRaisesRegex(ValueError, "Choose exactly one"):
+                service.sync_adjustments_from_epride(
+                    self.session,
+                    "Q3-2026",
+                    2026,
+                    2,
+                    {},
+                )
+            self.assertEqual(record.nilai_koreksi, original_correction)
+            self.assertEqual(record.nkp_akhir, original_score)
+
+            result = service.sync_adjustments_from_epride(
+                self.session,
+                "Q3-2026",
+                2026,
+                2,
+                {NIP: "-2"},
+            )
+
+        self.assertEqual(result["resolved_conflict_count"], 1)
+        self.assertEqual(self.get_record(NIP, "Q3-2026").nilai_koreksi, service.Decimal("-2"))
+
+    def test_epride_sync_rejects_stale_conflict_choices(self) -> None:
+        self.import_active_dataset()
+        with patch.object(
+            service,
+            "fetch_submitted_correction_rows",
+            return_value=[
+                {"form_id": 21, "id_unit": "1234567890123", "nip": NIP, "nilai_koreksi": "1"},
+                {"form_id": 22, "id_unit": "1234567890123", "nip": NIP, "nilai_koreksi": "-2"},
+            ],
+        ):
+            with self.assertRaisesRegex(ValueError, "no longer matches"):
+                service.sync_adjustments_from_epride(
+                    self.session,
+                    "Q3-2026",
+                    2026,
+                    2,
+                    {NIP: "3"},
+                )
+
+    def test_epride_sync_blocks_out_of_range_values_and_empty_filtered_sources(self) -> None:
+        with self.assertRaisesRegex(ValueError, "outside -20 to 20"):
+            service._prepare_epride_corrections(
+                [{"id_unit": "1234567890123", "nip": NIP, "nilai_koreksi": "20.01"}],
+                2026,
+                2,
+            )
+        with self.assertRaisesRegex(ValueError, "No submitted EPRIDE corrections"):
+            service._prepare_epride_corrections(
+                [{"id_unit": "123456789012345", "nip": NIP, "nilai_koreksi": "0"}],
+                2026,
+                3,
+            )
 
     def test_analysis_uses_employee_reference_snapshot_and_counts_nonzero_penalties(self) -> None:
         self.import_active_dataset()
@@ -962,11 +1177,25 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         service.get_dashboard(self.session, None, ["III"])
         self.employee_lookup.assert_not_called()
 
-        service.replace_adjustments(
-            self.session,
-            adjustment_xlsx([[NIP, -3, None, None, None]]),
-            "Q3-2026",
-        )
+        with patch.object(
+            service,
+            "fetch_submitted_correction_rows",
+            return_value=[
+                {
+                    "form_id": 25,
+                    "id_unit": "1234567890123",
+                    "nip": NIP,
+                    "nilai_koreksi": "-3",
+                }
+            ],
+        ):
+            service.sync_adjustments_from_epride(
+                self.session,
+                "Q3-2026",
+                2026,
+                2,
+                {},
+            )
         service.get_dashboard(self.session, None, [])
         self.employee_lookup.assert_not_called()
 
@@ -1063,14 +1292,84 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
             auth_level=2,
         )
         try:
-            response = TestClient(app).post(
+            client = TestClient(app)
+            response = client.post(
                 "/performance/full-data/validate",
                 data={"period": "Q3-2026"},
                 files={"file": ("data.csv", full_csv(), "text/csv")},
             )
+            sync_response = client.post(
+                "/performance/adjustments/sync",
+                params={"period": "Q3-2026", "source_year": 2026, "source_tw": 2},
+                json={},
+            )
+            check_response = client.post(
+                "/performance/adjustments/check",
+                params={"period": "Q3-2026", "source_year": 2026, "source_tw": 2},
+            )
+            source_periods_response = client.get("/performance/adjustments/source-periods")
         finally:
             app.dependency_overrides.pop(get_current_user, None)
         self.assertEqual(response.status_code, 403)
+        self.assertEqual(sync_response.status_code, 403)
+        self.assertEqual(check_response.status_code, 403)
+        self.assertEqual(source_periods_response.status_code, 403)
+
+    def test_super_admin_can_check_and_sync_performance_corrections(self) -> None:
+        app.dependency_overrides[get_super_admin] = lambda: SimpleNamespace(
+            user="superadmin",
+            name="Super Admin",
+            auth_level=3,
+        )
+
+        def override_history_db():
+            yield None
+
+        app.dependency_overrides[get_history_db] = override_history_db
+        preview = {
+            "period": "Q3-2026",
+            "source_year": 2026,
+            "source_tw": 2,
+            "row_count": 10,
+            "source_row_count": 5,
+            "source_nip_count": 5,
+            "matched_count": 5,
+            "unmatched_count": 5,
+            "duplicate_nip_group_count": 0,
+            "ignored_unit_row_count": 2,
+            "source_only_nip_count": 0,
+            "conflicts": [],
+        }
+        result = {**preview, "resolved_conflict_count": 0}
+        try:
+            with (
+                patch.object(service, "get_available_epride_source_periods", return_value=[
+                    {"year": 2026, "available_tw": [2]},
+                ]),
+                patch.object(service, "check_adjustments_from_epride", return_value=preview),
+                patch.object(service, "sync_adjustments_from_epride", return_value=result),
+            ):
+                client = TestClient(app)
+                source_periods_response = client.get("/performance/adjustments/source-periods")
+                check_response = client.post(
+                    "/performance/adjustments/check",
+                    params={"period": "Q3-2026", "source_year": 2026, "source_tw": 2},
+                )
+                sync_response = client.post(
+                    "/performance/adjustments/sync",
+                    params={"period": "Q3-2026", "source_year": 2026, "source_tw": 2},
+                    json={"conflict_resolutions": {}},
+                )
+        finally:
+            app.dependency_overrides.pop(get_super_admin, None)
+            app.dependency_overrides.pop(get_history_db, None)
+
+        self.assertEqual(check_response.status_code, 200)
+        self.assertEqual(sync_response.status_code, 200)
+        self.assertEqual(source_periods_response.status_code, 200)
+        self.assertEqual(source_periods_response.json(), [{"year": 2026, "available_tw": [2]}])
+        self.assertEqual(check_response.json(), preview)
+        self.assertEqual(sync_response.json(), result)
 
     def test_guest_can_read_empty_analysis_and_records(self) -> None:
         test_engine = create_engine(

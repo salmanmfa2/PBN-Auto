@@ -8,11 +8,9 @@ from io import BytesIO, StringIO
 from threading import RLock
 from time import monotonic
 from typing import Any
-from zipfile import BadZipFile
 
-from openpyxl import Workbook, load_workbook
+from openpyxl import Workbook
 from openpyxl.styles import Font
-from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.utils import get_column_letter
 from sqlalchemy import bindparam, delete, func, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,6 +21,10 @@ from app.models.performance_kinerja import (
     PerformanceKinerjaDataset,
     PerformanceKinerjaInsight,
     PerformanceKinerjaRecord,
+)
+from app.repositories.epride_performance_repository import (
+    fetch_available_source_periods as fetch_epride_available_source_periods,
+    fetch_submitted_correction_rows,
 )
 
 
@@ -46,13 +48,6 @@ FULL_DATA_HEADERS = (
     "Rating Hasil Kerja",
     "Rating Perilaku Kerja",
     "Predikat Kinerja",
-)
-ADJUSTMENT_HEADERS = (
-    "NIP",
-    "Nilai Hukuman Disiplin",
-    "Nilai Dampak Pelanggaran Disiplin",
-    "Nilai Dampak Perilaku",
-    "Nilai Koreksi",
 )
 PERIOD_PATTERN = re.compile(r"Q[1-4]-\d{4}")
 MAX_NUMBER = Decimal("120")
@@ -333,15 +328,20 @@ def calculate_nkp_akhir(
 ) -> Decimal | None:
     if nkp_awal is None or nko is None:
         return None
-    if nko > nkp_awal:
-        base = Decimal("0.10") * nko + Decimal("0.90") * nkp_awal
-    else:
-        base = Decimal("0.70") * nko + Decimal("0.30") * nkp_awal
-    return (
-        base
-        + (nilai_hukuman_disiplin or ZERO)
-        + (nilai_dampak_pelanggaran_disiplin or ZERO)
+    adjusted_nkp_awal = (
+        nkp_awal
+        - abs(nilai_hukuman_disiplin or ZERO)
+        - abs(nilai_dampak_pelanggaran_disiplin or ZERO)
         + (nilai_koreksi or ZERO)
+    )
+    if adjusted_nkp_awal > nko:
+        return (
+            Decimal("0.70") * adjusted_nkp_awal
+            + Decimal("0.30") * nko
+        )
+    return (
+        Decimal("0.90") * adjusted_nkp_awal
+        + Decimal("0.10") * nko
     )
 
 
@@ -636,183 +636,266 @@ def replace_full_upload(
     }
 
 
-def _read_adjustment_xlsx(content: bytes) -> list[dict[str, Any]]:
-    try:
-        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
-    except (BadZipFile, InvalidFileException, OSError, ValueError) as exc:
-        raise ValueError("The adjustment file must be a valid .xlsx workbook.") from exc
+def _prepare_epride_corrections(
+    rows: list[dict[str, object]],
+    source_year: int,
+    source_tw: int,
+) -> dict[str, Any]:
+    grouped: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    ignored_unit_row_count = 0
+    out_of_range_row_count = 0
 
-    try:
-        worksheet = workbook.active
-        rows = worksheet.iter_rows(values_only=True)
-        header_row = next(rows, None)
-        if not header_row:
-            raise ValueError("The adjustment workbook must contain a header row.")
-        headers = [str(value or "").strip() for value in header_row]
-        if len(headers) != len(set(headers)):
-            raise ValueError("The adjustment workbook contains duplicate column names.")
-        if set(headers) != set(ADJUSTMENT_HEADERS) or len(headers) != len(ADJUSTMENT_HEADERS):
-            missing = [header for header in ADJUSTMENT_HEADERS if header not in headers]
-            extra = [header for header in headers if header not in ADJUSTMENT_HEADERS]
-            details = []
-            if missing:
-                details.append(f"Missing columns: {', '.join(missing)}")
-            if extra:
-                details.append(f"Unexpected columns: {', '.join(extra)}")
-            raise ValueError("Adjustment columns do not match. " + ". ".join(details) + ".")
+    for row in rows:
+        unit_id = str(row.get("id_unit") or "").strip()
+        if not re.fullmatch(r"[0-9]{13}", unit_id):
+            ignored_unit_row_count += 1
+            continue
 
-        positions = {header: index for index, header in enumerate(headers)}
-        parsed: list[dict[str, Any]] = []
-        errors: list[str] = []
-        for row_number, cells in enumerate(rows, start=2):
-            values = list(cells)
-            if not any(value is not None and str(value).strip() for value in values):
-                continue
-            nip = normalize_nip(values[positions["NIP"]] if positions["NIP"] < len(values) else None)
-            if not nip:
-                errors.append(f"row {row_number}: NIP must contain 16 or 18 digits.")
-                continue
-            record: dict[str, Any] = {"nip": nip, "_normalized_penalty_count": 0}
-            row_errors: list[str] = []
-            for field in ADJUSTMENT_HEADERS[1:]:
-                raw = values[positions[field]] if positions[field] < len(values) else None
-                try:
-                    value = _parse_decimal(
-                        raw,
-                        field=field,
-                        row_number=row_number,
-                        nip=nip,
-                    )
-                    if field in _PENALTY_FIELDS:
-                        value, normalized = _normalize_penalty(value)
-                        record["_normalized_penalty_count"] += int(normalized)
-                    _validate_numeric_range(field, value, row_number=row_number, nip=nip)
-                    record[_NUMERIC_FIELDS[field]] = value
-                except ValueError as exc:
-                    row_errors.append(str(exc))
-            if not any(record.get(_NUMERIC_FIELDS[field]) is not None for field in ADJUSTMENT_HEADERS[1:]):
-                row_errors.append(f"row {row_number}, NIP {nip}: provide at least one adjustment value.")
-            if row_errors:
-                errors.extend(row_errors)
-                continue
-            parsed.append(record)
+        nip = normalize_nip(row.get("nip"))
+        if nip is None:
+            raise ValueError("An eligible EPRIDE correction row has an invalid NIP.")
 
-        seen: set[str] = set()
-        duplicates: set[str] = set()
-        for record in parsed:
-            if record["nip"] in seen:
-                duplicates.add(record["nip"])
-            seen.add(record["nip"])
-        if duplicates:
-            errors.append("Duplicate NIPs: " + ", ".join(sorted(duplicates)) + ".")
-        if not parsed:
-            errors.append("The adjustment workbook must contain at least one data row.")
-        if errors:
-            raise ValueError("Adjustment validation failed: " + " ".join(errors[:30]))
-        return parsed
-    finally:
-        workbook.close()
+        raw_value = row.get("nilai_koreksi")
+        try:
+            value = ZERO if raw_value is None else Decimal(str(raw_value).strip())
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError("An eligible EPRIDE correction is not a valid number.") from exc
+        if not value.is_finite():
+            raise ValueError("An eligible EPRIDE correction must be finite.")
+        if not -MAX_ADJUSTMENT <= value <= MAX_ADJUSTMENT:
+            out_of_range_row_count += 1
+        submitted_at = row.get("submitted_at")
+        if hasattr(submitted_at, "isoformat"):
+            submitted_at = submitted_at.isoformat()
+        grouped[nip].append(
+            {
+                "value": value,
+                "form_id": str(row["form_id"]) if row.get("form_id") is not None else "",
+                "id_unit": unit_id,
+                "submitted_at": str(submitted_at) if submitted_at is not None else None,
+            }
+        )
+
+    if out_of_range_row_count:
+        raise ValueError(
+            f"{out_of_range_row_count} EPRIDE corrections are outside -20 to 20; "
+            "no data was changed."
+        )
+    if not grouped:
+        raise ValueError(
+            "No submitted EPRIDE corrections with a 13-digit idUnit were found for "
+            f"{source_year} TW{source_tw}."
+        )
+
+    corrections: dict[str, Decimal] = {}
+    duplicate_nip_group_count = 0
+    conflicts: list[dict[str, Any]] = []
+    for nip, source_rows in grouped.items():
+        if len(source_rows) > 1:
+            duplicate_nip_group_count += 1
+        nonzero_values = sorted({
+            row["value"] for row in source_rows if row["value"] != ZERO
+        })
+        if len(nonzero_values) > 1:
+            candidates_by_value: defaultdict[Decimal, list[dict[str, str | None]]] = defaultdict(list)
+            for row in source_rows:
+                value = row["value"]
+                if value == ZERO:
+                    continue
+                source_detail = {
+                    "form_id": row["form_id"],
+                    "id_unit": row["id_unit"],
+                    "submitted_at": row["submitted_at"],
+                }
+                if source_detail not in candidates_by_value[value]:
+                    candidates_by_value[value].append(source_detail)
+            conflicts.append(
+                {
+                    "nip": nip,
+                    "candidates": [
+                        {
+                            "value": str(value),
+                            "sources": candidates_by_value[value],
+                        }
+                        for value in nonzero_values
+                    ],
+                }
+            )
+            continue
+        corrections[nip] = next(iter(nonzero_values), ZERO)
+
+    return {
+        "corrections": corrections,
+        "conflicts": conflicts,
+        "source_row_count": sum(len(source_rows) for source_rows in grouped.values()),
+        "source_nip_count": len(grouped),
+        "duplicate_nip_group_count": duplicate_nip_group_count,
+        "ignored_unit_row_count": ignored_unit_row_count,
+    }
 
 
-def _validate_adjustment_target(
+def get_available_epride_source_periods() -> list[dict[str, Any]]:
+    source_periods = fetch_epride_available_source_periods()
+    available_tw_by_year: defaultdict[int, set[int]] = defaultdict(set)
+    for source_period in source_periods:
+        try:
+            source_year = int(source_period["year"])
+            source_tw = int(source_period["tw"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("EPRIDE returned an invalid source year or TW.") from exc
+        if not 2000 <= source_year <= 2100 or source_tw not in {1, 2, 3, 4}:
+            raise RuntimeError("EPRIDE returned an unsupported source year or TW.")
+        available_tw_by_year[source_year].add(source_tw)
+
+    return [
+        {"year": source_year, "available_tw": sorted(available_tw)}
+        for source_year, available_tw in sorted(available_tw_by_year.items(), reverse=True)
+    ]
+
+
+def _load_epride_correction_sync_data(
     db: Session,
     period: str,
-    records: list[dict[str, Any]],
-) -> PerformanceKinerjaDataset:
+    source_year: int,
+    source_tw: int,
+) -> dict[str, Any]:
     normalized_period = validate_period(period)
+    if not 2000 <= source_year <= 2100:
+        raise ValueError("EPRIDE source year must be between 2000 and 2100.")
+    if source_tw not in {1, 2, 3, 4}:
+        raise ValueError("EPRIDE source TW must be between 1 and 4.")
+
     dataset = db.scalar(
         select(PerformanceKinerjaDataset).where(
             PerformanceKinerjaDataset.period == normalized_period
         )
     )
     if dataset is None:
-        raise ValueError(f"There is no performance dataset for {normalized_period} to adjust.")
-    existing_nips = set(
-        db.scalars(
-            select(PerformanceKinerjaRecord.nip).where(
-                PerformanceKinerjaRecord.dataset_id == dataset.id,
-                PerformanceKinerjaRecord.nip.in_([record["nip"] for record in records]),
-            )
-        ).all()
-    )
-    unknown_nips = sorted(record["nip"] for record in records if record["nip"] not in existing_nips)
-    if unknown_nips:
-        raise ValueError(
-            "Unknown NIPs; no data was changed: " + ", ".join(unknown_nips[:30]) + "."
+        raise ValueError(f"There is no performance dataset for {normalized_period} to sync.")
+
+    records = db.scalars(
+        select(PerformanceKinerjaRecord).where(
+            PerformanceKinerjaRecord.dataset_id == dataset.id
         )
-    return dataset
+    ).all()
+    if not records:
+        raise ValueError(f"The performance dataset for {normalized_period} has no employee records.")
 
-
-def validate_adjustment_upload(db: Session, content: bytes, period: str) -> dict[str, Any]:
-    records = _read_adjustment_xlsx(content)
-    _validate_adjustment_target(db, period, records)
-    return {
-        "period": validate_period(period),
+    source_rows = fetch_submitted_correction_rows(
+        year=source_year,
+        quarter=source_tw,
+    )
+    source = _prepare_epride_corrections(source_rows, source_year, source_tw)
+    corrections = source["corrections"]
+    dataset_nips = {record.nip for record in records}
+    source_nips = set(corrections) | {conflict["nip"] for conflict in source["conflicts"]}
+    matched_count = len(dataset_nips & source_nips)
+    summary = {
+        "period": normalized_period,
+        "source_year": source_year,
+        "source_tw": source_tw,
         "row_count": len(records),
-        "unidentified_count": 0,
-        "normalized_penalty_count": sum(
-            record["_normalized_penalty_count"] for record in records
-        ),
+        "source_row_count": source["source_row_count"],
+        "source_nip_count": source["source_nip_count"],
+        "matched_count": matched_count,
+        "unmatched_count": len(records) - matched_count,
+        "duplicate_nip_group_count": source["duplicate_nip_group_count"],
+        "ignored_unit_row_count": source["ignored_unit_row_count"],
+        "source_only_nip_count": len(source_nips - dataset_nips),
+    }
+    return {
+        "records": records,
+        "source": source,
+        "summary": summary,
+        "preview": {**summary, "conflicts": source["conflicts"]},
     }
 
 
-def replace_adjustments(db: Session, content: bytes, period: str) -> dict[str, Any]:
-    records = _read_adjustment_xlsx(content)
-    normalized_period = validate_period(period)
-    try:
-        dataset = _validate_adjustment_target(db, normalized_period, records)
-        stored_records = {
-            record.nip: record
-            for record in db.scalars(
-                select(PerformanceKinerjaRecord).where(
-                    PerformanceKinerjaRecord.dataset_id == dataset.id,
-                    PerformanceKinerjaRecord.nip.in_([record["nip"] for record in records]),
-                )
-            ).all()
+def check_adjustments_from_epride(
+    db: Session,
+    period: str,
+    source_year: int,
+    source_tw: int,
+) -> dict[str, Any]:
+    return _load_epride_correction_sync_data(db, period, source_year, source_tw)["preview"]
+
+
+def _resolve_epride_correction_conflicts(
+    source: dict[str, Any],
+    resolutions: dict[str, str],
+) -> dict[str, Decimal]:
+    conflict_candidates = {
+        conflict["nip"]: {
+            Decimal(candidate["value"])
+            for candidate in conflict["candidates"]
         }
-        for update in records:
-            stored = stored_records[update["nip"]]
-            for field in ADJUSTMENT_HEADERS[1:]:
-                column = _NUMERIC_FIELDS[field]
-                if update[column] is not None:
-                    setattr(stored, column, update[column])
-            stored.nkp_akhir = calculate_nkp_akhir(
-                stored.nkp_awal,
-                stored.nko,
-                stored.nilai_hukuman_disiplin,
-                stored.nilai_dampak_pelanggaran_disiplin,
-                stored.nilai_koreksi,
+        for conflict in source["conflicts"]
+    }
+    if set(resolutions) != set(conflict_candidates):
+        raise ValueError(
+            "Choose exactly one EPRIDE correction for every conflicting NIP, then recheck before syncing."
+        )
+
+    corrections = dict(source["corrections"])
+    for nip, raw_value in resolutions.items():
+        try:
+            value = Decimal(raw_value)
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError("A conflict choice is not a valid correction value.") from exc
+        if value not in conflict_candidates[nip]:
+            raise ValueError(
+                "A conflict choice no longer matches the EPRIDE source; check the source again."
             )
+        corrections[nip] = value
+    return corrections
+
+
+def sync_adjustments_from_epride(
+    db: Session,
+    period: str,
+    source_year: int,
+    source_tw: int,
+    conflict_resolutions: dict[str, str],
+) -> dict[str, Any]:
+    sync_data = _load_epride_correction_sync_data(
+        db,
+        period,
+        source_year,
+        source_tw,
+    )
+    records = sync_data["records"]
+    source = sync_data["source"]
+    corrections = _resolve_epride_correction_conflicts(source, conflict_resolutions)
+    updates = [
+        (
+            record,
+            corrections.get(record.nip, ZERO),
+            calculate_nkp_akhir(
+                record.nkp_awal,
+                record.nko,
+                record.nilai_hukuman_disiplin,
+                record.nilai_dampak_pelanggaran_disiplin,
+                corrections.get(record.nip, ZERO),
+            ),
+        )
+        for record in records
+    ]
+
+    try:
+        for record, correction, final_score in updates:
+            record.nilai_koreksi = correction
+            record.nkp_akhir = final_score
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         raise
+
     invalidate_dashboard_cache()
     return {
-        "period": normalized_period,
-        "row_count": len(records),
-        "unidentified_count": 0,
-        "normalized_penalty_count": sum(
-            record["_normalized_penalty_count"] for record in records
-        ),
+        **sync_data["summary"],
+        "conflicts": [],
+        "resolved_conflict_count": len(source["conflicts"]),
     }
-
-
-def create_adjustment_template() -> bytes:
-    workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.title = "Penyesuaian"
-    worksheet.append(ADJUSTMENT_HEADERS)
-    worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = f"A1:{chr(64 + len(ADJUSTMENT_HEADERS))}1"
-    worksheet.column_dimensions["A"].width = 24
-    for column in range(2, len(ADJUSTMENT_HEADERS) + 1):
-        worksheet.column_dimensions[chr(64 + column)].width = 38
-    worksheet["A2"].number_format = "@"
-    stream = BytesIO()
-    workbook.save(stream)
-    workbook.close()
-    return stream.getvalue()
 
 
 def _status(nkp_akhir: Decimal | None) -> str:

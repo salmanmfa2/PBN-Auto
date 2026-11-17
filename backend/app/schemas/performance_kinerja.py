@@ -27,6 +27,50 @@ class PerformanceUploadValidation(BaseModel):
     normalized_penalty_count: int = 0
 
 
+class PerformanceCorrectionSourceYear(BaseModel):
+    year: int
+    available_tw: list[int]
+
+
+class PerformanceCorrectionSourceRow(BaseModel):
+    form_id: str
+    id_unit: str
+    submitted_at: str | None
+
+
+class PerformanceCorrectionConflictCandidate(BaseModel):
+    value: str
+    sources: list[PerformanceCorrectionSourceRow]
+
+
+class PerformanceCorrectionConflict(BaseModel):
+    nip: str
+    candidates: list[PerformanceCorrectionConflictCandidate]
+
+
+class PerformanceCorrectionSyncRequest(BaseModel):
+    conflict_resolutions: dict[str, str] = Field(default_factory=dict)
+
+
+class PerformanceCorrectionSyncPreview(BaseModel):
+    period: str
+    source_year: int
+    source_tw: int
+    row_count: int
+    source_row_count: int
+    source_nip_count: int
+    matched_count: int
+    unmatched_count: int
+    duplicate_nip_group_count: int
+    ignored_unit_row_count: int
+    source_only_nip_count: int
+    conflicts: list[PerformanceCorrectionConflict]
+
+
+class PerformanceCorrectionSyncResult(PerformanceCorrectionSyncPreview):
+    resolved_conflict_count: int
+
+
 class PerformanceHistogramBin(BaseModel):
     start: int
     end: int
