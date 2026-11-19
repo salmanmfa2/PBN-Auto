@@ -4,10 +4,13 @@ from unittest.mock import patch
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
-from app.api.auth import get_current_user
-from app.history_db import get_history_db
+from app.api.auth import get_current_user, get_optional_current_user
+from app.history_db import Base, get_history_db
+from app.models.menu_access import MenuAccessPolicy
 from app.services import pbnopen_import_service
 from app.services.pbnopen_import_service import _read_csv
 from main import app
@@ -454,6 +457,34 @@ class DtEmployeeSyncTests(unittest.TestCase):
 
 
 class PbnOpenImportAuthorizationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.menu_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            self.menu_engine,
+            tables=[MenuAccessPolicy.__table__],
+        )
+
+        def override_history_db():
+            with Session(self.menu_engine) as session:
+                yield session
+
+        app.dependency_overrides[get_history_db] = override_history_db
+        app.dependency_overrides[get_optional_current_user] = self.get_optional_user
+
+    def get_optional_user(self):
+        user_override = app.dependency_overrides.get(get_current_user)
+        return user_override() if user_override is not None else None
+
+    def tearDown(self) -> None:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_optional_current_user, None)
+        app.dependency_overrides.pop(get_history_db, None)
+        self.menu_engine.dispose()
+
     def test_normal_admin_cannot_validate_data_source_csv(self) -> None:
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
             user="admin",
@@ -502,11 +533,7 @@ class PbnOpenImportAuthorizationTests(unittest.TestCase):
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_history_db, None)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(),
-            {"last_synced_at": None, "synced_by_user": None, "synced_by_name": None},
-        )
+        self.assertEqual(response.status_code, 403)
 
     def test_super_admin_cannot_replace_data_source_csv(self) -> None:
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(

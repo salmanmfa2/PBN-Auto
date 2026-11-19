@@ -1,13 +1,17 @@
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
+from app.api.menu_access import require_menu_access
 from app.services import dataset_service, powerpoint_service
 from app.schemas.dataset import DatasetPreview
 
-router = APIRouter(tags=["dataset"])
+router = APIRouter(
+    tags=["dataset"],
+    dependencies=[Depends(require_menu_access("analytics"))],
+)
 MAX_STAGED_POWERPOINTS = 20
 MAX_STAGED_POWERPOINT_SIZE = 25 * 1024 * 1024
 MAX_STAGED_POWERPOINT_TOTAL_SIZE = 100 * 1024 * 1024

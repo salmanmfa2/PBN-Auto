@@ -5,9 +5,14 @@ from app.history_db import get_history_db
 from app.schemas.dataset import DatasetPreview
 from app.schemas.stored_dataset import DatasetRunRenameRequest, StoredDatasetRunRead
 from app.services import dataset_service, stored_dataset_service
+from app.api.menu_access import require_menu_access
 
 
-router = APIRouter(prefix="/stored-datasets", tags=["stored datasets"])
+router = APIRouter(
+    prefix="/stored-datasets",
+    tags=["stored datasets"],
+    dependencies=[Depends(require_menu_access("analytics"))],
+)
 
 
 @router.get("", response_model=list[StoredDatasetRunRead])

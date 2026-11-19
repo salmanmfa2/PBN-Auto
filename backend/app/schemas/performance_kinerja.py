@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -209,3 +210,44 @@ class PerformanceRecordsResponse(BaseModel):
     records: list[PerformanceRecordRead]
     filter_options: dict[str, list[str]] = Field(default_factory=dict)
     numeric_ranges: dict[str, tuple[float | None, float | None]] = Field(default_factory=dict)
+
+
+class PerformanceCorrectionEditRequest(BaseModel):
+    period: str = Field(min_length=7, max_length=7)
+    nip: str = Field(min_length=16, max_length=18)
+    nilai_koreksi: Decimal
+
+
+class PerformanceCorrectionEditResult(BaseModel):
+    period: str
+    nip: str
+    nilai_koreksi: float | None
+    nkp_akhir: float | None
+    status: str
+    changed: bool
+
+
+class PerformanceCorrectionBatchResult(BaseModel):
+    period: str
+    input_count: int
+    updated_count: int
+    unchanged_count: int
+
+
+class PerformanceCorrectionEditLogRead(BaseModel):
+    id: int
+    period: str
+    nip: str
+    employee_name: str
+    old_value: float | None
+    new_value: float
+    edited_by_user: str
+    edited_by_name: str
+    edited_at: datetime
+
+
+class PerformanceCorrectionEditLogPage(BaseModel):
+    page: int
+    page_size: int
+    total: int
+    records: list[PerformanceCorrectionEditLogRead]

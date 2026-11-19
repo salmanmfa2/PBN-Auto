@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import * as apiClient from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useMenuAccess } from '../contexts/MenuAccessContext';
 import type {
   PerformanceDashboardResponse,
   PerformanceHistogramBin,
@@ -24,9 +25,19 @@ import type {
   PerformanceCorrectionSyncPreview,
   PerformanceCorrectionSyncResult,
   PerformanceCorrectionSourceYear,
+  PerformanceCorrectionEditLogPage,
+  PerformanceCorrectionEditResult,
+  PerformanceCorrectionBatchResult,
   PerformanceUploadValidation,
 } from '../types';
 import { Spinner } from '../components/Spinner';
+import {
+  clearPerformanceCache,
+  readPerformanceCache,
+  readPerformanceRecordsViewState,
+  writePerformanceCache,
+  writePerformanceRecordsViewState,
+} from '../services/performanceCache';
 
 const RECORD_PAGE_SIZE = 50;
 const PERFORMANCE_TABS = [
@@ -203,8 +214,12 @@ function filterUnitHierarchyBySearch(
 }
 
 type UnitColumnWidths = Record<UnitColumnKey, number>;
+type RecordColumnKey = keyof PerformanceRecord;
+type RecordColumnWidths = Record<RecordColumnKey, number>;
 const UNIT_COLUMN_WIDTHS_STORAGE_KEY = 'pbn.performance.unit-column-widths';
 const MAX_UNIT_COLUMN_WIDTH = 640;
+const RECORD_COLUMN_WIDTH_MIN = 72;
+const RECORD_COLUMN_WIDTH_MAX = 640;
 const DEFAULT_UNIT_COLUMN_WIDTHS: UnitColumnWidths = {
   unit: 250,
   employeeCount: 80,
@@ -224,6 +239,34 @@ const DEFAULT_UNIT_COLUMN_WIDTHS: UnitColumnWidths = {
   nkpAkhirExceptional: 180,
   statusGap: 100,
   compare: 90,
+};
+const DEFAULT_RECORD_COLUMN_WIDTHS: RecordColumnWidths = {
+  nama: 220,
+  nip: 160,
+  unit_eselon_ii: 220,
+  unit_eselon_iii: 220,
+  unit_eselon_iv: 180,
+  eselon: 90,
+  nhk: 90,
+  npk: 90,
+  nhk_kalibrasi: 120,
+  npk_kalibrasi: 120,
+  nkp_awal: 110,
+  rating_hasil_kerja_awal: 220,
+  rating_perilaku_kerja_awal: 220,
+  predikat_kinerja_awal: 180,
+  nilai_hukuman_disiplin: 150,
+  nilai_dampak_pelanggaran_disiplin: 190,
+  nilai_dampak_perilaku: 160,
+  nilai_koreksi: 120,
+  nko: 90,
+  nkp_perhitungan: 150,
+  status_nkp_perhitungan: 180,
+  nkp_akhir: 120,
+  rating_hasil_kerja: 200,
+  rating_perilaku_kerja: 200,
+  predikat_kinerja: 170,
+  status: 130,
 };
 const RECORD_COLUMNS: Array<{ key: keyof PerformanceRecord; label: string }> = [
   { key: 'nama', label: 'Nama' },
@@ -253,13 +296,45 @@ const RECORD_COLUMNS: Array<{ key: keyof PerformanceRecord; label: string }> = [
   { key: 'predikat_kinerja', label: 'Predikat Kinerja' },
   { key: 'status', label: 'Status' },
 ];
-const RECORD_LITE_HIDDEN_COLUMNS = new Set<keyof PerformanceRecord>([
-  'rating_hasil_kerja_awal',
-  'rating_perilaku_kerja_awal',
-  'predikat_kinerja_awal',
-  'rating_hasil_kerja',
-  'rating_perilaku_kerja',
-  'predikat_kinerja',
+
+function isRecordColumnKey(value: string): value is keyof PerformanceRecord {
+  return RECORD_COLUMNS.some((column) => column.key === value);
+}
+
+function makeRecordsCacheKey(
+  page: number,
+  pageSize: number,
+  search: string,
+  filters: Record<string, string>,
+  sortBy: keyof PerformanceRecord,
+  sortOrder: 'asc' | 'desc',
+  period: string | undefined,
+): string {
+  const stableFilters = Object.fromEntries(
+    Object.entries(filters).sort(([left], [right]) => left.localeCompare(right)),
+  );
+  return `records:${JSON.stringify({
+    page,
+    pageSize,
+    search,
+    filters: stableFilters,
+    sortBy,
+    sortOrder,
+    period: period ?? null,
+  })}`;
+}
+
+const RECORD_LITE_COLUMNS = new Set<keyof PerformanceRecord>([
+  'nama',
+  'unit_eselon_ii',
+  'eselon',
+  'nkp_awal',
+  'nilai_koreksi',
+  'nko',
+  'nkp_perhitungan',
+  'status_nkp_perhitungan',
+  'nkp_akhir',
+  'status',
 ]);
 const INITIAL_MODULE_LOAD_TASKS: ModuleLoadTasks = {
   dashboard: { status: 'loading', durationMs: null, error: null },
@@ -320,6 +395,90 @@ function isUnitColumnWidths(value: unknown): value is UnitColumnWidths {
       && width >= minWidth
       && width <= MAX_UNIT_COLUMN_WIDTH);
   });
+}
+
+function getRecordColumnWidthsStorageKey(userKey: string): string {
+  return `pbn.performance.employee-column-widths.${encodeURIComponent(userKey)}`;
+}
+
+function isRecordColumnWidths(value: unknown): value is Partial<RecordColumnWidths> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const widths = value as Partial<Record<RecordColumnKey, unknown>>;
+  return RECORD_COLUMNS.every(({ key }) => {
+    const width = widths[key];
+    return width === undefined || (typeof width === 'number'
+      && Number.isFinite(width)
+      && width >= RECORD_COLUMN_WIDTH_MIN
+      && width <= RECORD_COLUMN_WIDTH_MAX);
+  });
+}
+
+function readRecordColumnWidths(userKey: string): {
+  widths: RecordColumnWidths;
+  error: string | null;
+} {
+  try {
+    const storedWidths = window.localStorage.getItem(
+      getRecordColumnWidthsStorageKey(userKey),
+    );
+    if (!storedWidths) {
+      return { widths: { ...DEFAULT_RECORD_COLUMN_WIDTHS }, error: null };
+    }
+    const parsed: unknown = JSON.parse(storedWidths);
+    if (!isRecordColumnWidths(parsed)) {
+      throw new Error('Format lebar kolom pegawai tidak valid.');
+    }
+    return {
+      widths: { ...DEFAULT_RECORD_COLUMN_WIDTHS, ...parsed },
+      error: null,
+    };
+  } catch (storageError) {
+    return {
+      widths: { ...DEFAULT_RECORD_COLUMN_WIDTHS },
+      error: `Lebar kolom pegawai tersimpan tidak dapat dimuat: ${errorMessage(storageError)}`,
+    };
+  }
+}
+
+function fitRecordColumnWidths(
+  widths: RecordColumnWidths,
+  visibleColumns: Array<{ key: RecordColumnKey }>,
+  containerWidth: number,
+): RecordColumnWidths {
+  const fittedWidths = { ...widths };
+  if (visibleColumns.length === 0 || containerWidth <= 0) return fittedWidths;
+
+  const minimumTableWidth = visibleColumns.length * RECORD_COLUMN_WIDTH_MIN;
+  const targetWidth = Math.max(Math.round(containerWidth), minimumTableWidth);
+  let difference = targetWidth - visibleColumns.reduce(
+    (total, column) => total + fittedWidths[column.key],
+    0,
+  );
+  while (Math.abs(difference) >= 1) {
+    const adjustableColumns = visibleColumns.filter(({ key }) => (
+      difference > 0
+        ? fittedWidths[key] < RECORD_COLUMN_WIDTH_MAX
+        : fittedWidths[key] > RECORD_COLUMN_WIDTH_MIN
+    ));
+    if (adjustableColumns.length === 0) break;
+    const adjustment = difference / adjustableColumns.length;
+    let appliedAdjustment = 0;
+    for (const { key } of adjustableColumns) {
+      const currentWidth = fittedWidths[key];
+      const nextWidth = Math.min(
+        RECORD_COLUMN_WIDTH_MAX,
+        Math.max(RECORD_COLUMN_WIDTH_MIN, currentWidth + adjustment),
+      );
+      appliedAdjustment += nextWidth - currentWidth;
+      fittedWidths[key] = nextWidth;
+    }
+    if (Math.abs(appliedAdjustment) < 1) break;
+    difference -= appliedAdjustment;
+  }
+  for (const column of visibleColumns) {
+    fittedWidths[column.key] = Math.round(fittedWidths[column.key]);
+  }
+  return fittedWidths;
 }
 
 function getUnitColumnBaseWidth(
@@ -894,16 +1053,36 @@ function UnitComparisonButton({
 
 export default function PerformanceAnalysisPage() {
   const { user } = useAuth();
+  const { canEdit } = useMenuAccess();
+  const canEditPerformance = canEdit('analisis-kinerja');
+  const userCacheKey = user?.user ?? 'guest';
+  const savedRecordView = useMemo(
+    () => readPerformanceRecordsViewState(userCacheKey),
+    [userCacheKey],
+  );
+  const savedRecordColumnWidths = useMemo(
+    () => readRecordColumnWidths(userCacheKey),
+    [userCacheKey],
+  );
+  const savedViewState = savedRecordView.value;
+  const savedSortKey = savedViewState && isRecordColumnKey(savedViewState.recordSortKey)
+    ? savedViewState.recordSortKey
+    : 'nama';
+  const [viewStateOwnerKey, setViewStateOwnerKey] = useState(userCacheKey);
   const [analysis, setAnalysis] = useState<PerformanceDashboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'units' | 'employees'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'units' | 'employees'>(
+    () => savedViewState?.activeTab ?? 'overview',
+  );
   const [isOverviewCompareMode, setIsOverviewCompareMode] = useState(false);
   const [expandedUnits, setExpandedUnits] = useState<string[]>([]);
   const [collapsedSearchUnitKeys, setCollapsedSearchUnitKeys] = useState<string[]>([]);
   const [unitSort, setUnitSort] = useState<UnitSortState>(null);
   const [isUnitLiteView, setIsUnitLiteView] = useState(false);
-  const [isRecordsLiteView, setIsRecordsLiteView] = useState(false);
+  const [isRecordsLiteView, setIsRecordsLiteView] = useState(
+    () => savedViewState?.isRecordsLiteView ?? false,
+  );
   const [unitSearch, setUnitSearch] = useState('');
   const [moduleLoadTasks, setModuleLoadTasks] = useState<ModuleLoadTasks>(
     () => ({ ...INITIAL_MODULE_LOAD_TASKS }),
@@ -926,9 +1105,6 @@ export default function PerformanceAnalysisPage() {
   const visibleUnitColumns = UNIT_COLUMN_DEFINITIONS.filter(
     (column) => !isUnitLiteView || column.lite,
   );
-  const visibleRecordColumns = RECORD_COLUMNS.filter(
-    (column) => !isRecordsLiteView || !RECORD_LITE_HIDDEN_COLUMNS.has(column.key),
-  );
   const visibleUnitColumnWidths = fitUnitColumnWidths(
     unitColumnWidths,
     visibleUnitColumns,
@@ -945,19 +1121,93 @@ export default function PerformanceAnalysisPage() {
   const [recordData, setRecordData] = useState<PerformanceRecordsResponse | null>(null);
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
   const [recordError, setRecordError] = useState<string | null>(null);
-  const [recordPage, setRecordPage] = useState(1);
-  const [recordSearch, setRecordSearch] = useState('');
+  const [recordsFromCache, setRecordsFromCache] = useState(false);
+  const [performanceCacheWarning, setPerformanceCacheWarning] = useState<string | null>(
+    () => savedRecordView.error,
+  );
+  const [recordPage, setRecordPage] = useState(
+    () => savedViewState?.recordPage ?? 1,
+  );
+  const [recordSearch, setRecordSearch] = useState(
+    () => savedViewState?.recordSearch ?? '',
+  );
   const [recordFilterDrafts, setRecordFilterDrafts] = useState<
     Record<string, string>
-  >({});
+  >(() => savedViewState?.recordFilterDrafts ?? {});
   const [recordFilters, setRecordFilters] = useState<
     Record<string, string>
-  >({});
+  >(() => savedViewState?.recordFilters ?? {});
   const [recordSort, setRecordSort] = useState<{
     key: keyof PerformanceRecord;
     direction: 'asc' | 'desc';
-  }>({ key: 'nama', direction: 'asc' });
-  const [selectedPeriod, setSelectedPeriod] = useState<string | undefined>();
+  }>(() => ({
+    key: savedSortKey,
+    direction: savedViewState?.recordSortDirection ?? 'asc',
+  }));
+  const [recordColumnWidths, setRecordColumnWidths] = useState<RecordColumnWidths>(
+    () => ({ ...savedRecordColumnWidths.widths }),
+  );
+  const [recordColumnWidthError, setRecordColumnWidthError] = useState<string | null>(
+    () => savedRecordColumnWidths.error,
+  );
+  const [recordTableElement, setRecordTableElement] = useState<HTMLDivElement | null>(null);
+  const [recordTableContainerWidth, setRecordTableContainerWidth] = useState(0);
+  const recordColumnWidthsRef = useRef<RecordColumnWidths>({
+    ...savedRecordColumnWidths.widths,
+  });
+  const recordColumnResizeRef = useRef<{
+    column: RecordColumnKey;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const autoFitRecordColumnsOnLiteActivation = useRef(false);
+  const visibleRecordColumns = RECORD_COLUMNS
+    .filter((column) => !isRecordsLiteView || RECORD_LITE_COLUMNS.has(column.key))
+    .map((column) => {
+      if (!isRecordsLiteView) return column;
+      if (column.key === 'nkp_perhitungan') {
+        return { ...column, label: 'Nilai Perhitungan' };
+      }
+      if (column.key === 'status_nkp_perhitungan') {
+        return { ...column, label: 'Status NKP perhitungan' };
+      }
+      return column;
+    });
+  const visibleRecordTableWidth = visibleRecordColumns.reduce(
+    (total, column) => total + recordColumnWidths[column.key],
+    0,
+  );
+  const [selectedPeriod, setSelectedPeriod] = useState<string | undefined>(
+    () => savedViewState?.selectedPeriod ?? undefined,
+  );
+  const [datasetDeleteBusyPeriod, setDatasetDeleteBusyPeriod] = useState<string | null>(null);
+  const [datasetDeleteError, setDatasetDeleteError] = useState<string | null>(null);
+  const [datasetDeleteNotice, setDatasetDeleteNotice] = useState<string | null>(null);
+  const [correctionEditTarget, setCorrectionEditTarget] = useState<{
+    record: PerformanceRecord;
+    period: string;
+  } | null>(null);
+  const [correctionEditValue, setCorrectionEditValue] = useState('');
+  const [correctionEditBusy, setCorrectionEditBusy] = useState(false);
+  const [correctionEditError, setCorrectionEditError] = useState<string | null>(null);
+  const [correctionEditNotice, setCorrectionEditNotice] = useState<string | null>(null);
+  const [isBatchCorrectionOpen, setIsBatchCorrectionOpen] = useState(false);
+  const [batchCorrectionFile, setBatchCorrectionFile] = useState<File | null>(null);
+  const [batchCorrectionBusy, setBatchCorrectionBusy] = useState(false);
+  const [batchCorrectionTemplateBusy, setBatchCorrectionTemplateBusy] = useState(false);
+  const [batchCorrectionError, setBatchCorrectionError] = useState<string | null>(null);
+  const [batchCorrectionNotice, setBatchCorrectionNotice] = useState<string | null>(null);
+  const batchCorrectionFileInput = useRef<HTMLInputElement>(null);
+  const [isCorrectionLogOpen, setIsCorrectionLogOpen] = useState(false);
+  const [correctionLogPage, setCorrectionLogPage] = useState(1);
+  const [correctionLogData, setCorrectionLogData] =
+    useState<PerformanceCorrectionEditLogPage | null>(null);
+  const [correctionLogLoading, setCorrectionLogLoading] = useState(false);
+  const [correctionLogValidated, setCorrectionLogValidated] = useState(false);
+  const [correctionLogActionId, setCorrectionLogActionId] = useState<number | null>(null);
+  const [correctionLogError, setCorrectionLogError] = useState<string | null>(null);
+  const [correctionLogNotice, setCorrectionLogNotice] = useState<string | null>(null);
+  const correctionLogRequestId = useRef(0);
   const [comparisonTarget, setComparisonTarget] = useState<{
     label: string;
     comparison: Record<string, PerformanceMetricComparison>;
@@ -977,6 +1227,13 @@ export default function PerformanceAnalysisPage() {
   const [year, setYear] = useState(initialPeriod.slice(3));
   const period = `${quarter}-${year}`;
   const analysisPeriod = selectedPeriod ?? analysis?.dataset?.period;
+  const isPeriodLoading = Boolean(
+    selectedPeriod
+    && (
+      (isLoading && analysis?.dataset?.period !== selectedPeriod)
+      || (isLoadingRecords && recordData?.period !== selectedPeriod)
+    ),
+  );
   const sortedUnits = useMemo(
     () => sortUnitHierarchy(analysis?.units ?? [], unitSort),
     [analysis?.units, unitSort],
@@ -1021,6 +1278,15 @@ export default function PerformanceAnalysisPage() {
     observer.observe(unitTableElement);
     return () => observer.disconnect();
   }, [unitTableElement]);
+
+  useEffect(() => {
+    if (!recordTableElement) return;
+    const updateWidth = () => setRecordTableContainerWidth(recordTableElement.clientWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(recordTableElement);
+    return () => observer.disconnect();
+  }, [recordTableElement]);
 
   useEffect(() => {
     try {
@@ -1143,6 +1409,125 @@ export default function PerformanceAnalysisPage() {
     />
   );
 
+  const persistRecordColumnWidths = useCallback((widths: RecordColumnWidths) => {
+    try {
+      window.localStorage.setItem(
+        getRecordColumnWidthsStorageKey(userCacheKey),
+        JSON.stringify(widths),
+      );
+      setRecordColumnWidthError(null);
+    } catch (storageError) {
+      setRecordColumnWidthError(
+        `Lebar kolom pegawai tidak dapat disimpan: ${errorMessage(storageError)}`,
+      );
+    }
+  }, [userCacheKey]);
+
+  const updateRecordColumnWidth = (column: RecordColumnKey, width: number) => {
+    const nextWidths = { ...recordColumnWidthsRef.current, [column]: width };
+    recordColumnWidthsRef.current = nextWidths;
+    setRecordColumnWidths(nextWidths);
+    return nextWidths;
+  };
+
+  const startRecordColumnResize = (
+    column: RecordColumnKey,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    recordColumnResizeRef.current = {
+      column,
+      startX: event.clientX,
+      startWidth: recordColumnWidths[column],
+    };
+  };
+
+  const moveRecordColumnResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const resize = recordColumnResizeRef.current;
+    if (!resize) return;
+    const width = Math.min(
+      RECORD_COLUMN_WIDTH_MAX,
+      Math.max(
+        RECORD_COLUMN_WIDTH_MIN,
+        Math.round(resize.startWidth + event.clientX - resize.startX),
+      ),
+    );
+    updateRecordColumnWidth(resize.column, width);
+  };
+
+  const finishRecordColumnResize = () => {
+    if (!recordColumnResizeRef.current) return;
+    recordColumnResizeRef.current = null;
+    persistRecordColumnWidths(recordColumnWidthsRef.current);
+  };
+
+  const handleRecordColumnResizeKeyDown = (
+    column: RecordColumnKey,
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 12 : -12;
+    const width = Math.min(
+      RECORD_COLUMN_WIDTH_MAX,
+      Math.max(RECORD_COLUMN_WIDTH_MIN, recordColumnWidths[column] + delta),
+    );
+    const nextWidths = updateRecordColumnWidth(column, width);
+    persistRecordColumnWidths(nextWidths);
+  };
+
+  const recordColumnResizeHandle = (column: { key: RecordColumnKey; label: string }) => (
+    <div
+      role="separator"
+      aria-label={`Ubah lebar kolom ${column.label}`}
+      aria-orientation="vertical"
+      aria-valuemin={RECORD_COLUMN_WIDTH_MIN}
+      aria-valuemax={RECORD_COLUMN_WIDTH_MAX}
+      aria-valuenow={Math.round(recordColumnWidths[column.key])}
+      tabIndex={0}
+      title={`Tarik untuk mengubah lebar kolom ${column.label}; gunakan tombol panah kiri/kanan.`}
+      onPointerDown={(event) => startRecordColumnResize(column.key, event)}
+      onPointerMove={moveRecordColumnResize}
+      onPointerUp={finishRecordColumnResize}
+      onPointerCancel={finishRecordColumnResize}
+      onLostPointerCapture={finishRecordColumnResize}
+      onKeyDown={(event) => handleRecordColumnResizeKeyDown(column.key, event)}
+      className="absolute right-0 top-0 z-10 h-full w-2 touch-none cursor-col-resize border-r-2 border-transparent hover:border-sky-400 focus-visible:border-sky-400 focus-visible:outline-none"
+    />
+  );
+
+  useEffect(() => {
+    if (!isRecordsLiteView) {
+      autoFitRecordColumnsOnLiteActivation.current = false;
+      return;
+    }
+    if (
+      !autoFitRecordColumnsOnLiteActivation.current
+      || recordTableContainerWidth <= 0
+    ) return;
+    const liteColumns = RECORD_COLUMNS.filter(
+      (column) => RECORD_LITE_COLUMNS.has(column.key),
+    );
+    const fittedWidths = fitRecordColumnWidths(
+      recordColumnWidthsRef.current,
+      liteColumns,
+      recordTableContainerWidth,
+    );
+    autoFitRecordColumnsOnLiteActivation.current = false;
+    recordColumnWidthsRef.current = fittedWidths;
+    setRecordColumnWidths(fittedWidths);
+    persistRecordColumnWidths(fittedWidths);
+  }, [isRecordsLiteView, persistRecordColumnWidths, recordTableContainerWidth]);
+
+  const toggleRecordsLiteView = () => {
+    setIsRecordsLiteView((current) => {
+      autoFitRecordColumnsOnLiteActivation.current = !current;
+      return !current;
+    });
+  };
+
   const [fullFile, setFullFile] = useState<File | null>(null);
   const [fullEmployeeSource, setFullEmployeeSource] =
     useState<PerformanceEmployeeSource>('fetch_pbnopen');
@@ -1237,7 +1622,7 @@ export default function PerformanceAnalysisPage() {
     setModuleLoadElapsedMs(durationMs);
   }, [moduleLoadTasks]);
 
-  const refreshAnalysis = useCallback(async (requestedPeriod?: string) => {
+  const refreshAnalysis = useCallback(async (requestedPeriod?: string | null) => {
     const requestId = ++analysisRequestId.current;
     setIsLoading(true);
     setError(null);
@@ -1246,7 +1631,7 @@ export default function PerformanceAnalysisPage() {
       const result = await apiClient.getPerformanceDashboard(
         selectedUnit,
         selectedEselon ? [selectedEselon] : [],
-        requestedPeriod ?? selectedPeriod,
+        requestedPeriod === null ? undefined : requestedPeriod ?? selectedPeriod,
         selectedEselonIII,
         selectedEselonIV,
       );
@@ -1280,11 +1665,123 @@ export default function PerformanceAnalysisPage() {
     void refreshAnalysis();
   }, [refreshAnalysis]);
 
-  const refreshRecords = useCallback(async (requestedPeriod?: string) => {
+  useEffect(() => {
+    if (viewStateOwnerKey === userCacheKey) return;
+    const restored = savedRecordView.value;
+    recordRequestId.current += 1;
+    correctionLogRequestId.current += 1;
+    setViewStateOwnerKey(userCacheKey);
+    setActiveTab(restored?.activeTab ?? 'overview');
+    setIsRecordsLiteView(restored?.isRecordsLiteView ?? false);
+    setRecordPage(restored?.recordPage ?? 1);
+    setRecordSearch(restored?.recordSearch ?? '');
+    setRecordFilterDrafts(restored?.recordFilterDrafts ?? {});
+    setRecordFilters(restored?.recordFilters ?? {});
+    setRecordSort({
+      key: restored && isRecordColumnKey(restored.recordSortKey)
+        ? restored.recordSortKey
+        : 'nama',
+      direction: restored?.recordSortDirection ?? 'asc',
+    });
+    setSelectedPeriod(restored?.selectedPeriod ?? undefined);
+    setRecordColumnWidths(savedRecordColumnWidths.widths);
+    recordColumnWidthsRef.current = { ...savedRecordColumnWidths.widths };
+    setRecordColumnWidthError(savedRecordColumnWidths.error);
+    autoFitRecordColumnsOnLiteActivation.current = false;
+    setRecordData(null);
+    setRecordsFromCache(false);
+    setRecordError(null);
+    setIsLoadingRecords(true);
+    setPerformanceCacheWarning(
+      savedRecordView.error,
+    );
+    setCorrectionEditTarget(null);
+    setCorrectionEditBusy(false);
+    setCorrectionEditError(null);
+    setCorrectionEditNotice(null);
+    setIsBatchCorrectionOpen(false);
+    setBatchCorrectionFile(null);
+    setBatchCorrectionBusy(false);
+    setBatchCorrectionTemplateBusy(false);
+    setBatchCorrectionError(null);
+    setBatchCorrectionNotice(null);
+    setIsCorrectionLogOpen(false);
+    setCorrectionLogLoading(false);
+    setCorrectionLogPage(1);
+    setCorrectionLogData(null);
+    setCorrectionLogValidated(false);
+    setCorrectionLogError(null);
+    setCorrectionLogNotice(null);
+    setCorrectionLogActionId(null);
+  }, [savedRecordColumnWidths, savedRecordView, userCacheKey, viewStateOwnerKey]);
+
+  useEffect(() => {
+    if (viewStateOwnerKey !== userCacheKey) return;
+    try {
+      writePerformanceRecordsViewState(userCacheKey, {
+        activeTab,
+        isRecordsLiteView,
+        recordPage,
+        recordSearch,
+        recordFilterDrafts,
+        recordFilters,
+        recordSortKey: recordSort.key,
+        recordSortDirection: recordSort.direction,
+        selectedPeriod: selectedPeriod ?? null,
+      });
+    } catch (storageError) {
+      setPerformanceCacheWarning(
+        `Could not save employee-table settings: ${errorMessage(storageError)}`,
+      );
+    }
+  }, [
+    activeTab,
+    isRecordsLiteView,
+    recordFilterDrafts,
+    recordFilters,
+    recordPage,
+    recordSearch,
+    recordSort,
+    selectedPeriod,
+    userCacheKey,
+    viewStateOwnerKey,
+  ]);
+
+  const refreshRecords = useCallback(async (requestedPeriod?: string | null) => {
     const requestId = ++recordRequestId.current;
+    const queryPeriod = requestedPeriod === null ? undefined : requestedPeriod ?? selectedPeriod;
+    const cacheKey = makeRecordsCacheKey(
+      recordPage,
+      RECORD_PAGE_SIZE,
+      recordSearch,
+      recordFilters,
+      recordSort.key,
+      recordSort.direction,
+      queryPeriod,
+    );
     setIsLoadingRecords(true);
     setRecordError(null);
+    setRecordsFromCache(false);
     let loadFailure: string | null = null;
+    let cachedRecordsLoaded = false;
+    try {
+      const cached = await readPerformanceCache<PerformanceRecordsResponse>(
+        userCacheKey,
+        cacheKey,
+      );
+      if (requestId === recordRequestId.current && cached) {
+        setRecordData(cached);
+        setRecordsFromCache(true);
+        setIsLoadingRecords(false);
+        cachedRecordsLoaded = true;
+      }
+    } catch (cacheError) {
+      if (requestId === recordRequestId.current) {
+        setPerformanceCacheWarning(
+          `Could not read the employee-record browser cache: ${errorMessage(cacheError)}`,
+        );
+      }
+    }
     try {
       const result = await apiClient.getPerformanceRecords(
         recordPage,
@@ -1293,13 +1790,31 @@ export default function PerformanceAnalysisPage() {
         recordFilters,
         recordSort.key,
         recordSort.direction,
-        requestedPeriod ?? selectedPeriod,
+        queryPeriod,
       );
-      if (requestId === recordRequestId.current) setRecordData(result);
+      if (requestId === recordRequestId.current) {
+        const lastPage = Math.max(1, Math.ceil(result.total / result.page_size));
+        if (result.page > lastPage) {
+          setRecordPage(lastPage);
+          return;
+        }
+        setRecordData(result);
+        setRecordsFromCache(false);
+        try {
+          await writePerformanceCache(userCacheKey, cacheKey, result);
+        } catch (cacheError) {
+          setPerformanceCacheWarning(
+            `Could not save employee records in the browser cache: ${errorMessage(cacheError)}`,
+          );
+        }
+      }
     } catch (loadError) {
       if (requestId === recordRequestId.current) {
         loadFailure = errorMessage(loadError);
         setRecordError(loadFailure);
+        if (cachedRecordsLoaded) {
+          setRecordsFromCache(true);
+        }
       }
     } finally {
       if (requestId === recordRequestId.current) {
@@ -1307,11 +1822,265 @@ export default function PerformanceAnalysisPage() {
         completeModuleLoadTask('records', loadFailure);
       }
     }
-  }, [completeModuleLoadTask, recordFilters, recordPage, recordSearch, recordSort, selectedPeriod]);
+  }, [
+    completeModuleLoadTask,
+    recordFilters,
+    recordPage,
+    recordSearch,
+    recordSort,
+    selectedPeriod,
+    userCacheKey,
+  ]);
 
   useEffect(() => {
     void refreshRecords();
   }, [refreshRecords]);
+
+  const invalidatePerformanceBrowserCache = useCallback(async () => {
+    recordRequestId.current += 1;
+    correctionLogRequestId.current += 1;
+    setIsLoadingRecords(false);
+    setCorrectionLogLoading(false);
+    setCorrectionLogData(null);
+    setCorrectionLogValidated(false);
+    setRecordsFromCache(false);
+    try {
+      await clearPerformanceCache(userCacheKey);
+    } catch (cacheError) {
+      setPerformanceCacheWarning(
+        `Could not clear the performance browser cache: ${errorMessage(cacheError)}`,
+      );
+    }
+  }, [userCacheKey]);
+
+  const refreshCorrectionEditLogs = useCallback(async (page: number) => {
+    const requestId = ++correctionLogRequestId.current;
+    const cacheKey = `correction-logs:${page}`;
+    setCorrectionLogPage(page);
+    setCorrectionLogLoading(true);
+    setCorrectionLogValidated(false);
+    setCorrectionLogError(null);
+    try {
+      const cached = await readPerformanceCache<PerformanceCorrectionEditLogPage>(
+        userCacheKey,
+        cacheKey,
+      );
+      if (requestId === correctionLogRequestId.current && cached) {
+        setCorrectionLogData(cached);
+      }
+    } catch (cacheError) {
+      if (requestId === correctionLogRequestId.current) {
+        setPerformanceCacheWarning(
+          `Could not read the correction-log browser cache: ${errorMessage(cacheError)}`,
+        );
+      }
+    }
+    try {
+      const result = await apiClient.getPerformanceCorrectionEditLog(page, 50);
+      if (requestId === correctionLogRequestId.current) {
+        setCorrectionLogData(result);
+        setCorrectionLogValidated(true);
+        try {
+          await writePerformanceCache(userCacheKey, cacheKey, result);
+        } catch (cacheError) {
+          setPerformanceCacheWarning(
+            `Could not save the correction log in the browser cache: ${errorMessage(cacheError)}`,
+          );
+        }
+      }
+    } catch (loadError) {
+      if (requestId === correctionLogRequestId.current) {
+        setCorrectionLogError(errorMessage(loadError));
+      }
+    } finally {
+      if (requestId === correctionLogRequestId.current) {
+        setCorrectionLogLoading(false);
+      }
+    }
+  }, [userCacheKey]);
+
+  const updateVisibleCorrectionRecord = (result: PerformanceCorrectionEditResult) => {
+    setRecordData((current) => {
+      if (!current || current.period !== result.period) return current;
+      return {
+        ...current,
+        records: current.records.map((record) => (
+          record.nip === result.nip
+            ? {
+              ...record,
+              nilai_koreksi: result.nilai_koreksi,
+              nkp_akhir: result.nkp_akhir,
+              status: result.status,
+            }
+            : record
+        )),
+      };
+    });
+  };
+
+  const openCorrectionEditor = (record: PerformanceRecord, period: string) => {
+    setCorrectionEditTarget({ record, period });
+    setCorrectionEditValue(
+      record.nilai_koreksi === null ? '' : String(record.nilai_koreksi),
+    );
+    setCorrectionEditError(null);
+    setCorrectionEditNotice(null);
+  };
+
+  const submitCorrectionEdit = async () => {
+    if (!correctionEditTarget) return;
+    const value = Number(correctionEditValue);
+    if (
+      correctionEditValue.trim() === ''
+      || !Number.isFinite(value)
+      || value < -5
+      || value > 5
+    ) {
+      setCorrectionEditError('Nilai Koreksi harus berupa angka antara -5 dan 5 (termasuk batasnya).');
+      return;
+    }
+    setCorrectionEditBusy(true);
+    setCorrectionEditError(null);
+    setCorrectionEditNotice(null);
+    try {
+      const result = await apiClient.updatePerformanceCorrection({
+        period: correctionEditTarget.period,
+        nip: correctionEditTarget.record.nip,
+        nilai_koreksi: value,
+      });
+      setCorrectionEditTarget(null);
+      if (!result.changed) {
+        setCorrectionEditNotice('Nilai Koreksi tidak berubah.');
+        return;
+      }
+      updateVisibleCorrectionRecord(result);
+      setCorrectionEditNotice(
+        `Nilai Koreksi untuk NIP ${result.nip} tersimpan dan NKP Akhir dihitung ulang.`,
+      );
+      await invalidatePerformanceBrowserCache();
+      await Promise.all([
+        analysisPeriod === result.period
+          ? refreshAnalysis(result.period)
+          : Promise.resolve(),
+        recordData?.period === result.period
+          ? refreshRecords(result.period)
+          : Promise.resolve(),
+      ]);
+    } catch (saveError) {
+      setCorrectionEditError(errorMessage(saveError));
+    } finally {
+      setCorrectionEditBusy(false);
+    }
+  };
+
+  const openCorrectionLog = () => {
+    setCorrectionLogNotice(null);
+    setCorrectionLogError(null);
+    setIsCorrectionLogOpen(true);
+    void refreshCorrectionEditLogs(1);
+  };
+
+  const openBatchCorrection = () => {
+    setBatchCorrectionError(null);
+    setBatchCorrectionNotice(null);
+    setBatchCorrectionFile(null);
+    if (batchCorrectionFileInput.current) {
+      batchCorrectionFileInput.current.value = '';
+    }
+    setIsBatchCorrectionOpen(true);
+  };
+
+  const downloadBatchCorrectionTemplate = async () => {
+    setBatchCorrectionTemplateBusy(true);
+    setBatchCorrectionError(null);
+    try {
+      const template = await apiClient.downloadPerformanceCorrectionBatchTemplate();
+      saveExcelFile(template, 'template-koreksi.xlsx');
+    } catch (downloadError) {
+      setBatchCorrectionError(errorMessage(downloadError));
+    } finally {
+      setBatchCorrectionTemplateBusy(false);
+    }
+  };
+
+  const submitBatchCorrection = async () => {
+    const targetPeriod = recordData?.period;
+    if (!targetPeriod) {
+      setBatchCorrectionError('Tidak ada periode dataset yang sedang ditampilkan.');
+      return;
+    }
+    if (!batchCorrectionFile) {
+      setBatchCorrectionError('Pilih file template koreksi berformat .xlsx terlebih dahulu.');
+      return;
+    }
+
+    setBatchCorrectionBusy(true);
+    setBatchCorrectionError(null);
+    try {
+      const result: PerformanceCorrectionBatchResult =
+        await apiClient.batchUpdatePerformanceCorrections(
+          batchCorrectionFile,
+          targetPeriod,
+        );
+      setIsBatchCorrectionOpen(false);
+      setBatchCorrectionFile(null);
+      if (batchCorrectionFileInput.current) {
+        batchCorrectionFileInput.current.value = '';
+      }
+      setBatchCorrectionNotice(
+        `Batch koreksi ${result.period} selesai: ${result.updated_count} diperbarui, `
+        + `${result.unchanged_count} tidak berubah dari ${result.input_count} NIP.`,
+      );
+      if (result.updated_count === 0) return;
+
+      await invalidatePerformanceBrowserCache();
+      await Promise.all([
+        refreshAnalysis(result.period),
+        refreshRecords(result.period),
+        isCorrectionLogOpen
+          ? refreshCorrectionEditLogs(1)
+          : Promise.resolve(),
+      ]);
+    } catch (batchError) {
+      setBatchCorrectionError(errorMessage(batchError));
+    } finally {
+      setBatchCorrectionBusy(false);
+    }
+  };
+
+  const undoCorrectionEdit = async (logId: number) => {
+    const selectedLog = correctionLogData?.records.find((log) => log.id === logId);
+    if (!selectedLog || !correctionLogValidated) return;
+    if (!window.confirm(
+      `Pulihkan Nilai Koreksi sebelum perubahan ${selectedLog.edited_at} untuk NIP ${selectedLog.nip} pada ${selectedLog.period}? Semua edit setelah perubahan ini untuk NIP dan periode yang sama juga akan dihapus.`,
+    )) {
+      return;
+    }
+    setCorrectionLogActionId(logId);
+    setCorrectionLogError(null);
+    setCorrectionLogNotice(null);
+    try {
+      const result = await apiClient.undoPerformanceCorrectionEdit(logId);
+      updateVisibleCorrectionRecord(result);
+      setCorrectionLogNotice(
+        `Nilai Koreksi NIP ${result.nip} pada ${result.period} dipulihkan; edit berikutnya untuk pegawai dan periode tersebut dihapus.`,
+      );
+      await invalidatePerformanceBrowserCache();
+      await Promise.all([
+        refreshCorrectionEditLogs(1),
+        analysisPeriod === result.period
+          ? refreshAnalysis(result.period)
+          : Promise.resolve(),
+        recordData?.period === result.period
+          ? refreshRecords(result.period)
+          : Promise.resolve(),
+      ]);
+    } catch (undoError) {
+      setCorrectionLogError(errorMessage(undoError));
+    } finally {
+      setCorrectionLogActionId(null);
+    }
+  };
 
   useEffect(() => () => {
     if (recordFilterTimer.current !== null) {
@@ -1337,6 +2106,32 @@ export default function PerformanceAnalysisPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [comparisonTarget]);
+
+  useEffect(() => {
+    if (!correctionEditTarget && !isCorrectionLogOpen && !isBatchCorrectionOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (
+        correctionLogActionId !== null
+        || correctionEditBusy
+        || batchCorrectionBusy
+        || batchCorrectionTemplateBusy
+      ) return;
+      setCorrectionEditTarget(null);
+      setIsCorrectionLogOpen(false);
+      setIsBatchCorrectionOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    correctionEditBusy,
+    batchCorrectionBusy,
+    batchCorrectionTemplateBusy,
+    correctionEditTarget,
+    correctionLogActionId,
+    isBatchCorrectionOpen,
+    isCorrectionLogOpen,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -1429,6 +2224,7 @@ export default function PerformanceAnalysisPage() {
       setCorrectionSyncError(null);
       setCorrectionSyncNotice(null);
       setSelectedPeriod(result.period);
+      await invalidatePerformanceBrowserCache();
       if (selectedPeriod === result.period) {
         await Promise.all([
           refreshAnalysis(result.period),
@@ -1474,6 +2270,50 @@ export default function PerformanceAnalysisPage() {
       setRecordsExportError(errorMessage(exportError));
     } finally {
       setRecordsExportBusy(false);
+    }
+  };
+
+  const deleteDatasetPeriod = async (periodToDelete: string) => {
+    if (!window.confirm(
+      `Hapus dataset periode ${periodToDelete} beserta seluruh data pegawai dan log koreksinya? Tindakan ini tidak dapat dibatalkan.`,
+    )) {
+      return;
+    }
+
+    const activePeriod = selectedPeriod ?? analysis?.dataset?.period;
+    const nextPeriodOptions = analysis?.available_periods.filter(
+      (item) => item.period !== periodToDelete,
+    ) ?? [];
+    const nextPeriod = nextPeriodOptions[nextPeriodOptions.length - 1]?.period;
+    const deletingActivePeriod = activePeriod === periodToDelete;
+    const selectionWillChange = selectedPeriod !== nextPeriod;
+
+    setDatasetDeleteBusyPeriod(periodToDelete);
+    setDatasetDeleteError(null);
+    setDatasetDeleteNotice(null);
+    try {
+      await apiClient.deletePerformanceDatasetPeriod(periodToDelete);
+      await invalidatePerformanceBrowserCache();
+      setDatasetDeleteNotice(
+        `Dataset periode ${periodToDelete} beserta data pegawai dan log koreksinya berhasil dihapus.`,
+      );
+
+      if (deletingActivePeriod) {
+        setSelectedPeriod(nextPeriod);
+        setRecordPage(1);
+        if (!selectionWillChange) {
+          await Promise.all([
+            refreshAnalysis(null),
+            refreshRecords(null),
+          ]);
+        }
+      } else {
+        await refreshAnalysis(activePeriod ?? null);
+      }
+    } catch (deleteError) {
+      setDatasetDeleteError(errorMessage(deleteError));
+    } finally {
+      setDatasetDeleteBusyPeriod(null);
     }
   };
 
@@ -1610,6 +2450,7 @@ export default function PerformanceAnalysisPage() {
       );
       setCorrectionSyncPreview(null);
       setCorrectionConflictResolutions({});
+      await invalidatePerformanceBrowserCache();
       await Promise.all([
         refreshAnalysis(result.period),
         refreshRecords(result.period),
@@ -1738,35 +2579,83 @@ export default function PerformanceAnalysisPage() {
               {analysis?.available_periods.map((item) => {
                 const active = (selectedPeriod ?? analysis?.dataset?.period) === item.period;
                 return (
-                  <button
+                  <div
                     key={item.period}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => {
-                      setSelectedPeriod(item.period);
-                      setQuarter(item.period.slice(0, 2));
-                      setYear(item.period.slice(3));
-                      setRecordPage(1);
-                      setFullValidation(null);
-                      setCorrectionSyncError(null);
-                      setCorrectionSyncNotice(null);
-                      setCorrectionSyncPreview(null);
-                    }}
-                    className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
-                      active
-                        ? 'border-sky-400 bg-sky-500/15 text-sky-200'
-                        : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-slate-500 hover:bg-slate-800'
+                    className={`inline-flex overflow-hidden rounded-lg border ${
+                      active ? 'border-sky-400' : 'border-slate-700'
                     }`}
                   >
-                    {item.period}
-                    <span className="ml-2 text-xs text-slate-400">
-                      {numberFormatter.format(item.row_count)}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      disabled={datasetDeleteBusyPeriod !== null}
+                      aria-pressed={active}
+                      onClick={() => {
+                        setSelectedPeriod(item.period);
+                        setQuarter(item.period.slice(0, 2));
+                        setYear(item.period.slice(3));
+                        setRecordPage(1);
+                        setFullValidation(null);
+                        setCorrectionSyncError(null);
+                        setCorrectionSyncNotice(null);
+                        setCorrectionSyncPreview(null);
+                      }}
+                      className={`px-4 py-2 text-sm font-medium transition disabled:cursor-wait disabled:opacity-60 ${
+                        active
+                          ? 'bg-sky-500/15 text-sky-200'
+                          : 'bg-slate-800/60 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      {item.period}
+                      <span className="ml-2 text-xs text-slate-400">
+                        {numberFormatter.format(item.row_count)}
+                      </span>
+                    </button>
+                    {(user?.auth_level ?? 0) >= 3 && (
+                      <button
+                        type="button"
+                        onClick={() => void deleteDatasetPeriod(item.period)}
+                        disabled={datasetDeleteBusyPeriod !== null}
+                        aria-label={
+                          datasetDeleteBusyPeriod === item.period
+                            ? `Menghapus dataset periode ${item.period}`
+                            : `Hapus dataset periode ${item.period}`
+                        }
+                        title={
+                          datasetDeleteBusyPeriod === item.period
+                            ? 'Menghapus dataset…'
+                            : `Hapus dataset ${item.period}`
+                        }
+                        className="inline-flex w-9 items-center justify-center border-l border-slate-700/70 text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-wait disabled:opacity-50"
+                      >
+                        {datasetDeleteBusyPeriod === item.period ? (
+                          <Spinner size="sm" />
+                        ) : (
+                          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                            <path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
+            {isPeriodLoading && selectedPeriod && (
+              <div role="status" aria-live="polite" className="flex basis-full justify-end">
+                <Spinner size="sm" label={`Memuat data periode ${selectedPeriod}…`} />
+              </div>
+            )}
           </section>
+        )}
+        {datasetDeleteError && (
+          <p role="alert" className="text-sm text-rose-300">
+            {datasetDeleteError}
+          </p>
+        )}
+        {datasetDeleteNotice && (
+          <p role="status" className="text-sm text-emerald-300">
+            {datasetDeleteNotice}
+          </p>
         )}
 
         {(user?.auth_level ?? 0) >= 3 && (
@@ -2420,7 +3309,7 @@ export default function PerformanceAnalysisPage() {
                         </p>
                       )}
                     </div>
-                    {user && user.auth_level >= 2 && (
+                    {canEditPerformance && (
                       <button
                         type="button"
                         onClick={() => void saveInsight()}
@@ -2437,7 +3326,7 @@ export default function PerformanceAnalysisPage() {
                   {insightNotice && (
                     <p role="status" className="mt-3 text-sm text-emerald-300">{insightNotice}</p>
                   )}
-                  {user && user.auth_level >= 2 ? (
+                  {canEditPerformance ? (
                     <textarea
                       value={insightDraft}
                       onChange={(event) => {
@@ -2566,9 +3455,13 @@ export default function PerformanceAnalysisPage() {
                     title={unitExportBusy ? 'Mengekspor analisis unit' : 'Unduh analisis unit sebagai Excel'}
                     className="size-9 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`mx-auto size-5 ${unitExportBusy ? 'animate-pulse' : ''}`}>
-                      <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
-                    </svg>
+                    {unitExportBusy ? (
+                      <Spinner size="sm" />
+                    ) : (
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                        <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>
@@ -2789,7 +3682,7 @@ export default function PerformanceAnalysisPage() {
                 <button
                   type="button"
                   aria-pressed={isRecordsLiteView}
-                  onClick={() => setIsRecordsLiteView((current) => !current)}
+                  onClick={toggleRecordsLiteView}
                   title={isRecordsLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
                   className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
                     isRecordsLiteView
@@ -2803,6 +3696,23 @@ export default function PerformanceAnalysisPage() {
                   </svg>
                   <span>Lite View</span>
                   <span className="sr-only">{isRecordsLiteView ? 'aktif' : 'nonaktif'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaults = { ...DEFAULT_RECORD_COLUMN_WIDTHS };
+                    recordColumnWidthsRef.current = defaults;
+                    setRecordColumnWidths(defaults);
+                    persistRecordColumnWidths(defaults);
+                  }}
+                  aria-label="Atur ulang lebar kolom daftar pegawai"
+                  title="Atur ulang lebar kolom daftar pegawai"
+                  className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                    <path d="M4 7v5h5M20 17v-5h-5" />
+                    <path d="M5.5 12a7 7 0 0 1 12-4.9L20 9m-1.5 3a7 7 0 0 1-12 4.9L4 15" />
+                  </svg>
                 </button>
                 <button
                   type="button"
@@ -2820,6 +3730,38 @@ export default function PerformanceAnalysisPage() {
                     <path d="m10 10 4 4m0-4-4 4" />
                   </svg>
                 </button>
+                {canEditPerformance && (
+                  <button
+                    type="button"
+                    onClick={openBatchCorrection}
+                    disabled={!recordData?.period || batchCorrectionBusy}
+                    aria-label="Batch input koreksi"
+                    title="Batch input koreksi dari file Excel"
+                    className="inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-emerald-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                      <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+                      <path d="M5 16v4h14v-4" />
+                    </svg>
+                    <span>Batch input koreksi</span>
+                  </button>
+                )}
+                {canEditPerformance && (
+                  <button
+                    type="button"
+                    aria-pressed={isCorrectionLogOpen}
+                    onClick={openCorrectionLog}
+                    aria-label="Buka Koreksi Edit Log"
+                    title="Buka Koreksi Edit Log"
+                    className="inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-sky-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M12 7v5l3 2M4 5l2-2" />
+                    </svg>
+                    <span>Koreksi Edit Log</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => void exportRecords()}
@@ -2828,15 +3770,44 @@ export default function PerformanceAnalysisPage() {
                   title={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
                   className="size-9 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`mx-auto size-5 ${recordsExportBusy ? 'animate-pulse' : ''}`}>
-                    <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
-                  </svg>
+                  {recordsExportBusy ? (
+                    <Spinner size="sm" />
+                  ) : (
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                      <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
+                    </svg>
+                  )}
                 </button>
               </div>
             </div>
           </div>
           {recordsExportError && (
             <p role="alert" className="mt-3 break-words text-sm text-rose-300">{recordsExportError}</p>
+          )}
+          {recordColumnWidthError && (
+            <p role="alert" className="mt-3 break-words text-sm text-amber-300">
+              {recordColumnWidthError}
+            </p>
+          )}
+          {performanceCacheWarning && (
+            <p role="alert" className="mt-3 break-words text-sm text-amber-300">
+              Cache browser: {performanceCacheWarning}
+            </p>
+          )}
+          {recordsFromCache && (
+            <p role="status" className="mt-3 text-xs text-slate-400">
+              Menampilkan data tersimpan di browser sambil memeriksa pembaruan dari server.
+            </p>
+          )}
+          {correctionEditNotice && (
+            <p role="status" className="mt-3 break-words text-sm text-emerald-300">
+              {correctionEditNotice}
+            </p>
+          )}
+          {batchCorrectionNotice && (
+            <p role="status" className="mt-3 break-words text-sm text-emerald-300">
+              {batchCorrectionNotice}
+            </p>
           )}
           {recordError && (
             <p role="alert" className="mt-4 break-words text-sm text-rose-300">{recordError}</p>
@@ -2850,12 +3821,28 @@ export default function PerformanceAnalysisPage() {
           ) : (
             <>
               <div
+                ref={setRecordTableElement}
                 role="region"
                 aria-label="Tabel daftar pegawai"
                 tabIndex={0}
                 className="mt-4 max-h-[70vh] overflow-auto overscroll-contain rounded-xl border border-slate-700"
               >
-                <table className="w-full min-w-[2800px] text-left text-xs">
+                <table
+                  style={{
+                    width: visibleRecordTableWidth,
+                    minWidth: visibleRecordTableWidth,
+                    tableLayout: 'fixed',
+                  }}
+                  className="text-left text-xs"
+                >
+                  <colgroup>
+                    {visibleRecordColumns.map((column) => (
+                      <col
+                        key={column.key}
+                        style={{ width: recordColumnWidths[column.key] }}
+                      />
+                    ))}
+                  </colgroup>
                   <thead className="sticky top-0 z-20 bg-slate-900 text-slate-300">
                     <tr>
                       {visibleRecordColumns.map((column) => {
@@ -2870,7 +3857,7 @@ export default function PerformanceAnalysisPage() {
                           aria-sort={active
                             ? recordSort.direction === 'asc' ? 'ascending' : 'descending'
                             : 'none'}
-                          className="whitespace-nowrap px-3 py-3 font-semibold"
+                          className="relative whitespace-nowrap px-3 py-3 font-semibold"
                         >
                           <button
                             type="button"
@@ -2883,6 +3870,7 @@ export default function PerformanceAnalysisPage() {
                               {active ? recordSort.direction === 'asc' ? '↑' : '↓' : '↕'}
                             </span>
                           </button>
+                          {recordColumnResizeHandle(column)}
                         </th>
                         );
                       })}
@@ -2973,8 +3961,25 @@ export default function PerformanceAnalysisPage() {
                       recordData.records.map((record) => (
                         <tr key={record.nip} className="hover:bg-slate-800/50">
                           {visibleRecordColumns.map((column) => (
-                            <td key={column.key} className="max-w-64 px-3 py-2.5 text-slate-300">
-                              {formatRecordValue(record[column.key])}
+                            <td key={column.key} className="overflow-hidden px-3 py-2.5 text-slate-300">
+                              {column.key === 'nilai_koreksi' && canEditPerformance ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (recordData.period) {
+                                      openCorrectionEditor(record, recordData.period);
+                                    }
+                                  }}
+                                  aria-label={`Edit Nilai Koreksi ${record.nama}, NIP ${record.nip}`}
+                                  title="Klik untuk mengedit Nilai Koreksi"
+                                  className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-left text-sky-200 transition hover:bg-sky-500/10 hover:text-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                                >
+                                  <span>{formatRecordValue(record[column.key])}</span>
+                                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+                                    <path d="m14 5 5 5M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" />
+                                  </svg>
+                                </button>
+                              ) : formatRecordValue(record[column.key])}
                             </td>
                           ))}
                         </tr>
@@ -3021,6 +4026,345 @@ export default function PerformanceAnalysisPage() {
         </section>
         )}
       </div>
+      {correctionEditTarget && createPortal(
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !correctionEditBusy) {
+              setCorrectionEditTarget(null);
+            }
+          }}
+        >
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="correction-edit-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitCorrectionEdit();
+            }}
+            className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="correction-edit-title" className="text-lg font-semibold text-slate-100">
+                  Edit Nilai Koreksi
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  {correctionEditTarget.record.nama} · NIP {correctionEditTarget.record.nip}
+                  {' · '}{correctionEditTarget.period}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCorrectionEditTarget(null)}
+                disabled={correctionEditBusy}
+                aria-label="Tutup editor Nilai Koreksi"
+                className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </div>
+            <label className="mt-5 block text-sm font-medium text-slate-200">
+              Nilai Koreksi
+              <input
+                type="number"
+                min="-5"
+                max="5"
+                step="any"
+                required
+                autoFocus
+                value={correctionEditValue}
+                onChange={(event) => setCorrectionEditValue(event.target.value)}
+                className="input mt-2 w-full"
+                aria-describedby="correction-edit-range"
+              />
+            </label>
+            <p id="correction-edit-range" className="mt-2 text-xs text-slate-400">
+              Nilai harus antara -5 dan 5, termasuk batasnya. Perubahan akan menghitung ulang NKP Akhir.
+            </p>
+            {correctionEditError && (
+              <p role="alert" className="mt-3 text-sm text-rose-300">
+                {correctionEditError}
+              </p>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCorrectionEditTarget(null)}
+                disabled={correctionEditBusy}
+                className="btn-secondary px-4 py-2 disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={correctionEditBusy}
+                className="btn-primary px-4 py-2 disabled:cursor-wait disabled:opacity-50"
+              >
+                {correctionEditBusy
+                  ? <Spinner size="sm" label="Menyimpan…" />
+                  : 'Simpan'}
+              </button>
+            </div>
+          </form>
+        </div>,
+        document.body,
+      )}
+      {isBatchCorrectionOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (
+              event.currentTarget === event.target
+              && !batchCorrectionBusy
+              && !batchCorrectionTemplateBusy
+            ) {
+              setIsBatchCorrectionOpen(false);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="batch-correction-title"
+            className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="batch-correction-title" className="text-lg font-semibold text-slate-100">
+                  Batch input koreksi
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Dataset tujuan: {recordData?.period ?? '—'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBatchCorrectionOpen(false)}
+                disabled={batchCorrectionBusy || batchCorrectionTemplateBusy}
+                aria-label="Tutup batch input koreksi"
+                className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-5 space-y-4">
+              <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-300">
+                <p>
+                  Unduh template Excel dengan dua kolom: <code>nip</code> dan <code>nilai_koreksi</code>.
+                  Isi NIP sebagai teks agar digitnya tetap akurat. NIP dengan awalan apostrof atau backtick juga diterima.
+                </p>
+                <p className="mt-2 text-xs text-slate-400">
+                  Semua baris divalidasi sebelum disimpan. Jika ada NIP tidak dikenal, NIP duplikat, atau nilai di luar rentang -5 sampai 5 (eksklusif), tidak ada perubahan yang diterapkan. Setiap koreksi yang berubah masuk ke Koreksi Edit Log.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void downloadBatchCorrectionTemplate()}
+                  disabled={batchCorrectionTemplateBusy || batchCorrectionBusy}
+                  className="mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:cursor-wait disabled:opacity-50"
+                >
+                  {batchCorrectionTemplateBusy ? 'Mengunduh template…' : 'Unduh template Excel'}
+                </button>
+              </div>
+              <label className="block text-sm font-medium text-slate-200">
+                File Excel (.xlsx)
+                <input
+                  ref={batchCorrectionFileInput}
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(event) => {
+                    setBatchCorrectionFile(event.target.files?.[0] ?? null);
+                    setBatchCorrectionError(null);
+                  }}
+                  disabled={batchCorrectionBusy}
+                  className="input mt-2 w-full file:mr-3 file:rounded-md file:border-0 file:bg-slate-700 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-200"
+                />
+              </label>
+              {batchCorrectionFile && (
+                <p className="text-xs text-slate-400">
+                  Dipilih: {batchCorrectionFile.name} ({Math.max(1, Math.round(batchCorrectionFile.size / 1024))} KB)
+                </p>
+              )}
+              {batchCorrectionError && (
+                <p role="alert" className="whitespace-pre-line text-sm text-rose-300">
+                  {batchCorrectionError}
+                </p>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsBatchCorrectionOpen(false)}
+                disabled={batchCorrectionBusy || batchCorrectionTemplateBusy}
+                className="btn-secondary px-4 py-2 disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitBatchCorrection()}
+                disabled={!batchCorrectionFile || batchCorrectionBusy || batchCorrectionTemplateBusy}
+                className="btn-primary px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {batchCorrectionBusy ? 'Memproses batch…' : 'Validasi dan terapkan'}
+              </button>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
+      {isCorrectionLogOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && correctionLogActionId === null) {
+              setIsCorrectionLogOpen(false);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="correction-log-title"
+            className="flex max-h-[90vh] w-full max-w-6xl flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-slate-800 p-5">
+              <div>
+                <h2 id="correction-log-title" className="text-lg font-semibold text-slate-100">
+                  Koreksi Edit Log
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Undo memulihkan nilai sebelum edit yang dipilih dan menghapus edit sesudahnya untuk NIP dan periode yang sama.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCorrectionLogOpen(false)}
+                disabled={correctionLogActionId !== null}
+                aria-label="Tutup Koreksi Edit Log"
+                className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </header>
+            <div className="min-h-0 overflow-auto p-5">
+              {correctionLogNotice && (
+                <p role="status" className="mb-3 text-sm text-emerald-300">
+                  {correctionLogNotice}
+                </p>
+              )}
+              {correctionLogError && (
+                <p role="alert" className="mb-3 text-sm text-rose-300">
+                  {correctionLogError}
+                </p>
+              )}
+              {!correctionLogValidated && correctionLogData && (
+                <p role="status" className="mb-3 text-xs text-slate-400">
+                  Memverifikasi riwayat edit terbaru dari server; Undo dinonaktifkan sampai selesai.
+                </p>
+              )}
+              {correctionLogLoading && !correctionLogData ? (
+                <div className="flex justify-center p-8">
+                  <Spinner label="Memuat riwayat edit koreksi…" />
+                </div>
+              ) : correctionLogData?.records.length ? (
+                <div className="overflow-auto rounded-xl border border-slate-700">
+                  <table className="w-full min-w-[1050px] text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-800 text-slate-300">
+                      <tr>
+                        <th className="px-3 py-3 font-semibold">Waktu</th>
+                        <th className="px-3 py-3 font-semibold">Periode</th>
+                        <th className="px-3 py-3 font-semibold">Pegawai</th>
+                        <th className="px-3 py-3 font-semibold">NIP</th>
+                        <th className="px-3 py-3 font-semibold">Sebelum</th>
+                        <th className="px-3 py-3 font-semibold">Sesudah</th>
+                        <th className="px-3 py-3 font-semibold">Editor</th>
+                        <th className="px-3 py-3 font-semibold">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {correctionLogData.records.map((log) => (
+                        <tr key={log.id} className="text-slate-300">
+                          <td className="whitespace-nowrap px-3 py-3">
+                            {new Date(log.edited_at).toLocaleString('id-ID')}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3">{log.period}</td>
+                          <td className="max-w-56 truncate px-3 py-3" title={log.employee_name}>
+                            {log.employee_name}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3">{log.nip}</td>
+                          <td className="whitespace-nowrap px-3 py-3">{formatNumber(log.old_value)}</td>
+                          <td className="whitespace-nowrap px-3 py-3">{formatNumber(log.new_value)}</td>
+                          <td className="whitespace-nowrap px-3 py-3">
+                            {log.edited_by_name} <span className="text-slate-500">({log.edited_by_user})</span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3">
+                            <button
+                              type="button"
+                              onClick={() => void undoCorrectionEdit(log.id)}
+                              disabled={
+                                !correctionLogValidated
+                                || correctionLogLoading
+                                || correctionLogActionId !== null
+                              }
+                              title="Undo edit ini dan seluruh edit berikutnya untuk pegawai dan periode yang sama"
+                              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 font-medium text-amber-200 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {correctionLogActionId === log.id ? 'Memproses…' : 'Undo dari sini'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : correctionLogLoading ? (
+                <div className="flex justify-center p-8">
+                  <Spinner label="Memverifikasi riwayat edit koreksi…" />
+                </div>
+              ) : correctionLogError ? (
+                <p className="rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-400">
+                  Riwayat tidak dapat ditampilkan sampai server berhasil dihubungi.
+                </p>
+              ) : (
+                <p className="rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-400">
+                  Belum ada riwayat edit Nilai Koreksi.
+                </p>
+              )}
+              {correctionLogData && correctionLogData.total > 0 && (
+                <div className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-400">
+                  <span>
+                    Halaman {correctionLogData.page} · {correctionLogData.total} edit
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void refreshCorrectionEditLogs(correctionLogPage - 1)}
+                      disabled={correctionLogPage <= 1 || correctionLogLoading}
+                      className="btn-secondary px-3 py-1.5 disabled:opacity-40"
+                    >
+                      Sebelumnya
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void refreshCorrectionEditLogs(correctionLogPage + 1)}
+                      disabled={
+                        correctionLogPage * correctionLogData.page_size >= correctionLogData.total
+                        || correctionLogLoading
+                      }
+                      className="btn-secondary px-3 py-1.5 disabled:opacity-40"
+                    >
+                      Berikutnya
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
       {comparisonTarget && analysis?.dataset && analysis?.previous_period && (
         <UnitComparisonDialog
           label={comparisonTarget.label}

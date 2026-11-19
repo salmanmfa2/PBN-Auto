@@ -7,9 +7,10 @@ interface StoredRunsProps {
   onRestore: (datasetId: string) => void;
   onDelete: (datasetId: string) => void;
   onRefresh: () => void;
+  canEdit: boolean;
 }
 
-export function StoredRuns({ runs, isLoading, error, onRestore, onDelete, onRefresh }: StoredRunsProps) {
+export function StoredRuns({ runs, isLoading, error, onRestore, onDelete, onRefresh, canEdit }: StoredRunsProps) {
   return (
     <section className="card p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -51,21 +52,25 @@ export function StoredRuns({ runs, isLoading, error, onRestore, onDelete, onRefr
                   >
                     Restore
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm(`Delete "${run.run_name}" and all of its saved versions? This cannot be undone.`)) {
-                        onDelete(run.dataset_id);
-                      }
-                    }}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-red-300 hover:bg-red-500/15 hover:text-red-200"
-                    title="Delete run"
-                    aria-label={`Delete ${run.run_name}`}
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-9 0h12" />
-                    </svg>
-                  </button>
+                  {canEdit && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Delete "${run.run_name}" and all of its saved versions? This cannot be undone.`)) {
+                            onDelete(run.dataset_id);
+                          }
+                        }}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-red-300 hover:bg-red-500/15 hover:text-red-200"
+                        title="Delete run"
+                        aria-label={`Delete ${run.run_name}`}
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-9 0h12" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

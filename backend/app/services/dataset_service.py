@@ -40,6 +40,16 @@ def _sanitize(df: pd.DataFrame) -> pd.DataFrame:
     return df.where(pd.notnull(df), other=None)
 
 
+def extract_nip_from_nama_nip(value: Any) -> str | None:
+    if value is None:
+        return None
+    digits = re.sub(r"\D", "", str(value))
+    if len(digits) < 18:
+        return None
+    candidate = digits[-18:]
+    return candidate if len(candidate) == 18 else None
+
+
 def _build_sheet_preview(name: str, df: pd.DataFrame) -> Dict[str, Any]:
     preview_df = _sanitize(df.head(PREVIEW_LIMIT))
     return {
@@ -321,6 +331,9 @@ def apply_auto_clean(dataset_id: str, mode: str, sheet_name: Optional[str] = Non
         if category_source not in df.columns:
             raise ValueError(f"Cannot create 'Kategori': the selected dataset does not contain '{category_source}'.")
         df = add_sitasi_category(df, category_source)
+
+    if mode in {"Sitasi Es.III", "Sitasi Es.IV"} and "Nama/NIP" in df.columns:
+        df["NIP"] = df["Nama/NIP"].map(extract_nip_from_nama_nip)
 
     sheets[sheet_name] = df
     DatasetStore.update(dataset_id, sheets)

@@ -9,6 +9,40 @@ from app.storage.dataset_store import DatasetStore
 
 
 class SitasiCategoryTests(unittest.TestCase):
+    def test_esiii_adds_nip_from_nama_nip_cell(self) -> None:
+        columns = [f"Column {index}" for index in range(1, 20)]
+        rows = [
+            [f"header-{column}" for column in range(1, 20)]
+            for _ in range(2)
+        ]
+        rows.append([
+            "1",
+            "Ahmad Wiyoso, S.E., M.M.\n197107201997031001",
+            "age",
+            "x",
+            "x",
+            "x",
+            "x",
+            "x",
+            "Role A",
+            "2",
+            "3",
+            "Area A",
+            "Duty A",
+            "Role B",
+            "x",
+            "123456Mutasi",
+            "x",
+            "x",
+            "x",
+        ])
+        dataset_id = DatasetStore.save({"Data": pd.DataFrame(rows, columns=columns)})
+
+        result = apply_auto_clean(dataset_id, "Sitasi Es.III", "Data")
+
+        self.assertIn("NIP", result["columns"])
+        self.assertEqual(result["rows"][0]["NIP"], "197107201997031001")
+
     def test_category_uses_mutasi_priority_and_handles_missing_remarks(self) -> None:
         frame = pd.DataFrame({
             "Keterangan": [

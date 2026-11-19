@@ -21,6 +21,9 @@ import type {
   AuthRegistrationPayload,
   AuthSessionResponse,
   AuthUser,
+  MenuAccessPolicy,
+  MutationWorkspace,
+  MutationLookupResponse,
   PbnOpenCsvValidation,
   PbnOpenDataSourceSyncStatus,
   DatabaseMaintenanceTarget,
@@ -36,6 +39,10 @@ import type {
   PerformanceCorrectionSyncPreview,
   PerformanceCorrectionSyncResult,
   PerformanceCorrectionSourceYear,
+  PerformanceCorrectionEditRequest,
+  PerformanceCorrectionEditResult,
+  PerformanceCorrectionEditLogPage,
+  PerformanceCorrectionBatchResult,
   PerformanceUploadValidation,
   ThemeName,
   ChatMessage,
@@ -135,6 +142,76 @@ export async function register(payload: AuthRegistrationPayload): Promise<AuthUs
 export async function getCurrentUser(): Promise<AuthUser> {
   const { data } = await api.get<AuthUser>('/auth/me');
   return data;
+}
+
+export async function getMenuAccessSettings(): Promise<MenuAccessPolicy[]> {
+  const { data } = await api.get<{ policies: MenuAccessPolicy[] }>('/menu-access');
+  return data.policies;
+}
+
+export async function listMutationWorkspaces(): Promise<MutationWorkspace[]> {
+  const { data } = await api.get<MutationWorkspace[]>('/mutation-analysis/workspaces');
+  return data;
+}
+
+export async function createMutationWorkspace(payload: {
+  eselon_choice: 'Administrator' | 'Pengawas';
+  title: string;
+  tmt: string;
+  description: string;
+  status: 'Aktif' | 'Inaktif';
+}): Promise<MutationWorkspace> {
+  const { data } = await api.post<MutationWorkspace>(
+    '/mutation-analysis/workspaces',
+    payload,
+  );
+  return data;
+}
+
+export async function updateMutationWorkspace(
+  workspaceId: string,
+  payload: {
+    title: string;
+    tmt: string;
+    description: string;
+    status: 'Aktif' | 'Inaktif';
+  },
+): Promise<MutationWorkspace> {
+  const { data } = await api.put<MutationWorkspace>(
+    `/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}`,
+    payload,
+  );
+  return data;
+}
+
+export async function assignMutationWorkspaceDataset(
+  workspaceId: string,
+  datasetId: string,
+): Promise<MutationWorkspace> {
+  const { data } = await api.put<MutationWorkspace>(
+    `/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}/dataset`,
+    { dataset_id: datasetId },
+  );
+  return data;
+}
+
+export async function deleteMutationWorkspace(workspaceId: string): Promise<void> {
+  await api.delete(`/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}`);
+}
+
+export async function lookupMutationNips(nips: string[]): Promise<MutationLookupResponse> {
+  const { data } = await api.post<MutationLookupResponse>(
+    '/mutation-analysis/lookup-nips',
+    { nips },
+  );
+  return data;
+}
+
+export async function updateMenuAccessSettings(
+  policies: MenuAccessPolicy[],
+): Promise<MenuAccessPolicy[]> {
+  const { data } = await api.put<{ policies: MenuAccessPolicy[] }>('/menu-access', { policies });
+  return data.policies;
 }
 
 export async function getThemePreference(): Promise<ThemeName> {
@@ -381,6 +458,14 @@ export async function getPerformanceDashboard(
   }
 }
 
+export async function deletePerformanceDatasetPeriod(period: string): Promise<void> {
+  try {
+    await api.delete(`/performance/datasets/${encodeURIComponent(period)}`);
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
 export async function getPerformanceInsight(): Promise<PerformanceInsight> {
   try {
     const { data } = await api.get<PerformanceInsight>('/performance/insight');
@@ -461,6 +546,79 @@ export async function getPerformanceRecords(
           period,
         },
       },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function updatePerformanceCorrection(
+  request: PerformanceCorrectionEditRequest,
+): Promise<PerformanceCorrectionEditResult> {
+  try {
+    const { data } = await api.post<PerformanceCorrectionEditResult>(
+      '/performance/corrections/manual',
+      request,
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function downloadPerformanceCorrectionBatchTemplate(): Promise<Blob> {
+  try {
+    const { data } = await api.get<Blob>(
+      '/performance/corrections/batch-template',
+      { responseType: 'blob' },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function batchUpdatePerformanceCorrections(
+  file: File,
+  period: string,
+): Promise<PerformanceCorrectionBatchResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('period', period);
+  try {
+    const { data } = await api.post<PerformanceCorrectionBatchResult>(
+      '/performance/corrections/batch',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function getPerformanceCorrectionEditLog(
+  page: number,
+  pageSize: number,
+): Promise<PerformanceCorrectionEditLogPage> {
+  try {
+    const { data } = await api.get<PerformanceCorrectionEditLogPage>(
+      '/performance/corrections/edit-log',
+      { params: { page, page_size: pageSize } },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function undoPerformanceCorrectionEdit(
+  logId: number,
+): Promise<PerformanceCorrectionEditResult> {
+  try {
+    const { data } = await api.post<PerformanceCorrectionEditResult>(
+      `/performance/corrections/edit-log/${logId}/undo`,
     );
     return data;
   } catch (error) {
@@ -835,9 +993,29 @@ export async function uploadFile(
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<DatasetPreview> {
+  return uploadDataset('/upload', file, onProgress);
+}
+
+export async function uploadMutationWorkspaceFile(
+  workspaceId: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<DatasetPreview> {
+  return uploadDataset(
+    `/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}/upload`,
+    file,
+    onProgress,
+  );
+}
+
+async function uploadDataset(
+  path: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<DatasetPreview> {
   const form = new FormData();
   form.append('file', file);
-  const { data } = await api.post<DatasetPreview>('/upload', form, {
+  const { data } = await api.post<DatasetPreview>(path, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: (e) => {
       if (onProgress && e.total) {

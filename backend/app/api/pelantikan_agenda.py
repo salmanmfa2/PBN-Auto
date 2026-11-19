@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
+from app.api.menu_access import require_menu_access
 from app.history_db import get_history_db
 from app.models.auth import User
 from app.schemas.pelantikan_agenda import (
@@ -23,7 +24,11 @@ from app.schemas.pelantikan_agenda import (
 from app.services import pelantikan_agenda_service
 
 
-router = APIRouter(prefix="/undangan-pelantikan", tags=["Undangan Pelantikan"])
+router = APIRouter(
+    prefix="/undangan-pelantikan",
+    tags=["Undangan Pelantikan"],
+    dependencies=[Depends(require_menu_access("nd-undangan"))],
+)
 
 
 @router.get("/agendas", response_model=list[PelantikanAgendaSummary])

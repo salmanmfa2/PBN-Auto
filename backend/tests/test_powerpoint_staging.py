@@ -7,14 +7,40 @@ import pandas as pd
 from pptx import Presentation
 from starlette.datastructures import UploadFile
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.api.dataset import merge_sitasi_profiles
+from app.history_db import Base, get_history_db
+from app.models.menu_access import MenuAccessPolicy
 from app.services import powerpoint_service
 from app.storage.dataset_store import DatasetStore
 from main import app
 
 
 class PowerPointStagingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.menu_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            self.menu_engine,
+            tables=[MenuAccessPolicy.__table__],
+        )
+
+        def override_history_db():
+            with Session(self.menu_engine) as session:
+                yield session
+
+        app.dependency_overrides[get_history_db] = override_history_db
+
+    def tearDown(self) -> None:
+        app.dependency_overrides.pop(get_history_db, None)
+        self.menu_engine.dispose()
+
     def _create_presentation(
         self,
         mode: str,

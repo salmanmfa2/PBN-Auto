@@ -26,6 +26,7 @@ export function useDataset() {
   const [recommendationStatus, setRecommendationStatus] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const recommendationRequestId = useRef(0);
+  const datasetRequestId = useRef(0);
 
   const checkCleaningRecommendation = useCallback(async (datasetId: string, sheetName: string) => {
     const requestId = ++recommendationRequestId.current;
@@ -65,6 +66,7 @@ export function useDataset() {
   const clearError = useCallback(() => setError(null), []);
 
   const reset = useCallback(() => {
+    datasetRequestId.current += 1;
     recommendationRequestId.current += 1;
     setStatus('idle');
     setPreview(null);
@@ -78,22 +80,34 @@ export function useDataset() {
     setRecommendationError(null);
   }, []);
 
-  const upload = useCallback(async (file: File) => {
+  const upload = useCallback(async (
+    file: File,
+    workspaceId?: string,
+  ): Promise<DatasetPreview | null> => {
+    const requestId = ++datasetRequestId.current;
     setError(null);
     setStatus('uploading');
     setUploadProgress(0);
     try {
-      const result = await api.uploadFile(file, setUploadProgress);
-      setPreview(result);
-      setRunName(file.name.replace(/\.[^/.]+$/, '') || 'Untitled run');
-      setActiveAutoCleanMode(null);
-      setDupStats(null);
-      setStatus('ready');
-      void checkCleaningRecommendation(result.dataset_id, result.selected_sheet);
+      const result = workspaceId
+        ? await api.uploadMutationWorkspaceFile(workspaceId, file, setUploadProgress)
+        : await api.uploadFile(file, setUploadProgress);
+      if (requestId === datasetRequestId.current) {
+        setPreview(result);
+        setRunName(file.name.replace(/\.[^/.]+$/, '') || 'Untitled run');
+        setActiveAutoCleanMode(null);
+        setDupStats(null);
+        setStatus('ready');
+        void checkCleaningRecommendation(result.dataset_id, result.selected_sheet);
+      }
       void refreshStoredRuns();
+      return result;
     } catch (err) {
-      setError((err as Error).message);
-      setStatus('error');
+      if (requestId === datasetRequestId.current) {
+        setError((err as Error).message);
+        setStatus('error');
+      }
+      return null;
     }
   }, [checkCleaningRecommendation, refreshStoredRuns]);
 
@@ -109,23 +123,31 @@ export function useDataset() {
     }
   }, [preview, refreshStoredRuns, runName]);
 
-  const restoreRun = useCallback(async (datasetId: string) => {
+  const restoreRun = useCallback(async (datasetId: string): Promise<DatasetPreview | null> => {
+    const requestId = ++datasetRequestId.current;
     setError(null);
     setStatus('cleaning');
     try {
       const result = await api.restoreStoredDataset(datasetId);
-      setPreview(result);
-      setDupStats(null);
-      recommendationRequestId.current += 1;
-      setCleaningRecommendation(null);
-      setRecommendationStatus('idle');
-      setRecommendationError(null);
-      const restored = storedRuns.find((run) => run.dataset_id === datasetId);
-      setRunName(restored?.run_name ?? '');
-      setStatus('ready');
+      if (requestId === datasetRequestId.current) {
+        setPreview(result);
+        setActiveAutoCleanMode(null);
+        setDupStats(null);
+        recommendationRequestId.current += 1;
+        setCleaningRecommendation(null);
+        setRecommendationStatus('idle');
+        setRecommendationError(null);
+        const restored = storedRuns.find((run) => run.dataset_id === datasetId);
+        setRunName(restored?.run_name ?? '');
+        setStatus('ready');
+      }
+      return result;
     } catch (err) {
-      setError((err as Error).message);
-      setStatus('idle');
+      if (requestId === datasetRequestId.current) {
+        setError((err as Error).message);
+        setStatus('idle');
+      }
+      return null;
     }
   }, [storedRuns]);
 
@@ -250,6 +272,7 @@ export function useDataset() {
   const applyAutoClean = useCallback(
     async (mode: string) => {
       if (!preview) return;
+      const requestId = ++datasetRequestId.current;
       setError(null);
       setStatus('cleaning');
       try {
@@ -258,12 +281,16 @@ export function useDataset() {
           mode,
           sheet_name: preview.selected_sheet,
         });
-        setPreview(result);
-        setActiveAutoCleanMode(mode);
-        setStatus('ready');
+        if (requestId === datasetRequestId.current) {
+          setPreview(result);
+          setActiveAutoCleanMode(mode);
+          setStatus('ready');
+        }
       } catch (err) {
-        setError((err as Error).message);
-        setStatus('ready');
+        if (requestId === datasetRequestId.current) {
+          setError((err as Error).message);
+          setStatus('ready');
+        }
       }
     },
     [preview]

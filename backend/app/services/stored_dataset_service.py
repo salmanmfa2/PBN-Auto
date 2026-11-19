@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.dataset_file import DatasetFile
 from app.models.dataset_run import DatasetRun
 from app.models.cleaning_history import CleaningHistory
+from app.models.mutation_analysis import MutationAnalysisWorkspaceDataset
 
 
 def create_run(
@@ -17,6 +18,7 @@ def create_run(
     filename: str,
     content: bytes,
     content_type: str | None,
+    workspace_id: str | None = None,
 ) -> None:
     stored_path = _write_file(dataset_id, 1, "original", filename, content)
     try:
@@ -39,6 +41,16 @@ def create_run(
                 storage_path=stored_path,
             )
         )
+        if workspace_id is not None:
+            assignment = db.get(MutationAnalysisWorkspaceDataset, workspace_id)
+            if assignment is None:
+                assignment = MutationAnalysisWorkspaceDataset(
+                    workspace_id=workspace_id,
+                    dataset_id=dataset_id,
+                )
+                db.add(assignment)
+            else:
+                assignment.dataset_id = dataset_id
         db.commit()
     except Exception:
         db.rollback()

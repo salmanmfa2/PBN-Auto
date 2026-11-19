@@ -5,6 +5,7 @@ interface DuplicateRemoverProps {
   onApply: (columns: string[]) => void;
   isLoading: boolean;
   stats: { original: number; removed: number; remaining: number } | null;
+  disabled?: boolean;
 }
 
 export function DuplicateRemover({
@@ -12,6 +13,7 @@ export function DuplicateRemover({
   onApply,
   isLoading,
   stats,
+  disabled = false,
 }: DuplicateRemoverProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -48,6 +50,7 @@ export function DuplicateRemover({
           >
             <input
               type="checkbox"
+              disabled={disabled}
               checked={selected.has(col)}
               onChange={() => toggle(col)}
               className="w-3.5 h-3.5 accent-brand-500"
@@ -65,7 +68,7 @@ export function DuplicateRemover({
 
       <button
         onClick={handleApply}
-        disabled={isLoading || selected.size === 0}
+        disabled={disabled || isLoading || selected.size === 0}
         className="btn-danger text-xs justify-center"
       >
         Remove Duplicates

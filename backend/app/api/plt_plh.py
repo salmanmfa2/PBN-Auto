@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_admin_user
+from app.api.auth import get_current_user
+from app.api.menu_access import require_menu_access
 from app.history_db import get_history_db
 from app.models.auth import User
 from app.models.plt_plh import PltPlhMonitoringRecord
@@ -19,7 +20,11 @@ from app.schemas.plt_plh import (
 from app.services import plt_plh_service
 
 
-router = APIRouter(prefix="/plt-plh", tags=["Plt./Plh. management"])
+router = APIRouter(
+    prefix="/plt-plh",
+    tags=["Plt./Plh. management"],
+    dependencies=[Depends(require_menu_access("plt-plh"))],
+)
 
 
 def _read_record(record: PltPlhMonitoringRecord) -> PltPlhRecordRead:
@@ -39,7 +44,7 @@ def get_notifications(history_db: Session = Depends(get_history_db)):
 @router.get("/employees", response_model=list[PltPlhEmployeeOption])
 def search_employees(
     q: str = Query(min_length=2, max_length=100),
-    _: User = Depends(get_admin_user),
+    _: User = Depends(get_current_user),
 ):
     try:
         return plt_plh_service.search_pbn_open_employees(q)
@@ -60,7 +65,7 @@ def export_records(history_db: Session = Depends(get_history_db)):
 @router.post("/records", response_model=PltPlhRecordRead, status_code=201)
 def create_record(
     request: PltPlhRecordCreate,
-    _: User = Depends(get_admin_user),
+    _: User = Depends(get_current_user),
     history_db: Session = Depends(get_history_db),
 ):
     record = plt_plh_service.create_record(history_db, PltPlhRecordFields(**request.model_dump()))
@@ -71,7 +76,7 @@ def create_record(
 def update_record(
     record_id: int,
     request: PltPlhRecordUpdate,
-    _: User = Depends(get_admin_user),
+    _: User = Depends(get_current_user),
     history_db: Session = Depends(get_history_db),
 ):
     record = plt_plh_service.get_record(history_db, record_id)
@@ -87,7 +92,7 @@ def update_record(
 def update_record_active(
     record_id: int,
     request: PltPlhRecordActiveUpdate,
-    _: User = Depends(get_admin_user),
+    _: User = Depends(get_current_user),
     history_db: Session = Depends(get_history_db),
 ):
     record = plt_plh_service.get_record(history_db, record_id)
@@ -98,7 +103,7 @@ def update_record_active(
 @router.delete("/records/{record_id}", status_code=204)
 def delete_record(
     record_id: int,
-    _: User = Depends(get_admin_user),
+    _: User = Depends(get_current_user),
     history_db: Session = Depends(get_history_db),
 ):
     record = plt_plh_service.get_record(history_db, record_id)

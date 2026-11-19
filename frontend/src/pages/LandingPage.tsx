@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as apiClient from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import type { PltPlhMonitoringRecord } from '../types';
+import { useMenuAccess } from '../contexts/MenuAccessContext';
+import type { MenuAccessKey, PltPlhMonitoringRecord } from '../types';
 
 type FeatureGroup = 'Analytics & Insight' | 'Operasional' | 'Administrasi';
-type FeatureStatus = 'ready' | 'beta' | 'dev';
+type FeatureStatus = 'ready' | 'beta' | 'experimental' | 'dev';
 type FeatureIconName =
   | 'analytics'
   | 'insight'
@@ -18,7 +19,7 @@ type FeatureIconName =
   | 'admin';
 
 type Feature = {
-  key: string;
+  key: MenuAccessKey;
   title: string;
   subtitle: string;
   group: FeatureGroup;
@@ -26,8 +27,6 @@ type Feature = {
   icon: FeatureIconName;
   path?: string;
   placeholder?: boolean;
-  adminOnly?: boolean;
-  userOnly?: boolean;
 };
 
 const features: Feature[] = [
@@ -68,6 +67,15 @@ const features: Feature[] = [
     path: '/analisis-kinerja',
   },
   {
+    key: 'analisis-mutasi',
+    title: 'Analisis Mutasi/Promosi',
+    subtitle: 'Eksplorasi data mutasi dan promosi pegawai',
+    group: 'Analytics & Insight',
+    status: 'experimental',
+    icon: 'transfer',
+    path: '/analisis-mutasi',
+  },
+  {
     key: 'plt-plh',
     title: 'Manajemen Plt./Plh.',
     subtitle: 'Pemantauan penugasan Plt. pejabat',
@@ -84,7 +92,6 @@ const features: Feature[] = [
     status: 'ready',
     icon: 'document',
     path: '/undangan-pelantikan',
-    userOnly: true,
   },
   {
     key: 'progress-bahan',
@@ -112,12 +119,11 @@ const features: Feature[] = [
     status: 'ready',
     icon: 'admin',
     path: '/admin',
-    adminOnly: true,
   },
 ];
 
 const groups: FeatureGroup[] = ['Analytics & Insight', 'Operasional', 'Administrasi'];
-const featureKeys = new Set(features.map((feature) => feature.key));
+const featureKeys = new Set<string>(features.map((feature) => feature.key));
 const FAVORITES_STORAGE_KEY = 'pbn.landing.favorites';
 const RECENT_STORAGE_KEY = 'pbn.landing.recent';
 
@@ -232,11 +238,11 @@ function FeatureIcon({ name, className }: { name: FeatureIconName; className?: s
 }
 
 function StatusBadge({ feature }: { feature: Feature }) {
-  if (feature.adminOnly) {
-    return <span className="landing-status-badge landing-status-badge-admin badge shrink-0 border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">Admin only</span>;
-  }
   if (feature.status === 'beta') {
     return <span className="landing-status-badge landing-status-badge-beta badge shrink-0 border border-brand-500/30 bg-brand-500/10 text-slate-300">Beta</span>;
+  }
+  if (feature.status === 'experimental') {
+    return <span className="landing-status-badge badge shrink-0 border border-amber-500/30 bg-amber-500/10 text-amber-300">Experimental</span>;
   }
   if (feature.status === 'dev') {
     return <span className="landing-status-badge landing-status-badge-dev badge shrink-0 border border-surface-700 bg-surface-800 text-slate-400">On development</span>;
@@ -350,9 +356,13 @@ function FeatureCard({
 export default function LandingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { canView, isLoading: isLoadingMenuAccess, error: menuAccessError, showNoAuth, reload } = useMenuAccess();
   const [notifications, setNotifications] = useState<PltPlhMonitoringRecord[]>([]);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [developmentMenu, setDevelopmentMenu] = useState<string | null>(null);
+  const [passcodeFeature, setPasscodeFeature] = useState<Feature | null>(null);
+  const [passcodeInput, setPasscodeInput] = useState('');
+  const [passcodeError, setPasscodeError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [initialPreferences] = useState(() => ({
@@ -376,6 +386,12 @@ export default function LandingPage() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (passcodeFeature) {
+          setPasscodeFeature(null);
+          setPasscodeInput('');
+          setPasscodeError(null);
+          return;
+        }
         if (developmentMenu) {
           setDevelopmentMenu(null);
           return;
@@ -397,12 +413,9 @@ export default function LandingPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [developmentMenu, searchQuery]);
+  }, [developmentMenu, passcodeFeature, searchQuery]);
 
-  const availableFeatures = features.filter(
-    (feature) => (!feature.adminOnly || (user?.auth_level ?? 0) >= 2)
-      && (!feature.userOnly || Boolean(user)),
-  );
+  const availableFeatures = features;
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase('id-ID');
   const visibleFeatures = availableFeatures.filter((feature) => (
     !normalizedQuery
@@ -423,12 +436,29 @@ export default function LandingPage() {
   };
 
   const openFeature = (feature: Feature) => {
+    if (isLoadingMenuAccess || menuAccessError) return;
+    if (!canView(feature.key)) {
+      showNoAuth();
+      return;
+    }
     if (feature.placeholder) {
       setDevelopmentMenu(feature.title);
       return;
     }
     if (!feature.path) return;
 
+    if (feature.key === 'analisis-mutasi' && user?.auth_level !== 4) {
+      setPasscodeFeature(feature);
+      setPasscodeInput('');
+      setPasscodeError(null);
+      return;
+    }
+
+    openVerifiedFeature(feature);
+  };
+
+  const openVerifiedFeature = (feature: Feature) => {
+    if (!feature.path) return;
     const nextRecent = [feature.key, ...recentKeys.filter((key) => key !== feature.key)].slice(0, 3);
     setRecentKeys(nextRecent);
     persistKeys(RECENT_STORAGE_KEY, nextRecent);
@@ -485,6 +515,12 @@ export default function LandingPage() {
         {notificationError && (
           <div role="alert" className="mb-4 rounded-lg border border-brand-500/40 bg-surface-800 px-4 py-3 text-sm text-slate-200">
             Notifikasi Plt./Plh. tidak dapat dimuat: {notificationError}
+          </div>
+        )}
+        {menuAccessError && (
+          <div role="alert" className="mb-4 rounded-lg border border-rose-700/50 bg-surface-800 px-4 py-3 text-sm text-rose-200">
+            Izin menu tidak dapat dimuat: {menuAccessError}
+            <button className="ml-3 underline" onClick={() => void reload()} type="button">Coba lagi</button>
           </div>
         )}
         {storageError && (
@@ -583,6 +619,85 @@ export default function LandingPage() {
           </div>
         )}
       </div>
+
+      {passcodeFeature && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/75 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setPasscodeFeature(null);
+              setPasscodeInput('');
+              setPasscodeError(null);
+            }
+          }}
+        >
+          <section
+            className="w-full max-w-sm rounded-xl border border-surface-700 bg-surface-900 p-6 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mutasi-passcode-title"
+          >
+            <h2 id="mutasi-passcode-title" className="text-lg font-semibold text-slate-100">
+              Experimental Access
+            </h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Masukkan passcode untuk membuka Analisis Mutasi/Promosi.
+            </p>
+            <form
+              className="mt-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (passcodeInput !== '1234') {
+                  setPasscodeError('Passcode tidak sesuai.');
+                  return;
+                }
+                const feature = passcodeFeature;
+                setPasscodeFeature(null);
+                setPasscodeInput('');
+                setPasscodeError(null);
+                openVerifiedFeature(feature);
+              }}
+            >
+              <label className="block text-sm text-slate-300" htmlFor="mutasi-passcode">
+                Passcode
+              </label>
+              <input
+                id="mutasi-passcode"
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                autoFocus
+                value={passcodeInput}
+                onChange={(event) => {
+                  setPasscodeInput(event.target.value);
+                  setPasscodeError(null);
+                }}
+                className="input mt-2"
+              />
+              {passcodeError && (
+                <p className="mt-2 text-sm text-rose-300" role="alert">{passcodeError}</p>
+              )}
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-surface-700 px-4 py-2 text-sm text-slate-300 hover:bg-surface-800"
+                  onClick={() => {
+                    setPasscodeFeature(null);
+                    setPasscodeInput('');
+                    setPasscodeError(null);
+                  }}
+                >
+                  Batal
+                </button>
+                <button type="submit" className="btn-primary">
+                  Buka
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
 
       {developmentMenu && (
         <div

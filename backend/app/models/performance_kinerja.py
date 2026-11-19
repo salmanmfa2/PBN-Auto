@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.history_db import Base
@@ -86,6 +86,33 @@ class PerformanceKinerjaRecord(Base):
     rating_hasil_kerja: Mapped[str | None] = mapped_column(Text, nullable=True)
     rating_perilaku_kerja: Mapped[str | None] = mapped_column(Text, nullable=True)
     predikat_kinerja: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PerformanceCorrectionEditLog(Base):
+    __tablename__ = "performance_correction_edit_logs"
+    __table_args__ = (
+        Index(
+            "ix_performance_correction_edit_period_nip_id",
+            "period",
+            "nip",
+            "id",
+        ),
+        Index("ix_performance_correction_edit_edited_at", "edited_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    period: Mapped[str] = mapped_column(String(7), nullable=False)
+    nip: Mapped[str] = mapped_column(String(18), nullable=False)
+    employee_name: Mapped[str] = mapped_column(Text, nullable=False)
+    old_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    new_value: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    edited_by_user: Mapped[str] = mapped_column(String(80), nullable=False)
+    edited_by_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    edited_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
 
 
 class PerformanceKinerjaInsight(Base):

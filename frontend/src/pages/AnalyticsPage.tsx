@@ -9,6 +9,7 @@ import { DuplicateRemover } from '../features/cleaning/DuplicateRemover';
 import { DataTable } from '../features/cleaning/DataTable';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Spinner } from '../components/Spinner';
+import { useMenuAccess } from '../contexts/MenuAccessContext';
 
 const SIDEBAR_MIN_WIDTH = 256;
 const SIDEBAR_MAX_WIDTH = 560;
@@ -35,6 +36,8 @@ interface StagedPowerPoint {
 
 export default function AnalyticsPage() {
   const navigate = useNavigate();
+  const { canEdit } = useMenuAccess();
+  const canEditAnalytics = canEdit('analytics');
   const {
     status, preview, error, uploadProgress, dupStats,
     clearError, reset, upload, saveRunName, restoreRun, deleteRun, refreshStoredRuns,
@@ -269,7 +272,12 @@ export default function AnalyticsPage() {
                 </button>
                 </>
               )}
-              <UploadZone onFile={upload} isUploading={status === 'uploading'} progress={uploadProgress} />
+              <UploadZone
+                onFile={upload}
+                isUploading={status === 'uploading'}
+                progress={uploadProgress}
+                disabled={!canEditAnalytics}
+              />
             </section>
             {!hasData && (
               <StoredRuns
@@ -279,6 +287,7 @@ export default function AnalyticsPage() {
                 onRestore={restoreRun}
                 onDelete={deleteRun}
                 onRefresh={() => void refreshStoredRuns()}
+                canEdit={canEditAnalytics}
               />
             )}
             {hasData && (
@@ -292,6 +301,7 @@ export default function AnalyticsPage() {
                         id="run-name"
                         value={runName}
                         maxLength={255}
+                        disabled={!canEditAnalytics}
                         onChange={(event) => setRunName(event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter') void saveRunName();
@@ -301,7 +311,7 @@ export default function AnalyticsPage() {
                       <button
                         type="button"
                         onClick={() => void saveRunName()}
-                        disabled={isBusy || !runName.trim()}
+                        disabled={!canEditAnalytics || isBusy || !runName.trim()}
                         className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Save
@@ -360,6 +370,7 @@ export default function AnalyticsPage() {
                         <p className="mt-1 text-xs text-slate-400">{cleaningRecommendation.reason}</p>
                         <button
                           type="button"
+                          disabled={!canEditAnalytics}
                           onClick={() => {
                             const mode = cleaningRecommendation.recommended_mode;
                             if (mode) setAutoCleanMode(mode);
@@ -380,6 +391,7 @@ export default function AnalyticsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={autoCleanMode}
+                    disabled={!canEditAnalytics}
                     onChange={(e) => setAutoCleanMode(e.target.value)}
                     className="min-w-0 flex-1 basis-40 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
                   >
@@ -393,7 +405,7 @@ export default function AnalyticsPage() {
                     type="button"
                     aria-label="Apply selected cleaning method"
                     title="Apply selected cleaning method"
-                    disabled={isBusy || !['PBN Open', 'PBN Open + Edu', 'PBN Open + Edu + HB', 'Sitasi Es.IV', 'Sitasi Es.III'].includes(autoCleanMode)}
+                    disabled={!canEditAnalytics || isBusy || !['PBN Open', 'PBN Open + Edu', 'PBN Open + Edu + HB', 'Sitasi Es.IV', 'Sitasi Es.III'].includes(autoCleanMode)}
                     onClick={() => applyAutoClean(autoCleanMode)}
                     className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -418,12 +430,13 @@ export default function AnalyticsPage() {
                             min={1}
                             placeholder="Rows"
                             value={firstCount}
+                            disabled={!canEditAnalytics}
                             onChange={(e) => setFirstCount(e.target.value)}
                             className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
                           />
                           <button
                             type="button"
-                            disabled={isBusy}
+                            disabled={!canEditAnalytics || isBusy}
                             onClick={() => deleteRows('first', Number(firstCount))}
                             className="w-1/2 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-400 disabled:opacity-50"
                           >
@@ -436,12 +449,13 @@ export default function AnalyticsPage() {
                             min={1}
                             placeholder="Rows"
                             value={lastCount}
+                            disabled={!canEditAnalytics}
                             onChange={(e) => setLastCount(e.target.value)}
                             className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
                           />
                           <button
                             type="button"
-                            disabled={isBusy}
+                            disabled={!canEditAnalytics || isBusy}
                             onClick={() => deleteRows('last', Number(lastCount))}
                             className="w-1/2 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-400 disabled:opacity-50"
                           >
@@ -454,12 +468,13 @@ export default function AnalyticsPage() {
                             min={1}
                             placeholder="Row #"
                             value={customRow}
+                            disabled={!canEditAnalytics}
                             onChange={(e) => setCustomRow(e.target.value)}
                             className="w-1/2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-400"
                           />
                           <button
                             type="button"
-                            disabled={isBusy}
+                            disabled={!canEditAnalytics || isBusy}
                             onClick={() => deleteRows('custom', undefined, Number(customRow))}
                             className="w-1/2 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-400 disabled:opacity-50"
                           >
@@ -476,7 +491,7 @@ export default function AnalyticsPage() {
                         type="button"
                         aria-label="Make the first row the column headers"
                         title="Make the first row the column headers"
-                        disabled={isBusy}
+                        disabled={!canEditAnalytics || isBusy}
                         onClick={useFirstRowAsHeader}
                         className="w-full rounded-lg bg-brand-500 px-3 py-2 text-left text-sm font-semibold text-white transition hover:bg-brand-400 disabled:opacity-50"
                       >
@@ -489,12 +504,24 @@ export default function AnalyticsPage() {
             )}
             {hasData && (
               <section className="card p-4">
-                <ColumnManager columns={preview.columns} onApplyRemove={applyRemoveColumns} onApplyRename={applyRenameColumns} isLoading={isBusy} />
+                <ColumnManager
+                  columns={preview.columns}
+                  onApplyRemove={applyRemoveColumns}
+                  onApplyRename={applyRenameColumns}
+                  isLoading={isBusy}
+                  disabled={!canEditAnalytics}
+                />
               </section>
             )}
             {hasData && (
               <section className="card p-4">
-                <DuplicateRemover columns={preview.columns} onApply={applyRemoveDuplicates} isLoading={isBusy} stats={dupStats} />
+                <DuplicateRemover
+                  columns={preview.columns}
+                  onApply={applyRemoveDuplicates}
+                  isLoading={isBusy}
+                  stats={dupStats}
+                  disabled={!canEditAnalytics}
+                />
               </section>
             )}
           </div>

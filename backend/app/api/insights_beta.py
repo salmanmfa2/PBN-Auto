@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.api.menu_access import require_menu_access
 from app.schemas.pbn_dashboard import (
     PbnDashboardFilters,
     PbnDashboardPeopleResponse,
@@ -11,7 +12,11 @@ from app.services.pbn_dashboard_service import (
 )
 
 
-router = APIRouter(prefix="/insights-beta", tags=["insights-beta"])
+router = APIRouter(
+    prefix="/insights-beta",
+    tags=["insights-beta"],
+    dependencies=[Depends(require_menu_access("insights-beta", "view"))],
+)
 
 
 @router.post("/pbn/dashboard", response_model=PbnDashboardResponse)

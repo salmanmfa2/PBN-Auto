@@ -3,6 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_admin_user, get_current_user
+from app.api.menu_access import require_menu_access
 from app.history_db import get_history_db
 from app.models.auth import User
 from app.schemas.auth import MessageResponse
@@ -33,7 +34,8 @@ def submit_feedback(
 
 @router.get("", response_model=list[FeedbackRead])
 def list_admin_feedback(
-    _: User = Depends(get_admin_user),
+    _: None = Depends(require_menu_access("admin", "view")),
+    __: User = Depends(get_admin_user),
     db: Session = Depends(get_history_db),
 ):
     try:
@@ -44,7 +46,8 @@ def list_admin_feedback(
 
 @router.delete("", response_model=FeedbackClearResponse)
 def clear_admin_feedback(
-    _: User = Depends(get_admin_user),
+    _: None = Depends(require_menu_access("admin", "edit")),
+    __: User = Depends(get_admin_user),
     db: Session = Depends(get_history_db),
 ):
     try:
@@ -57,7 +60,8 @@ def clear_admin_feedback(
 @router.delete("/{feedback_id}", response_model=MessageResponse)
 def delete_admin_feedback(
     feedback_id: int,
-    _: User = Depends(get_admin_user),
+    _: None = Depends(require_menu_access("admin", "edit")),
+    __: User = Depends(get_admin_user),
     db: Session = Depends(get_history_db),
 ):
     try:

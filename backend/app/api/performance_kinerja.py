@@ -2,11 +2,12 @@ import json
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_admin_user, get_super_admin
+from app.api.auth import get_current_user, get_super_admin
+from app.api.menu_access import require_menu_access
 from app.history_db import get_history_db
 from app.models.auth import User
 from app.schemas.performance_kinerja import (
@@ -20,27 +21,44 @@ from app.schemas.performance_kinerja import (
     PerformanceCorrectionSyncRequest,
     PerformanceCorrectionSyncPreview,
     PerformanceCorrectionSyncResult,
+    PerformanceCorrectionEditRequest,
+    PerformanceCorrectionEditResult,
+    PerformanceCorrectionEditLogPage,
+    PerformanceCorrectionBatchResult,
     PerformanceUploadValidation,
 )
 from app.services import performance_kinerja_service as service
 
 
-router = APIRouter(prefix="/performance", tags=["performance"])
+router = APIRouter(
+    prefix="/performance",
+    tags=["performance"],
+    dependencies=[Depends(require_menu_access("analisis-kinerja"))],
+)
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+MAX_CORRECTION_BATCH_UPLOAD_SIZE = 5 * 1024 * 1024
 
 
-async def _read_upload(file: UploadFile, extension: str) -> bytes:
+async def _read_upload(
+    file: UploadFile,
+    extension: str,
+    max_size: int = MAX_UPLOAD_SIZE,
+) -> bytes:
     filename = file.filename or ""
     if not filename.lower().endswith(extension):
         raise HTTPException(
             status_code=400,
             detail=f"Only {extension} files are supported for this upload.",
         )
-    content = await file.read(MAX_UPLOAD_SIZE + 1)
+    content = await file.read(max_size + 1)
     if not content:
         raise HTTPException(status_code=400, detail="The uploaded file is empty.")
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail="The upload exceeds the 50 MB limit.")
+    if len(content) > max_size:
+        max_size_mb = max_size // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"The upload exceeds the {max_size_mb} MB limit.",
+        )
     return content
 
 
@@ -114,7 +132,7 @@ def get_performance_insight(db: Session = Depends(get_history_db)):
 @router.put("/insight", response_model=PerformanceInsightRead)
 def update_performance_insight(
     request: PerformanceInsightUpdate,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_history_db),
 ):
     try:
@@ -154,6 +172,132 @@ def get_performance_records(
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
         raise _database_error("Could not load the performance data table.") from exc
+
+
+@router.delete("/datasets/{period}", status_code=204)
+def delete_performance_dataset_period(
+    period: str,
+    _: User = Depends(get_super_admin),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        service.delete_dataset_period(db, period)
+    except service.PerformanceDatasetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise _validation_error(exc) from exc
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise _database_error("Could not delete the performance dataset period.") from exc
+    return Response(status_code=204)
+
+
+@router.get("/corrections/batch-template")
+def download_performance_correction_batch_template(
+    _: User = Depends(get_current_user),
+):
+    content = service.create_correction_batch_template()
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="template-koreksi.xlsx"',
+        },
+    )
+
+
+@router.post(
+    "/corrections/batch",
+    response_model=PerformanceCorrectionBatchResult,
+)
+async def batch_update_performance_corrections(
+    file: UploadFile = File(...),
+    period: str = Form(..., min_length=7, max_length=7),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    content = await _read_upload(
+        file,
+        ".xlsx",
+        max_size=MAX_CORRECTION_BATCH_UPLOAD_SIZE,
+    )
+    try:
+        return service.update_manual_corrections_from_excel(
+            db,
+            content,
+            period,
+            edited_by_user=user.user,
+            edited_by_name=user.name,
+        )
+    except service.PerformanceCorrectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise _validation_error(exc) from exc
+    except SQLAlchemyError as exc:
+        raise _database_error("Could not apply the batch performance corrections.") from exc
+
+
+@router.post(
+    "/corrections/manual",
+    response_model=PerformanceCorrectionEditResult,
+)
+def update_manual_performance_correction(
+    request: PerformanceCorrectionEditRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        return service.update_manual_correction(
+            db,
+            request.period,
+            request.nip,
+            request.nilai_koreksi,
+            edited_by_user=user.user,
+            edited_by_name=user.name,
+        )
+    except service.PerformanceCorrectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise _validation_error(exc) from exc
+    except SQLAlchemyError as exc:
+        raise _database_error("Could not save the manual performance correction.") from exc
+
+
+@router.get(
+    "/corrections/edit-log",
+    response_model=PerformanceCorrectionEditLogPage,
+)
+def get_performance_correction_edit_log(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    period: str | None = Query(default=None, max_length=7),
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        return service.get_correction_edit_logs(db, page, page_size, period)
+    except ValueError as exc:
+        raise _validation_error(exc) from exc
+    except SQLAlchemyError as exc:
+        raise _database_error("Could not load the correction edit log.") from exc
+
+
+@router.post(
+    "/corrections/edit-log/{log_id}/undo",
+    response_model=PerformanceCorrectionEditResult,
+)
+def undo_performance_correction_edit(
+    log_id: int,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    try:
+        return service.undo_manual_correction(db, log_id)
+    except service.PerformanceCorrectionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except service.PerformanceCorrectionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise _database_error("Could not undo the manual performance correction.") from exc
 
 
 @router.get("/exports/unit-eselon-ii")

@@ -52,3 +52,18 @@ CREATE TABLE IF NOT EXISTS performance_kinerja_insights (
   updated_by_name VARCHAR(200) NOT NULL,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS performance_correction_edit_logs (
+  id INT NOT NULL AUTO_INCREMENT,
+  period VARCHAR(7) NOT NULL,
+  nip VARCHAR(18) NOT NULL,
+  employee_name TEXT NOT NULL,
+  old_value DECIMAL(18,8) NULL,
+  new_value DECIMAL(18,8) NOT NULL,
+  edited_by_user VARCHAR(80) NOT NULL,
+  edited_by_name VARCHAR(200) NOT NULL,
+  edited_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY ix_performance_correction_edit_period_nip_id (period, nip, id),
+  KEY ix_performance_correction_edit_edited_at (edited_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

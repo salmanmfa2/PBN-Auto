@@ -51,14 +51,22 @@ class ChatServiceTests(unittest.TestCase):
         self.assertIn("only Super Admins can replace that source", system_prompt)
         self.assertIn("Analisis Kinerja DJPb is a publicly readable web feature", system_prompt)
         self.assertIn("only Super Admins can replace a period's full CSV dataset", system_prompt)
-        self.assertIn("check and explicitly sync corrections from the configured EPRIDE source", system_prompt)
-        self.assertIn("limited to submitted forms and 13-digit idUnit values", system_prompt)
+        self.assertIn(
+            "choose an available EPRIDE source year/TW independently from the target dataset",
+            system_prompt,
+        )
+        self.assertIn("explicitly sync submitted 13-digit-idUnit corrections", system_prompt)
         self.assertIn("CSV values remain authoritative until sync", system_prompt)
         self.assertIn("supports quarterly comparisons", system_prompt)
         self.assertNotIn("upload Excel adjustments", system_prompt)
         self.assertNotIn("does not retain previous quarters", system_prompt)
         self.assertIn("Bahan Pendukung MPK and Simulasi Mutasi remain web placeholder", system_prompt)
         self.assertIn("Desktop navigation has only PBN Analytics and Insight Hub", system_prompt)
+        self.assertIn(
+            "Web access levels are Guest (0), User (1), Special User (2), Super Admin (3), and God User (4)",
+            system_prompt,
+        )
+        self.assertIn("God User can configure per-menu minimum View/Edit levels", system_prompt)
         self.assertEqual(request["messages"][-1], {"role": "user", "content": "Hello"})
 
     @patch.dict(os.environ, {"GROQ_API_KEY": "test-key-not-real"}, clear=True)

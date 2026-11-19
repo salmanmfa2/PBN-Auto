@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as apiClient from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
+import { useMenuAccess } from '../contexts/MenuAccessContext';
 import type {
   PltPlhEmployeeOption,
   PltPlhMonitoringRecord,
@@ -55,8 +55,8 @@ function statusClass(status: PltPlhMonitoringRecord['status']): string {
 
 export default function PltPlhManagementPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const canManageRecords = (user?.auth_level ?? 0) >= 2;
+  const { canEdit } = useMenuAccess();
+  const canManageRecords = canEdit('plt-plh');
   const [records, setRecords] = useState<PltPlhMonitoringRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);

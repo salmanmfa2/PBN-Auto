@@ -5,19 +5,23 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.api.auth import get_current_user, get_super_admin
+from app.api.auth import get_current_user, get_optional_current_user, get_super_admin
 from app.history_db import Base, _migrate_performance_schema, get_history_db
+from app.models.menu_access import MenuAccessPolicy
 from app.models.performance_kinerja import (
+    PerformanceCorrectionEditLog,
     PerformanceKinerjaDataset,
     PerformanceKinerjaInsight,
     PerformanceKinerjaRecord,
 )
 from app.services import performance_kinerja_service as service
+from app.services.kinerja import corrections as kinerja_corrections
+from app.services.kinerja import uploads as kinerja_uploads
 from main import app
 
 
@@ -75,19 +79,35 @@ def full_csv(
     return output.getvalue().encode("utf-8")
 
 
+def correction_batch_xlsx(
+    rows: list[tuple[object, object]],
+    headers: tuple[str, str] = ("nip", "nilai_koreksi"),
+) -> bytes:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(headers)
+    for row in rows:
+        worksheet.append(row)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
 class PerformanceKinerjaServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(
             self.engine,
             tables=[
+                PerformanceCorrectionEditLog.__table__,
                 PerformanceKinerjaDataset.__table__,
                 PerformanceKinerjaRecord.__table__,
             ],
         )
         self.session = Session(self.engine)
         self.employee_lookup_patcher = patch.object(
-            service,
+            kinerja_uploads,
             "_lookup_employee_records",
             return_value=EMPLOYEE,
         )
@@ -138,7 +158,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             nkp_awal="84",
             nkp_akhir="119",
         )
-        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
             result = service.validate_full_upload(content, "q3-2026")
 
         self.assertEqual(
@@ -231,7 +251,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(existing.nama, "Pegawai Contoh")
 
         duplicate_csv = full_csv() + full_csv().split(b"\n", 1)[1]
-        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
             with self.assertRaisesRegex(ValueError, "Duplicate NIPs"):
                 service.replace_full_upload(
                     self.session,
@@ -242,7 +262,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 )
         self.assertEqual(self.get_dataset("Q3-2026").period, "Q3-2026")
 
-        with patch.object(service, "_lookup_employee_records", return_value={}):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
             result = service.replace_full_upload(
                 self.session,
                 full_csv(nip="1234567890123456", hukdis="26"),
@@ -259,7 +279,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(self.get_dataset("Q3-2026").period, "Q3-2026")
 
     def test_quarter_uploads_are_retained_and_same_period_replacement_is_isolated(self) -> None:
-        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
             service.replace_full_upload(
                 self.session,
                 full_csv(npk="80", nkp_akhir="89"),
@@ -275,7 +295,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 uploaded_by_name="Admin",
             )
 
-        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE) as lookup:
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE) as lookup:
             dashboard = service.get_dashboard(self.session, None, [], "Q3-2026")
             unit = dashboard["units"][0]
             comparison = unit["comparison"]
@@ -329,7 +349,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             self.assertEqual(lookup.call_count, 1)
 
     def test_comparison_requires_the_immediately_previous_calendar_quarter(self) -> None:
-        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
             for period in ("Q1-2026", "Q3-2026"):
                 service.replace_full_upload(
                     self.session,
@@ -411,7 +431,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         previous_dataset.row_count = 3
         self.session.commit()
 
-        with patch.object(service, "_lookup_employee_records", return_value=EMPLOYEE):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
             dashboard = service.get_dashboard(
                 self.session,
                 "Unit A",
@@ -587,7 +607,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 ),
             )
 
-        with patch.object(service, "engine", employee_engine):
+        with patch.object(kinerja_uploads, "engine", employee_engine):
             employees = service._lookup_employee_records({NIP})
             q2_employees = service._lookup_employee_records(
                 {NIP},
@@ -619,7 +639,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             }
         }
         with patch.object(
-            service,
+            kinerja_uploads,
             "_lookup_employee_records",
             return_value=q2_employee,
         ) as employee_lookup:
@@ -659,7 +679,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             dampak_pelanggaran="2",
             dampak_perilaku="1",
         )
-        with patch.object(service, "_lookup_employee_records", return_value={}):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
             result = service.validate_full_upload(content, "Q3-2026")
         self.assertEqual(result["unidentified_count"], 1)
         self.assertEqual(result["normalized_penalty_count"], 3)
@@ -723,7 +743,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
     def test_available_epride_source_periods_are_grouped_and_sorted(self) -> None:
         with patch.object(
-            service,
+            kinerja_corrections,
             "fetch_epride_available_source_periods",
             return_value=[
                 {"year": 2025, "tw": 4},
@@ -744,6 +764,14 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
     def test_epride_sync_updates_matched_and_zeroes_unmatched_records(self) -> None:
         other_nip = "223456789012345678"
         self.import_active_dataset()
+        service.update_manual_correction(
+            self.session,
+            "Q3-2026",
+            NIP,
+            service.Decimal("3"),
+            edited_by_user="admin",
+            edited_by_name="Admin",
+        )
         dataset = self.get_dataset("Q3-2026")
         self.session.add(
             PerformanceKinerjaRecord(
@@ -762,7 +790,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.session.commit()
 
         with patch.object(
-            service,
+            kinerja_corrections,
             "fetch_submitted_correction_rows",
             return_value=[
                 {
@@ -794,6 +822,376 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(matched.nkp_akhir, service.Decimal("84.6"))
         self.assertEqual(unmatched.nilai_koreksi, service.ZERO)
         self.assertEqual(unmatched.nkp_akhir, service.Decimal("85.5"))
+        self.assertEqual(
+            self.session.scalars(select(PerformanceCorrectionEditLog)).all(),
+            [],
+        )
+
+    def test_manual_correction_edit_recalculates_and_records_editor(self) -> None:
+        self.import_active_dataset()
+
+        result = service.update_manual_correction(
+            self.session,
+            "Q3-2026",
+            NIP,
+            service.Decimal("2.75"),
+            edited_by_user="admin",
+            edited_by_name="Admin User",
+        )
+
+        record = self.get_record(NIP, "Q3-2026")
+        log = self.session.scalar(select(PerformanceCorrectionEditLog))
+        expected_score = service.calculate_nkp_akhir(
+            record.nkp_awal,
+            record.nko,
+            record.nilai_hukuman_disiplin,
+            record.nilai_dampak_pelanggaran_disiplin,
+            service.Decimal("2.75"),
+        )
+        self.assertTrue(result["changed"])
+        self.assertEqual(record.nilai_koreksi, service.Decimal("2.75"))
+        self.assertEqual(record.nkp_akhir, expected_score)
+        self.assertEqual(result["nkp_akhir"], service._format_decimal(expected_score))
+        self.assertEqual(log.period, "Q3-2026")
+        self.assertEqual(log.nip, NIP)
+        self.assertEqual(log.employee_name, "Pegawai Contoh")
+        self.assertEqual(log.old_value, service.Decimal("1"))
+        self.assertEqual(log.new_value, service.Decimal("2.75"))
+        self.assertEqual(log.edited_by_user, "admin")
+        self.assertEqual(log.edited_by_name, "Admin User")
+
+    def test_manual_correction_accepts_range_endpoints_and_rejects_outside_values(self) -> None:
+        self.import_active_dataset()
+
+        for value in ("-5", "5"):
+            with self.subTest(value=value):
+                service.update_manual_correction(
+                    self.session,
+                    "Q3-2026",
+                    NIP,
+                    service.Decimal(value),
+                    edited_by_user="admin",
+                    edited_by_name="Admin",
+                )
+
+        self.assertEqual(
+            self.get_record(NIP, "Q3-2026").nilai_koreksi,
+            service.Decimal("5"),
+        )
+        logs = self.session.scalars(
+            select(PerformanceCorrectionEditLog).order_by(
+                PerformanceCorrectionEditLog.id
+            )
+        ).all()
+        self.assertEqual(
+            [log.new_value for log in logs],
+            [service.Decimal("-5"), service.Decimal("5")],
+        )
+
+        for value in ("-5.00000001", "5.00000001", "1.000000001"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                service.update_manual_correction(
+                    self.session,
+                    "Q3-2026",
+                    NIP,
+                    service.Decimal(value),
+                    edited_by_user="admin",
+                    edited_by_name="Admin",
+                )
+
+        self.assertEqual(
+            self.session.scalars(select(PerformanceCorrectionEditLog)).all(),
+            logs,
+        )
+        self.assertEqual(
+            self.get_record(NIP, "Q3-2026").nilai_koreksi,
+            service.Decimal("5"),
+        )
+
+    def test_batch_correction_template_contains_two_text_headers(self) -> None:
+        workbook = load_workbook(
+            BytesIO(service.create_correction_batch_template()),
+            read_only=True,
+        )
+        try:
+            worksheet = workbook.active
+            self.assertEqual(
+                tuple(cell.value for cell in next(worksheet.iter_rows(max_row=1))),
+                ("nip", "nilai_koreksi"),
+            )
+            self.assertEqual(worksheet["A2"].number_format, "@")
+        finally:
+            workbook.close()
+
+    def test_batch_correction_normalizes_quoted_nips_recalculates_and_logs_each_change(self) -> None:
+        other_nip = "223456789012345678"
+        self.import_active_dataset()
+        dataset = self.get_dataset("Q3-2026")
+        self.session.add(
+            PerformanceKinerjaRecord(
+                dataset_id=dataset.id,
+                nip=other_nip,
+                nama="Pegawai Kedua",
+                nkp_awal=service.Decimal("85"),
+                nilai_hukuman_disiplin=service.Decimal("-1"),
+                nilai_dampak_pelanggaran_disiplin=service.Decimal("-2"),
+                nilai_koreksi=service.Decimal("-1"),
+                nko=service.Decimal("90"),
+                nkp_akhir=service.Decimal("80.8"),
+            )
+        )
+        dataset.row_count = 2
+        self.session.commit()
+        content = correction_batch_xlsx([
+            (f"`{NIP}", "2.25"),
+            (f"'{other_nip}", "-1,5"),
+        ])
+
+        result = service.update_manual_corrections_from_excel(
+            self.session,
+            content,
+            "Q3-2026",
+            edited_by_user="admin",
+            edited_by_name="Admin User",
+        )
+
+        first_record = self.get_record(NIP, "Q3-2026")
+        second_record = self.get_record(other_nip, "Q3-2026")
+        logs = self.session.scalars(
+            select(PerformanceCorrectionEditLog).order_by(
+                PerformanceCorrectionEditLog.id
+            )
+        ).all()
+        self.assertEqual(result, {
+            "period": "Q3-2026",
+            "input_count": 2,
+            "updated_count": 2,
+            "unchanged_count": 0,
+        })
+        self.assertEqual(first_record.nilai_koreksi, service.Decimal("2.25"))
+        self.assertEqual(
+            first_record.nkp_akhir,
+            service.calculate_nkp_akhir(
+                first_record.nkp_awal,
+                first_record.nko,
+                first_record.nilai_hukuman_disiplin,
+                first_record.nilai_dampak_pelanggaran_disiplin,
+                service.Decimal("2.25"),
+            ),
+        )
+        self.assertEqual(second_record.nilai_koreksi, service.Decimal("-1.5"))
+        self.assertEqual(
+            [(log.nip, log.old_value, log.new_value) for log in logs],
+            [
+                (NIP, service.Decimal("1"), service.Decimal("2.25")),
+                (other_nip, service.Decimal("-1"), service.Decimal("-1.5")),
+            ],
+        )
+        self.assertTrue(all(log.edited_by_user == "admin" for log in logs))
+
+        no_change_result = service.update_manual_corrections_from_excel(
+            self.session,
+            content,
+            "Q3-2026",
+            edited_by_user="admin",
+            edited_by_name="Admin User",
+        )
+        self.assertEqual(no_change_result["updated_count"], 0)
+        self.assertEqual(no_change_result["unchanged_count"], 2)
+        self.assertEqual(
+            len(self.session.scalars(select(PerformanceCorrectionEditLog)).all()),
+            2,
+        )
+
+    def test_batch_correction_accepts_range_endpoints(self) -> None:
+        other_nip = "223456789012345678"
+        self.import_active_dataset()
+        dataset = self.get_dataset("Q3-2026")
+        self.session.add(
+            PerformanceKinerjaRecord(
+                dataset_id=dataset.id,
+                nip=other_nip,
+                nama="Pegawai Kedua",
+                nkp_awal=service.Decimal("85"),
+                nilai_hukuman_disiplin=service.Decimal("-1"),
+                nilai_dampak_pelanggaran_disiplin=service.Decimal("-2"),
+                nilai_koreksi=service.Decimal("-1"),
+                nko=service.Decimal("90"),
+                nkp_akhir=service.Decimal("80.8"),
+            )
+        )
+        dataset.row_count = 2
+        self.session.commit()
+
+        result = service.update_manual_corrections_from_excel(
+            self.session,
+            correction_batch_xlsx([(NIP, "-5"), (other_nip, "5")]),
+            "Q3-2026",
+            edited_by_user="admin",
+            edited_by_name="Admin User",
+        )
+
+        self.assertEqual(result["updated_count"], 2)
+        self.assertEqual(
+            self.get_record(NIP, "Q3-2026").nilai_koreksi,
+            service.Decimal("-5"),
+        )
+        self.assertEqual(
+            self.get_record(other_nip, "Q3-2026").nilai_koreksi,
+            service.Decimal("5"),
+        )
+
+    def test_batch_correction_rejects_invalid_rows_atomically(self) -> None:
+        self.import_active_dataset()
+        invalid_workbooks = (
+            correction_batch_xlsx([
+                (NIP, "2"),
+                ("223456789012345678", "3"),
+            ]),
+            correction_batch_xlsx([
+                (NIP, "2"),
+                (NIP, "3"),
+            ]),
+            correction_batch_xlsx([
+                (NIP, "-5.00000001"),
+            ]),
+            correction_batch_xlsx([
+                (NIP, "5.00000001"),
+            ]),
+            correction_batch_xlsx([
+                (123456789012345678, "2"),
+            ]),
+            correction_batch_xlsx(
+                [(NIP, "2")],
+                headers=("employee_nip", "nilai_koreksi"),
+            ),
+        )
+
+        for content in invalid_workbooks:
+            with self.subTest(content=content[:12]), self.assertRaises(ValueError):
+                service.update_manual_corrections_from_excel(
+                    self.session,
+                    content,
+                    "Q3-2026",
+                    edited_by_user="admin",
+                    edited_by_name="Admin",
+                )
+            self.assertEqual(
+                self.get_record(NIP, "Q3-2026").nilai_koreksi,
+                service.Decimal("1"),
+            )
+            self.assertEqual(
+                self.session.scalars(select(PerformanceCorrectionEditLog)).all(),
+                [],
+            )
+
+    def test_undo_removes_later_edits_for_only_the_selected_period_and_nip(self) -> None:
+        self.import_active_dataset()
+        service.replace_full_upload(
+            self.session,
+            full_csv(),
+            "Q4-2026",
+            uploaded_by_user="admin",
+            uploaded_by_name="Admin",
+        )
+        service.update_manual_correction(
+            self.session, "Q3-2026", NIP, service.Decimal("2"), "admin", "Admin"
+        )
+        service.update_manual_correction(
+            self.session, "Q3-2026", NIP, service.Decimal("3"), "admin", "Admin"
+        )
+        service.update_manual_correction(
+            self.session, "Q3-2026", NIP, service.Decimal("4"), "admin", "Admin"
+        )
+        service.update_manual_correction(
+            self.session, "Q4-2026", NIP, service.Decimal("2"), "admin", "Admin"
+        )
+        selected_log = self.session.scalar(
+            select(PerformanceCorrectionEditLog).where(
+                PerformanceCorrectionEditLog.period == "Q3-2026",
+                PerformanceCorrectionEditLog.new_value == service.Decimal("3"),
+            )
+        )
+
+        result = service.undo_manual_correction(self.session, selected_log.id)
+
+        remaining_logs = self.session.scalars(
+            select(PerformanceCorrectionEditLog).order_by(
+                PerformanceCorrectionEditLog.id
+            )
+        ).all()
+        self.assertEqual(result["period"], "Q3-2026")
+        self.assertEqual(result["nilai_koreksi"], 2.0)
+        self.assertEqual(
+            self.get_record(NIP, "Q3-2026").nilai_koreksi,
+            service.Decimal("2"),
+        )
+        self.assertEqual(
+            self.get_record(NIP, "Q4-2026").nilai_koreksi,
+            service.Decimal("2"),
+        )
+        self.assertEqual(
+            [(log.period, log.new_value) for log in remaining_logs],
+            [("Q3-2026", service.Decimal("2")), ("Q4-2026", service.Decimal("2"))],
+        )
+
+    def test_full_upload_clears_correction_edit_history_and_failed_upload_keeps_it(self) -> None:
+        self.import_active_dataset()
+        service.update_manual_correction(
+            self.session, "Q3-2026", NIP, service.Decimal("2"), "admin", "Admin"
+        )
+
+        with self.assertRaises(ValueError):
+            service.replace_full_upload(
+                self.session,
+                b"not a valid performance CSV",
+                "Q3-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+            )
+        self.assertEqual(
+            len(self.session.scalars(select(PerformanceCorrectionEditLog)).all()),
+            1,
+        )
+
+        service.replace_full_upload(
+            self.session,
+            full_csv(),
+            "Q3-2026",
+            uploaded_by_user="admin",
+            uploaded_by_name="Admin",
+        )
+        self.assertEqual(
+            self.session.scalars(select(PerformanceCorrectionEditLog)).all(),
+            [],
+        )
+
+    def test_failed_epride_sync_keeps_correction_edit_history(self) -> None:
+        self.import_active_dataset()
+        service.update_manual_correction(
+            self.session, "Q3-2026", NIP, service.Decimal("2"), "admin", "Admin"
+        )
+
+        with (
+            patch.object(
+                kinerja_corrections,
+                "fetch_submitted_correction_rows",
+                side_effect=RuntimeError("EPRIDE is unavailable"),
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            service.sync_adjustments_from_epride(
+                self.session,
+                "Q3-2026",
+                2026,
+                2,
+                {},
+            )
+
+        self.assertEqual(
+            len(self.session.scalars(select(PerformanceCorrectionEditLog)).all()),
+            1,
+        )
 
     def test_epride_check_reports_sync_plan_without_changing_csv_values(self) -> None:
         self.import_active_dataset()
@@ -801,7 +1199,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         original_correction = record.nilai_koreksi
         original_score = record.nkp_akhir
         with patch.object(
-            service,
+            kinerja_corrections,
             "fetch_submitted_correction_rows",
             return_value=[
                 {
@@ -859,7 +1257,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         original_correction = record.nilai_koreksi
         original_score = record.nkp_akhir
         with patch.object(
-            service,
+            kinerja_corrections,
             "fetch_submitted_correction_rows",
             return_value=[
                 {
@@ -930,7 +1328,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
     def test_epride_sync_rejects_stale_conflict_choices(self) -> None:
         self.import_active_dataset()
         with patch.object(
-            service,
+            kinerja_corrections,
             "fetch_submitted_correction_rows",
             return_value=[
                 {"form_id": 21, "id_unit": "1234567890123", "nip": NIP, "nilai_koreksi": "1"},
@@ -1037,7 +1435,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         self.session.commit()
 
-        with patch.object(service, "_lookup_employee_records", return_value={}):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
             dashboard = service.get_dashboard(self.session, None, [], "Q3-2026")
 
         self.assertEqual(
@@ -1115,7 +1513,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             ]
         )
         self.session.commit()
-        with patch.object(service, "_lookup_employee_records", return_value={}):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
             result = service.get_dashboard(
                 self.session,
                 "Unit A",
@@ -1231,7 +1629,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.session.commit()
         service.invalidate_dashboard_cache()
 
-        with patch.object(service, "_lookup_employee_records", return_value={}):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
             descending = service.get_records(
                 self.session,
                 page=1,
@@ -1311,7 +1709,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.employee_lookup.assert_not_called()
 
         with patch.object(
-            service,
+            kinerja_corrections,
             "fetch_submitted_correction_rows",
             return_value=[
                 {
@@ -1349,7 +1747,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 "eselon": "III",
             },
         }
-        with patch.object(service, "_lookup_employee_records", return_value=employees):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=employees):
             service.replace_full_upload(
                 self.session,
                 content,
@@ -1408,7 +1806,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             uploaded_by_user="admin",
             uploaded_by_name="Admin",
         )
-        with patch.object(service, "_lookup_employee_records", return_value={}):
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
             result = service.get_records(self.session, page=1, page_size=1, search="Pegawai")
         self.assertEqual(result["total"], 1)
         self.assertEqual(len(result["records"]), 1)
@@ -1420,9 +1818,36 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
 
 class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.menu_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            self.menu_engine,
+            tables=[MenuAccessPolicy.__table__],
+        )
+
+        def override_history_db():
+            with Session(self.menu_engine) as session:
+                yield session
+
+        app.dependency_overrides[get_history_db] = override_history_db
+        app.dependency_overrides[get_optional_current_user] = self.get_optional_user
+
+    def get_optional_user(self):
+        user_override = app.dependency_overrides.get(get_current_user)
+        if user_override is not None:
+            return user_override()
+        super_admin_override = app.dependency_overrides.get(get_super_admin)
+        return super_admin_override() if super_admin_override is not None else None
+
     def tearDown(self) -> None:
         app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_optional_current_user, None)
         app.dependency_overrides.pop(get_history_db, None)
+        self.menu_engine.dispose()
 
     def test_normal_admin_cannot_upload_performance_data(self) -> None:
         app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
@@ -1447,12 +1872,153 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
                 params={"period": "Q3-2026", "source_year": 2026, "source_tw": 2},
             )
             source_periods_response = client.get("/performance/adjustments/source-periods")
+            delete_response = client.delete("/performance/datasets/Q3-2026")
         finally:
             app.dependency_overrides.pop(get_current_user, None)
         self.assertEqual(response.status_code, 403)
         self.assertEqual(sync_response.status_code, 403)
         self.assertEqual(check_response.status_code, 403)
         self.assertEqual(source_periods_response.status_code, 403)
+        self.assertEqual(delete_response.status_code, 403)
+
+    def test_regular_user_cannot_edit_corrections_or_read_the_edit_log(self) -> None:
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="viewer",
+            name="Viewer",
+            auth_level=1,
+        )
+        try:
+            client = TestClient(app)
+            edit_response = client.post(
+                "/performance/corrections/manual",
+                json={
+                    "period": "Q3-2026",
+                    "nip": NIP,
+                    "nilai_koreksi": 1.5,
+                },
+            )
+            log_response = client.get("/performance/corrections/edit-log")
+            undo_response = client.post(
+                "/performance/corrections/edit-log/1/undo",
+            )
+            template_response = client.get(
+                "/performance/corrections/batch-template",
+            )
+            batch_response = client.post(
+                "/performance/corrections/batch",
+                data={"period": "Q3-2026"},
+                files={
+                    "file": (
+                        "batch.xlsx",
+                        correction_batch_xlsx([(NIP, "2")]),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+            )
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        self.assertEqual(edit_response.status_code, 403)
+        self.assertEqual(log_response.status_code, 403)
+        self.assertEqual(undo_response.status_code, 403)
+        self.assertEqual(template_response.status_code, 403)
+        self.assertEqual(batch_response.status_code, 403)
+
+    def test_admin_can_edit_list_and_undo_corrections_via_api(self) -> None:
+        test_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            test_engine,
+            tables=[
+                MenuAccessPolicy.__table__,
+                PerformanceKinerjaDataset.__table__,
+                PerformanceKinerjaRecord.__table__,
+                PerformanceCorrectionEditLog.__table__,
+            ],
+        )
+        with Session(test_engine) as session:
+            dataset = PerformanceKinerjaDataset(
+                period="Q3-2026",
+                row_count=1,
+                uploaded_by_user="superadmin",
+                uploaded_by_name="Super Admin",
+            )
+            session.add(dataset)
+            session.flush()
+            session.add(
+                PerformanceKinerjaRecord(
+                    dataset_id=dataset.id,
+                    nip=NIP,
+                    nama="Pegawai Contoh",
+                    nkp_awal=service.Decimal("85"),
+                    nilai_hukuman_disiplin=service.Decimal("-1"),
+                    nilai_dampak_pelanggaran_disiplin=service.Decimal("-2"),
+                    nilai_koreksi=service.Decimal("1"),
+                    nko=service.Decimal("90"),
+                    nkp_akhir=service.Decimal("83.5"),
+                )
+            )
+            session.commit()
+
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            user="admin",
+            name="Admin User",
+            auth_level=2,
+        )
+
+        def override_history_db():
+            with Session(test_engine) as session:
+                yield session
+
+        app.dependency_overrides[get_history_db] = override_history_db
+        try:
+            client = TestClient(app)
+            edit_response = client.post(
+                "/performance/corrections/manual",
+                json={
+                    "period": "Q3-2026",
+                    "nip": NIP,
+                    "nilai_koreksi": 2.5,
+                },
+            )
+            log_response = client.get("/performance/corrections/edit-log")
+            undo_response = client.post("/performance/corrections/edit-log/1/undo")
+            template_response = client.get("/performance/corrections/batch-template")
+            batch_response = client.post(
+                "/performance/corrections/batch",
+                data={"period": "Q3-2026"},
+                files={
+                    "file": (
+                        "batch.xlsx",
+                        correction_batch_xlsx([(NIP, "2.75")]),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+            )
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_history_db, None)
+            test_engine.dispose()
+
+        self.assertEqual(edit_response.status_code, 200)
+        self.assertEqual(edit_response.json()["nilai_koreksi"], 2.5)
+        self.assertTrue(edit_response.json()["changed"])
+        self.assertEqual(log_response.status_code, 200)
+        self.assertEqual(log_response.json()["total"], 1)
+        self.assertEqual(log_response.json()["records"][0]["edited_by_user"], "admin")
+        self.assertEqual(undo_response.status_code, 200)
+        self.assertEqual(undo_response.json()["nilai_koreksi"], 1.0)
+        self.assertEqual(template_response.status_code, 200)
+        self.assertIn(
+            "spreadsheetml.sheet",
+            template_response.headers["content-type"],
+        )
+        self.assertEqual(batch_response.status_code, 200)
+        self.assertEqual(batch_response.json()["updated_count"], 1)
+        self.assertEqual(batch_response.json()["unchanged_count"], 0)
 
     def test_super_admin_can_check_and_sync_performance_corrections(self) -> None:
         app.dependency_overrides[get_super_admin] = lambda: SimpleNamespace(
@@ -1461,10 +2027,6 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
             auth_level=3,
         )
 
-        def override_history_db():
-            yield None
-
-        app.dependency_overrides[get_history_db] = override_history_db
         preview = {
             "period": "Q3-2026",
             "source_year": 2026,
@@ -1510,6 +2072,96 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
         self.assertEqual(check_response.json(), preview)
         self.assertEqual(sync_response.json(), result)
 
+    def test_super_admin_can_delete_dataset_period_and_its_correction_logs(self) -> None:
+        test_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(
+            test_engine,
+            tables=[
+                MenuAccessPolicy.__table__,
+                PerformanceKinerjaDataset.__table__,
+                PerformanceKinerjaRecord.__table__,
+                PerformanceCorrectionEditLog.__table__,
+            ],
+        )
+        with Session(test_engine) as session:
+            dataset = PerformanceKinerjaDataset(
+                period="Q3-2026",
+                row_count=1,
+                uploaded_by_user="superadmin",
+                uploaded_by_name="Super Admin",
+            )
+            session.add(dataset)
+            session.flush()
+            session.add(
+                PerformanceKinerjaRecord(
+                    dataset_id=dataset.id,
+                    nip=NIP,
+                    nama="Pegawai Contoh",
+                    nilai_koreksi=service.Decimal("2"),
+                )
+            )
+            session.add(
+                PerformanceCorrectionEditLog(
+                    period="Q3-2026",
+                    nip=NIP,
+                    employee_name="Pegawai Contoh",
+                    old_value=service.Decimal("1"),
+                    new_value=service.Decimal("2"),
+                    edited_by_user="admin",
+                    edited_by_name="Admin",
+                )
+            )
+            session.commit()
+
+        app.dependency_overrides[get_super_admin] = lambda: SimpleNamespace(
+            user="superadmin",
+            name="Super Admin",
+            auth_level=3,
+        )
+
+        def override_history_db():
+            with Session(test_engine) as session:
+                yield session
+
+        app.dependency_overrides[get_history_db] = override_history_db
+        try:
+            client = TestClient(app)
+            response = client.delete("/performance/datasets/Q3-2026")
+            dashboard_response = client.get("/performance/dashboard")
+            missing_response = client.delete("/performance/datasets/Q3-2026")
+            invalid_period_response = client.delete("/performance/datasets/2026-Q3")
+        finally:
+            app.dependency_overrides.pop(get_super_admin, None)
+            app.dependency_overrides.pop(get_history_db, None)
+
+        with Session(test_engine) as session:
+            self.assertIsNone(
+                session.scalar(
+                    select(PerformanceKinerjaDataset).where(
+                        PerformanceKinerjaDataset.period == "Q3-2026"
+                    )
+                )
+            )
+            self.assertEqual(
+                session.scalars(select(PerformanceKinerjaRecord)).all(),
+                [],
+            )
+            self.assertEqual(
+                session.scalars(select(PerformanceCorrectionEditLog)).all(),
+                [],
+            )
+        test_engine.dispose()
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertIsNone(dashboard_response.json()["dataset"])
+        self.assertEqual(missing_response.status_code, 404)
+        self.assertEqual(invalid_period_response.status_code, 422)
+
     def test_guest_can_read_empty_analysis_and_records(self) -> None:
         test_engine = create_engine(
             "sqlite:///:memory:",
@@ -1519,6 +2171,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
         Base.metadata.create_all(
             test_engine,
             tables=[
+                MenuAccessPolicy.__table__,
                 PerformanceKinerjaDataset.__table__,
                 PerformanceKinerjaRecord.__table__,
                 PerformanceKinerjaInsight.__table__,
@@ -1571,6 +2224,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
         Base.metadata.create_all(
             test_engine,
             tables=[
+                MenuAccessPolicy.__table__,
                 PerformanceKinerjaDataset.__table__,
                 PerformanceKinerjaRecord.__table__,
                 PerformanceKinerjaInsight.__table__,
@@ -1616,6 +2270,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
         Base.metadata.create_all(
             test_engine,
             tables=[
+                MenuAccessPolicy.__table__,
                 PerformanceKinerjaDataset.__table__,
                 PerformanceKinerjaRecord.__table__,
             ],
@@ -1666,7 +2321,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
 
         app.dependency_overrides[get_history_db] = override_history_db
         try:
-            with patch.object(service, "_lookup_employee_records", return_value={}):
+            with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
                 response = TestClient(app).get(
                     "/performance/dashboard",
                     params=[
@@ -1694,6 +2349,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
         Base.metadata.create_all(
             test_engine,
             tables=[
+                MenuAccessPolicy.__table__,
                 PerformanceKinerjaDataset.__table__,
                 PerformanceKinerjaRecord.__table__,
             ],
@@ -1738,7 +2394,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
 
         app.dependency_overrides[get_history_db] = override_history_db
         try:
-            with patch.object(service, "_lookup_employee_records", return_value={}):
+            with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
                 client = TestClient(app)
                 query = {
                     "page_size": 10,
@@ -1775,7 +2431,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
         )
         try:
             with patch.object(
-                service,
+                kinerja_uploads,
                 "_lookup_employee_records",
                 return_value=EMPLOYEE,
             ) as employee_lookup:
@@ -1810,7 +2466,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
         )
         try:
             with patch.object(
-                service,
+                kinerja_uploads,
                 "_lookup_employee_records",
                 return_value=EMPLOYEE,
             ) as employee_lookup:

@@ -50,6 +50,19 @@ def get_current_user(
     return user
 
 
+def get_optional_current_user(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_history_db),
+) -> User | None:
+    if not authorization:
+        return None
+    token = _extract_token(authorization)
+    user = auth_service.get_user_by_token(db, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Session expired or invalid. Please sign in again.")
+    return user
+
+
 def get_admin_user(user: User = Depends(get_current_user)) -> User:
     if user.auth_level < 2:
         raise HTTPException(status_code=403, detail="Admin privileges are required.")

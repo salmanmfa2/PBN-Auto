@@ -4,16 +4,18 @@ interface UploadZoneProps {
   onFile: (file: File) => void;
   isUploading: boolean;
   progress: number;
+  disabled?: boolean;
 }
 
 const ACCEPTED = ['.csv', '.xlsx', '.xls'];
 
-export function UploadZone({ onFile, isUploading, progress }: UploadZoneProps) {
+export function UploadZone({ onFile, isUploading, progress, disabled = false }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
     (file: File) => {
+      if (disabled) return;
       const ext = '.' + file.name.split('.').pop()?.toLowerCase();
       if (!ACCEPTED.includes(ext)) {
         alert(`Unsupported file type. Please upload ${ACCEPTED.join(', ')}`);
@@ -21,22 +23,23 @@ export function UploadZone({ onFile, isUploading, progress }: UploadZoneProps) {
       }
       onFile(file);
     },
-    [onFile]
+    [disabled, onFile]
   );
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
+      if (disabled) return;
       const file = e.dataTransfer.files[0];
       if (file) handleFile(file);
     },
-    [handleFile]
+    [disabled, handleFile]
   );
 
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(true);
+    if (!disabled) setIsDragging(true);
   };
   const onDragLeave = () => setIsDragging(false);
 
@@ -65,12 +68,17 @@ export function UploadZone({ onFile, isUploading, progress }: UploadZoneProps) {
       onDrop={onDrop}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
-      className={`flex flex-col items-center gap-3 p-6 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+      aria-disabled={disabled}
+      className={`flex flex-col items-center gap-3 p-6 border-2 border-dashed rounded-xl transition-all ${
+        disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+      } ${
         isDragging
           ? 'border-brand-400 bg-brand-900/20'
           : 'border-surface-600 hover:border-surface-500 hover:bg-surface-700/30'
       }`}
-      onClick={() => inputRef.current?.click()}
+      onClick={() => {
+        if (!disabled) inputRef.current?.click();
+      }}
     >
       <div className="w-10 h-10 rounded-full bg-brand-900/40 flex items-center justify-center">
         <svg className="w-5 h-5 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -79,8 +87,10 @@ export function UploadZone({ onFile, isUploading, progress }: UploadZoneProps) {
         </svg>
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium text-slate-300">Drop your file here</p>
-        <p className="text-xs text-slate-500 mt-0.5">or click to browse</p>
+        <p className="text-sm font-medium text-slate-300">
+          {disabled ? 'Upload requires Edit access' : 'Drop your file here'}
+        </p>
+        {!disabled && <p className="text-xs text-slate-500 mt-0.5">or click to browse</p>}
       </div>
       <div className="flex gap-1.5 flex-wrap justify-center">
         {ACCEPTED.map((ext) => (
@@ -91,6 +101,7 @@ export function UploadZone({ onFile, isUploading, progress }: UploadZoneProps) {
         ref={inputRef}
         type="file"
         accept={ACCEPTED.join(',')}
+        disabled={disabled}
         onChange={onInputChange}
         className="hidden"
       />

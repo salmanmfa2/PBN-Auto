@@ -10,10 +10,13 @@ import type {
   DatabaseMaintenanceResult,
   DatabaseMaintenancePreview,
   DatabaseMaintenanceTarget,
+  MenuAccessKey,
+  MenuAccessPolicy,
   UserFeedback,
   PbnOpenDataSourceSyncStatus,
 } from '../types';
 import { Spinner } from '../components/Spinner';
+import { useMenuAccess } from '../contexts/MenuAccessContext';
 
 type UserForm = {
   user: string;
@@ -31,11 +34,34 @@ const emptyForm: UserForm = {
   is_active: true,
 };
 
+const menuAccessLabels: Record<MenuAccessKey, string> = {
+  analytics: 'PBN Analytics',
+  insights: 'Insight Hub',
+  'insights-beta': 'Insight Hub Beta',
+  'analisis-kinerja': 'Analisis Kinerja DJPb',
+  'analisis-mutasi': 'Analisis Mutasi/Promosi',
+  'plt-plh': 'Manajemen Plt./Plh.',
+  'nd-undangan': 'Generate ND Undangan Pelantikan',
+  'progress-bahan': 'Bahan Pendukung MPK',
+  'simulasi-mutasi': 'Simulasi Mutasi',
+  admin: 'Admin',
+};
+const minimumEditLevel: Partial<Record<MenuAccessKey, number>> = {
+  'analisis-kinerja': 1,
+  'plt-plh': 1,
+  'nd-undangan': 1,
+};
+const accessLevels = [
+  { value: 0, label: 'Guest' },
+  { value: 1, label: 'User' },
+  { value: 2, label: 'Special User' },
+  { value: 3, label: 'Super Admin' },
+];
 
 function authLevelLabel(level: AuthLevel): string {
   if (level === 4) return 'God User';
   if (level === 3) return 'Super Admin';
-  if (level === 2) return 'Admin';
+  if (level === 2) return 'Special User';
   return 'User';
 }
 
@@ -57,6 +83,7 @@ function formatSourceSyncDate(value: string): string {
 
 export default function AdminPage() {
   const { user: currentUser } = useAuth();
+  const { policies: menuPolicies, reload: reloadMenuPolicies } = useMenuAccess();
   const isGodUser = currentUser?.auth_level === 4;
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [feedbackItems, setFeedbackItems] = useState<UserFeedback[]>([]);
@@ -83,6 +110,52 @@ export default function AdminPage() {
   const [databaseDialogError, setDatabaseDialogError] = useState<string | null>(null);
   const [databaseApplyFailed, setDatabaseApplyFailed] = useState(false);
   const databaseFileInput = useRef<HTMLInputElement>(null);
+  const [showMenuAccessDialog, setShowMenuAccessDialog] = useState(false);
+  const [menuAccessDraft, setMenuAccessDraft] = useState<MenuAccessPolicy[]>([]);
+  const [isSavingMenuAccess, setIsSavingMenuAccess] = useState(false);
+  const [menuAccessError, setMenuAccessError] = useState<string | null>(null);
+
+  const openMenuAccessDialog = () => {
+    setMenuAccessError(null);
+    setMenuAccessDraft(menuPolicies.map((policy) => ({ ...policy })));
+    setShowMenuAccessDialog(true);
+  };
+
+  const updateMenuAccessDraft = (
+    menuKey: MenuAccessKey,
+    field: 'view_level' | 'edit_level',
+    level: number,
+  ) => {
+    setMenuAccessDraft((current) => current.map((policy) => {
+      if (policy.menu_key !== menuKey) return policy;
+      if (field === 'view_level') {
+        return {
+          ...policy,
+          view_level: level,
+          edit_level: Math.max(policy.edit_level, level, minimumEditLevel[menuKey] ?? 0),
+        };
+      }
+      return {
+        ...policy,
+        edit_level: Math.max(level, policy.view_level, minimumEditLevel[menuKey] ?? 0),
+      };
+    }));
+  };
+
+  const saveMenuAccess = async () => {
+    setMenuAccessError(null);
+    setIsSavingMenuAccess(true);
+    try {
+      await apiClient.updateMenuAccessSettings(menuAccessDraft);
+      await reloadMenuPolicies();
+      setShowMenuAccessDialog(false);
+      setNotice('Pengaturan akses menu berhasil disimpan.');
+    } catch (saveError) {
+      setMenuAccessError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setIsSavingMenuAccess(false);
+    }
+  };
 
   const refreshUsers = useCallback(async () => {
     if ((currentUser?.auth_level ?? 0) < 3) return;
@@ -348,7 +421,22 @@ export default function AdminPage() {
               Masuk sebagai {currentUser?.name} · {authLevelLabel(currentUser?.auth_level ?? 1)}
             </p>
           </div>
-          <Link to="/" className="btn-secondary">Kembali ke Menu</Link>
+          <div className="flex flex-wrap gap-2">
+            {isGodUser && (
+              <button
+                type="button"
+                onClick={openMenuAccessDialog}
+                className="btn-secondary inline-flex items-center gap-2"
+              >
+                <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 3l8 3v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-3z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4" />
+                </svg>
+                Set Auth Menu
+              </button>
+            )}
+            <Link to="/" className="btn-secondary">Kembali ke Menu</Link>
+          </div>
         </header>
 
         {(error || notice) && (
@@ -627,6 +715,112 @@ export default function AdminPage() {
           </section>
         )}
       </div>
+      {showMenuAccessDialog && isGodUser && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/75 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isSavingMenuAccess) {
+              setShowMenuAccessDialog(false);
+            }
+          }}
+        >
+          <section
+            aria-labelledby="menu-access-title"
+            aria-modal="true"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
+            role="dialog"
+          >
+            <h2 className="text-lg font-semibold" id="menu-access-title">Set Auth Menu</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Atur level minimum untuk melihat dan mengubah setiap menu. God User selalu memiliki akses penuh.
+            </p>
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full min-w-[560px] text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide text-slate-400">
+                  <tr>
+                    <th className="px-3 py-2">Menu</th>
+                    <th className="px-3 py-2">View</th>
+                    <th className="px-3 py-2">Edit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {menuAccessDraft.map((policy) => {
+                    const editMinimum = Math.max(
+                      policy.view_level,
+                      minimumEditLevel[policy.menu_key] ?? 0,
+                    );
+                    return (
+                      <tr key={policy.menu_key}>
+                        <th className="px-3 py-3 font-medium text-slate-200">
+                          {menuAccessLabels[policy.menu_key]}
+                        </th>
+                        <td className="px-3 py-3">
+                          <select
+                            aria-label={`${menuAccessLabels[policy.menu_key]} minimum View`}
+                            className="input min-w-36"
+                            value={policy.view_level}
+                            onChange={(event) => updateMenuAccessDraft(
+                              policy.menu_key,
+                              'view_level',
+                              Number(event.target.value),
+                            )}
+                          >
+                            {accessLevels.map((level) => (
+                              <option key={level.value} value={level.value}>{level.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-3">
+                          <select
+                            aria-label={`${menuAccessLabels[policy.menu_key]} minimum Edit`}
+                            className="input min-w-36"
+                            value={policy.edit_level}
+                            onChange={(event) => updateMenuAccessDraft(
+                              policy.menu_key,
+                              'edit_level',
+                              Number(event.target.value),
+                            )}
+                          >
+                            {accessLevels
+                              .filter((level) => level.value >= editMinimum)
+                              .map((level) => (
+                                <option key={level.value} value={level.value}>{level.label}</option>
+                              ))}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {menuAccessError && (
+              <p className="mt-4 rounded-lg border border-rose-700/50 bg-rose-900/20 px-3 py-2 text-sm text-rose-200" role="alert">
+                {menuAccessError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                className="btn-secondary"
+                disabled={isSavingMenuAccess}
+                onClick={() => setShowMenuAccessDialog(false)}
+                type="button"
+              >
+                Batal
+              </button>
+              <button
+                className="btn-primary disabled:opacity-50"
+                disabled={isSavingMenuAccess || menuAccessDraft.length !== 9}
+                onClick={() => void saveMenuAccess()}
+                type="button"
+              >
+                {isSavingMenuAccess ? <Spinner size="sm" label="Menyimpan…" /> : 'Simpan'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {showSourceDialog && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4"

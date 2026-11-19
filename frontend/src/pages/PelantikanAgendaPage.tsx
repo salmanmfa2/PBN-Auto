@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useMenuAccess } from '../contexts/MenuAccessContext';
 import * as apiClient from '../services/api';
 import type {
   PelantikanAgendaDetail,
@@ -221,6 +222,8 @@ export default function PelantikanAgendaPage({
   const navigate = useNavigate();
   const agendaBasePath = '/undangan-pelantikan';
   const { user, logout } = useAuth();
+  const { canEdit } = useMenuAccess();
+  const canEditAgenda = canEdit('nd-undangan');
   const [agendas, setAgendas] = useState<PelantikanAgendaSummary[]>([]);
   const [agenda, setAgenda] = useState<PelantikanAgendaDetail | null>(null);
   const [fields, setFields] = useState(emptyFields);
@@ -1011,7 +1014,7 @@ export default function PelantikanAgendaPage({
                   <h2 className="text-lg font-semibold">Detail agenda</h2>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!isEditingAgenda && (
+                  {!isEditingAgenda && canEditAgenda && (
                     <button
                       type="button"
                       onClick={() => setIsEditingAgenda(true)}
@@ -1024,27 +1027,31 @@ export default function PelantikanAgendaPage({
                       </svg>
                     </button>
                   )}
-                  <button
-                    type="button"
-                    disabled={isDeleting}
-                    onClick={() => void deleteAgenda()}
-                    aria-label={isDeleting ? 'Menghapus agenda' : 'Hapus agenda'}
-                    title={isDeleting ? 'Menghapus agenda' : 'Hapus agenda'}
-                    className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/10 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
-                      <path d="M4 7h16m-10 4v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" />
-                    </svg>
-                  </button>
+                  {canEditAgenda && (
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={() => void deleteAgenda()}
+                      aria-label={isDeleting ? 'Menghapus agenda' : 'Hapus agenda'}
+                      title={isDeleting ? 'Menghapus agenda' : 'Hapus agenda'}
+                      className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/10 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                        <path d="M4 7h16m-10 4v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
               {isEditingAgenda ? (
                 <form onSubmit={(event) => void saveAgenda(event)}>
-                  <AgendaFields fields={fields} onChange={updateFields} />
+                  <fieldset disabled={!canEditAgenda || isSaving}>
+                    <AgendaFields fields={fields} onChange={updateFields} />
+                  </fieldset>
                   <div className="mt-5 flex justify-end gap-2">
                     <button
                       type="button"
-                      disabled={isSaving}
+                      disabled={!canEditAgenda || isSaving}
                       onClick={() => {
                         if (agenda) setFields(agendaFields(agenda));
                         setIsEditingAgenda(false);
@@ -1061,7 +1068,7 @@ export default function PelantikanAgendaPage({
                     </button>
                     <button
                       type="submit"
-                      disabled={isSaving}
+                      disabled={!canEditAgenda || isSaving}
                       aria-label={isSaving ? 'Menyimpan detail agenda' : 'Simpan detail agenda'}
                       title={isSaving ? 'Menyimpan detail agenda' : 'Simpan detail agenda'}
                       className="inline-flex size-10 items-center justify-center rounded-lg border border-emerald-500/30 text-emerald-300 transition hover:bg-emerald-500/10 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1137,7 +1144,7 @@ export default function PelantikanAgendaPage({
                       setSelectedSheets([]);
                       setNotice(null);
                     }}
-                    disabled={isUploading || isLoadingSheets || isEditingAgenda}
+                    disabled={!canEditAgenda || isUploading || isLoadingSheets || isEditingAgenda}
                     className="input-field w-full"
                   >
                     <option value="all_sheets">Gabungkan semua sheet roster</option>
@@ -1152,7 +1159,7 @@ export default function PelantikanAgendaPage({
                   type="file"
                   accept=".xlsx,.xls"
                   aria-label="Pilih workbook Excel"
-                  disabled={isLoadingSheets || isUploading || isEditingAgenda}
+                  disabled={!canEditAgenda || isLoadingSheets || isUploading || isEditingAgenda}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
                     event.currentTarget.value = '';
@@ -1168,7 +1175,7 @@ export default function PelantikanAgendaPage({
                 {activeWorkflowMode === 'single_sheet' && (
                   <button
                     type="button"
-                    disabled={!selectedFile || isLoadingSheets || isUploading || isSaving || isEditingAgenda}
+                    disabled={!canEditAgenda || !selectedFile || isLoadingSheets || isUploading || isSaving || isEditingAgenda}
                     onClick={() => void chooseWorkbookSheet()}
                     className="btn-secondary shrink-0"
                   >
@@ -1191,6 +1198,7 @@ export default function PelantikanAgendaPage({
                     || isUploading
                     || isSaving
                     || isEditingAgenda
+                    || !canEditAgenda
                   }
                   onClick={() => void uploadWorkbook()}
                   className="btn-primary shrink-0"
@@ -1222,7 +1230,7 @@ export default function PelantikanAgendaPage({
                     id="pelantikan-sheet"
                     value={selectedSheet}
                     onChange={(event) => setSelectedSheet(event.target.value)}
-                    disabled={isUploading || isLoadingSheets || isEditingAgenda}
+                    disabled={!canEditAgenda || isUploading || isLoadingSheets || isEditingAgenda}
                     className="input-field w-full"
                   >
                     {availableSheets.length > 1 && <option value="">Pilih sheet yang akan diproses</option>}
@@ -1250,7 +1258,7 @@ export default function PelantikanAgendaPage({
                               ? [...current, sheet]
                               : current.filter((selected) => selected !== sheet)
                           ))}
-                          disabled={isUploading || isLoadingSheets}
+                          disabled={!canEditAgenda || isUploading || isLoadingSheets}
                           className="size-4 accent-cyan-500"
                         />
                         <span>{sheet}</span>
@@ -1270,7 +1278,7 @@ export default function PelantikanAgendaPage({
                     id="experimental-single-sheet"
                     value={selectedSheet}
                     onChange={(event) => setSelectedSheet(event.target.value)}
-                    disabled={isUploading || isLoadingSheets}
+                    disabled={!canEditAgenda || isUploading || isLoadingSheets}
                     className="input-field w-full"
                   >
                     {availableSheets.length > 1 && <option value="">Pilih satu sheet</option>}
@@ -1353,7 +1361,7 @@ export default function PelantikanAgendaPage({
                     )}
                     <button
                       type="button"
-                      disabled={!selectableCount || selectedSelectableCount >= selectableCount || isSaving}
+                      disabled={!canEditAgenda || !selectableCount || selectedSelectableCount >= selectableCount || isSaving}
                       onClick={selectAllSelectable}
                       aria-label="Pilih semua pegawai yang dapat dipilih; satu baris per NIP"
                       title="Pilih semua pegawai yang dapat dipilih; satu baris per NIP"
@@ -1370,7 +1378,7 @@ export default function PelantikanAgendaPage({
                     </button>
                     <button
                       type="button"
-                      disabled={selectedSelectableCount === 0 || isSaving}
+                      disabled={!canEditAgenda || selectedSelectableCount === 0 || isSaving}
                       onClick={deselectAllSelectable}
                       aria-label="Batalkan semua pilihan pegawai"
                       title="Batalkan semua pilihan pegawai"
@@ -1383,7 +1391,7 @@ export default function PelantikanAgendaPage({
                     </button>
                     <button
                       type="button"
-                      disabled={!choicesDirty || isSaving}
+                      disabled={!canEditAgenda || !choicesDirty || isSaving}
                       onClick={() => void saveChoices()}
                       aria-label={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
                       title={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
@@ -1516,7 +1524,7 @@ export default function PelantikanAgendaPage({
                                 type="checkbox"
                                 aria-label={`Pilih ${person.nama || `baris ${person.row_number}`}`}
                                 checked={choice.selected}
-                                disabled={!canSelect}
+                                disabled={!canEditAgenda || !canSelect}
                                 onChange={(event) => changeChoice(person.id, event.target.checked)}
                                 className="mt-1 size-4 accent-cyan-500 disabled:opacity-40"
                               />
@@ -1561,7 +1569,7 @@ export default function PelantikanAgendaPage({
                                 aria-checked={isLuring}
                                 aria-label={`Modus pelantikan ${person.nama || `baris ${person.row_number}`}: ${modalityLabel}. Klik untuk mengubah ke ${nextModalityLabel}.`}
                                 title={`Ubah ke ${nextModalityLabel}`}
-                                disabled={!choice.selected || !canSelect}
+                                disabled={!canEditAgenda || !choice.selected || !canSelect}
                                 onClick={() => changeChoice(
                                   person.id,
                                   true,
@@ -1609,21 +1617,23 @@ export default function PelantikanAgendaPage({
                 <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
                   {agendas.length}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null);
-                    setIsCreateModalOpen(true);
-                  }}
-                  className="btn-primary"
-                >
-                  Buat agenda
-                </button>
+                {canEditAgenda && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setIsCreateModalOpen(true);
+                    }}
+                    className="btn-primary"
+                  >
+                    Buat agenda
+                  </button>
+                )}
               </div>
             </div>
             {agendas.length === 0 ? (
               <p className="mt-6 rounded-xl border border-dashed border-slate-700 p-5 text-center text-sm text-slate-400">
-                Belum ada agenda. Pilih “Buat agenda” untuk memulai.
+                Belum ada agenda.
               </p>
             ) : (
               <ul className="mt-4 grid gap-3 md:grid-cols-2">
@@ -1660,7 +1670,7 @@ export default function PelantikanAgendaPage({
                           </span>
                         </button>
                         <div className="flex justify-end border-t border-slate-800 px-3 py-1.5">
-                          <button
+                          {canEditAgenda && <button
                             type="button"
                             disabled={deletingHistoryAgendaId !== null}
                             onClick={() => void deleteHistoryAgenda(item)}
@@ -1683,7 +1693,7 @@ export default function PelantikanAgendaPage({
                               <path d="m19 6-1 14H6L5 6" />
                               <path d="M10 11v5M14 11v5" />
                             </svg>
-                          </button>
+                          </button>}
                         </div>
                       </div>
                     </li>
@@ -1728,7 +1738,9 @@ export default function PelantikanAgendaPage({
                     {error}
                   </div>
                 )}
-                <AgendaFields fields={fields} onChange={updateFields} autoFocus />
+                <fieldset disabled={!canEditAgenda || isSaving}>
+                  <AgendaFields fields={fields} onChange={updateFields} autoFocus />
+                </fieldset>
                 <div className="mt-5 flex justify-end gap-3">
                   <button
                     type="button"
@@ -1737,7 +1749,7 @@ export default function PelantikanAgendaPage({
                   >
                     Batal
                   </button>
-                  <button type="submit" disabled={isSaving} className="btn-primary">
+                  <button type="submit" disabled={!canEditAgenda || isSaving} className="btn-primary">
                     {isSaving ? 'Menyimpan…' : 'Buat agenda'}
                   </button>
                 </div>
@@ -1861,7 +1873,7 @@ export default function PelantikanAgendaPage({
                               <input
                                 type="checkbox"
                                 checked={!excludedDocumentKeys.has(key)}
-                                disabled={choicesDirty || isGenerating}
+                                disabled={!canEditAgenda || choicesDirty || isGenerating}
                                 onChange={() => toggleDocumentDownload(key)}
                                 aria-label={`Sertakan dokumen ${label} untuk ${group.unit}`}
                                 className="size-4 rounded border-slate-600 bg-slate-900 accent-brand-400"
@@ -1879,7 +1891,7 @@ export default function PelantikanAgendaPage({
               <footer className="mt-5 flex justify-end gap-2 border-t border-slate-800 pt-4">
                 <button
                   type="button"
-                  disabled={!choicesDirty || isSaving}
+                  disabled={!canEditAgenda || !choicesDirty || isSaving}
                   onClick={() => void saveChoices()}
                   aria-label={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
                   title={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
@@ -1895,6 +1907,7 @@ export default function PelantikanAgendaPage({
                   type="button"
                   disabled={
                     selectedDownloadGroups.length === 0
+                    || !canEditAgenda
                     || choicesDirty
                     || isGenerating
                     || isGeneratingAppendix
@@ -1917,6 +1930,7 @@ export default function PelantikanAgendaPage({
                   type="button"
                   disabled={
                     previewGroups.length === 0
+                    || !canEditAgenda
                     || choicesDirty
                     || isGenerating
                     || isGeneratingAppendix

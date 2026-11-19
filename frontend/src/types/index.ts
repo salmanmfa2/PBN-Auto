@@ -72,6 +72,55 @@ export interface AuthUser {
   created_at: string;
 }
 
+export type MenuAccessKey =
+  | 'analytics'
+  | 'insights'
+  | 'insights-beta'
+  | 'analisis-kinerja'
+  | 'analisis-mutasi'
+  | 'plt-plh'
+  | 'nd-undangan'
+  | 'progress-bahan'
+  | 'simulasi-mutasi'
+  | 'admin';
+
+export interface MenuAccessPolicy {
+  menu_key: MenuAccessKey;
+  view_level: number;
+  edit_level: number;
+}
+
+export type MutationEselonChoice = 'Administrator' | 'Pengawas';
+
+export interface MutationWorkspace {
+  id: string;
+  eselon_choice: MutationEselonChoice;
+  title: string;
+  description: string;
+  tmt: string | null;
+  status: 'Aktif' | 'Inaktif';
+  dataset_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MutationLookupEmployee {
+  nip: string;
+  nama: string;
+  jabatan: string;
+  unit_eselon_ii: string;
+  unit_eselon_iii: string;
+  unit_eselon_iv: string;
+  eselon: string;
+}
+
+export interface MutationLookupResponse {
+  matched_count: number;
+  unmatched_count: number;
+  invalid_count: number;
+  matches: Record<string, MutationLookupEmployee>;
+}
+
 export interface AuthSessionResponse {
   token: string;
   user: AuthUser;
@@ -94,6 +143,7 @@ export const FEEDBACK_MENU_OPTIONS = [
   'Insight Hub',
   'Insight Hub Beta',
   'Analisis Kinerja DJPb',
+  'Analisis Mutasi/Promosi',
   'Manajemen Plt./Plh.',
   'Generate ND Undangan Pelantikan',
   'Bahan Pendukung MPK',
@@ -239,6 +289,47 @@ export interface PerformanceCorrectionSyncPreview {
 
 export interface PerformanceCorrectionSyncResult extends PerformanceCorrectionSyncPreview {
   resolved_conflict_count: number;
+}
+
+export interface PerformanceCorrectionEditRequest {
+  period: string;
+  nip: string;
+  nilai_koreksi: number;
+}
+
+export interface PerformanceCorrectionEditResult {
+  period: string;
+  nip: string;
+  nilai_koreksi: number | null;
+  nkp_akhir: number | null;
+  status: string;
+  changed: boolean;
+}
+
+export interface PerformanceCorrectionBatchResult {
+  period: string;
+  input_count: number;
+  updated_count: number;
+  unchanged_count: number;
+}
+
+export interface PerformanceCorrectionEditLog {
+  id: number;
+  period: string;
+  nip: string;
+  employee_name: string;
+  old_value: number | null;
+  new_value: number;
+  edited_by_user: string;
+  edited_by_name: string;
+  edited_at: string;
+}
+
+export interface PerformanceCorrectionEditLogPage {
+  page: number;
+  page_size: number;
+  total: number;
+  records: PerformanceCorrectionEditLog[];
 }
 
 export interface PerformanceHistogramBin {

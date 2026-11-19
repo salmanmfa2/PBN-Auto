@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as apiClient from '../services/api';
+import { useMenuAccess } from '../contexts/MenuAccessContext';
 import type {
   PbnDashboardCount,
   PbnDashboardFilters,
@@ -18,9 +19,10 @@ interface RangeFilterProps {
   value: NumericRange;
   bounds: NumericRange;
   onChange: (range: NumericRange) => void;
+  disabled: boolean;
 }
 
-function RangeFilter({ title, value, bounds, onChange }: RangeFilterProps) {
+function RangeFilter({ title, value, bounds, onChange, disabled }: RangeFilterProps) {
   return (
     <section className="rounded-lg border border-surface-700 bg-surface-900 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -34,7 +36,7 @@ function RangeFilter({ title, value, bounds, onChange }: RangeFilterProps) {
           min={bounds.min}
           max={bounds.max}
           value={value.min}
-          disabled={bounds.min === bounds.max}
+          disabled={disabled || bounds.min === bounds.max}
           onChange={(event) => onChange({
             min: Math.min(Number(event.target.value), value.max),
             max: value.max,
@@ -50,7 +52,7 @@ function RangeFilter({ title, value, bounds, onChange }: RangeFilterProps) {
           min={bounds.min}
           max={bounds.max}
           value={value.max}
-          disabled={bounds.min === bounds.max}
+          disabled={disabled || bounds.min === bounds.max}
           onChange={(event) => onChange({
             min: value.min,
             max: Math.max(Number(event.target.value), value.min),
@@ -68,9 +70,10 @@ interface CheckboxFilterProps {
   options: string[];
   selected: string[];
   onChange: (selected: string[]) => void;
+  disabled: boolean;
 }
 
-function CheckboxFilter({ title, options, selected, onChange }: CheckboxFilterProps) {
+function CheckboxFilter({ title, options, selected, onChange, disabled }: CheckboxFilterProps) {
   const toggle = (option: string, checked: boolean) => {
     const next = checked
       ? [...selected, option]
@@ -84,6 +87,7 @@ function CheckboxFilter({ title, options, selected, onChange }: CheckboxFilterPr
       <div className="max-h-40 space-y-1 overflow-y-auto">
         <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-slate-300 hover:bg-surface-800">
           <input
+            disabled={disabled}
             type="checkbox"
             checked={selected.length === 0}
             onChange={() => onChange([])}
@@ -94,6 +98,7 @@ function CheckboxFilter({ title, options, selected, onChange }: CheckboxFilterPr
         {options.map((option) => (
           <label key={option} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-slate-300 hover:bg-surface-800">
             <input
+              disabled={disabled}
               type="checkbox"
               checked={selected.includes(option)}
               onChange={(event) => toggle(option, event.target.checked)}
@@ -153,6 +158,8 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isDatabaseSource = source === 'database';
+  const { canEdit } = useMenuAccess();
+  const canEditParameters = canEdit(isDatabaseSource ? 'insights-beta' : 'insights');
   const datasetId = isDatabaseSource ? 'pbncleaner.fetch_pbnopen' : searchParams.get('dataset_id');
   const sheetName = isDatabaseSource ? 'fetch_pbnopen' : searchParams.get('sheet_name') ?? 'Sheet1';
   const [dashboard, setDashboard] = useState<PbnDashboardResponse | null>(null);
@@ -355,7 +362,11 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
               <aside className="card h-fit space-y-3 p-4">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-100">Filters</h2>
-                  <p className="mt-1 text-xs text-slate-500">All charts update when a filter changes.</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {canEditParameters
+                      ? 'All charts update when a filter changes.'
+                      : 'View access only. Edit access is required to change filters.'}
+                  </p>
                 </div>
                 {ageBounds && effectiveAgeRange && (
                   <RangeFilter
@@ -363,6 +374,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
                     value={effectiveAgeRange}
                     bounds={ageBounds}
                     onChange={setAgeRange}
+                    disabled={!canEditParameters}
                   />
                 )}
                 {tenureBounds && effectiveTenureRange && (
@@ -371,6 +383,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
                     value={effectiveTenureRange}
                     bounds={tenureBounds}
                     onChange={setTenureRange}
+                    disabled={!canEditParameters}
                   />
                 )}
                 <CheckboxFilter
@@ -378,30 +391,35 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
                   options={dashboard.available_filters.eselon}
                   selected={selectedEselon}
                   onChange={setSelectedEselon}
+                  disabled={!canEditParameters}
                 />
                 <CheckboxFilter
                   title="Pendidikan"
                   options={dashboard.available_filters.education}
                   selected={selectedEducation}
                   onChange={setSelectedEducation}
+                  disabled={!canEditParameters}
                 />
                 <CheckboxFilter
                   title="Region"
                   options={dashboard.available_filters.region}
                   selected={selectedRegion}
                   onChange={setSelectedRegion}
+                  disabled={!canEditParameters}
                 />
                 <CheckboxFilter
                   title="Unit Eselon II"
                   options={dashboard.available_filters.unit}
                   selected={selectedUnit}
                   onChange={setSelectedUnit}
+                  disabled={!canEditParameters}
                 />
                 <CheckboxFilter
                   title="Rumpun"
                   options={dashboard.available_filters.rumpun}
                   selected={selectedRumpun}
                   onChange={setSelectedRumpun}
+                  disabled={!canEditParameters}
                 />
               </aside>
 

@@ -2,7 +2,7 @@
 
 A full-stack modular web application for PBN data cleaning and analytics. The web application is named MPK Workspace; PBN Cleaner remains the project and repository name.
 
-Current web update: **1.4.0** — [Web update notes](./Update%20Notes/Update%20Notes%201.4.0%20Web.md). Desktop requirements and release status are documented separately; this note does not claim a desktop build.
+Current web update: **1.4.1** — [Web update notes](./Update%20Notes/Update%20Notes%201.4.1%20Web.md). The planned **1.4.2** update focuses on refactoring and measured performance improvements; see the [planned Web 1.4.2 notes](./Update%20Notes/Update%20Notes%201.4.2%20Web.md). Desktop requirements and release status are documented separately; this note does not claim a desktop build.
 
 ## Features
 

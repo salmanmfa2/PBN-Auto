@@ -356,13 +356,55 @@ def _migrate_auth_level_role(database_engine: Engine | None = None) -> None:
         )
 
 
+def _migrate_mutation_analysis_schema(database_engine: Engine | None = None) -> None:
+    if database_engine is None:
+        database_engine = engine
+    workspace_table = "mutation_analysis_workspaces"
+    if not inspect(database_engine).has_table(workspace_table):
+        return
+    columns = {
+        column["name"]
+        for column in inspect(database_engine).get_columns(workspace_table)
+    }
+    additions = {
+        "tmt": "DATE NULL",
+        "status": "VARCHAR(16) NOT NULL DEFAULT 'Aktif'",
+    }
+    missing_columns = {
+        name: definition
+        for name, definition in additions.items()
+        if name not in columns
+    }
+    if not missing_columns:
+        return
+    if database_engine.dialect.name not in {"mysql", "mariadb", "sqlite"}:
+        raise RuntimeError(
+            "Cannot add TMT and status fields to mutation analysis workspaces "
+            f"on {database_engine.dialect.name}."
+        )
+    with database_engine.begin() as connection:
+        for name, definition in missing_columns.items():
+            connection.execute(
+                text(
+                    f"ALTER TABLE {workspace_table} "
+                    f"ADD COLUMN {name} {definition}"
+                )
+            )
+
+
 def init_history_db() -> None:
     from app.models.auth import User, UserPreference, UserSession  # noqa: F401
     from app.models.cleaning_history import CleaningHistory  # noqa: F401
     from app.models.dataset_file import DatasetFile  # noqa: F401
     from app.models.dataset_run import DatasetRun  # noqa: F401
+    from app.models.menu_access import MenuAccessPolicy  # noqa: F401
+    from app.models.mutation_analysis import (  # noqa: F401
+        MutationAnalysisWorkspace,
+        MutationAnalysisWorkspaceDataset,
+    )
     from app.models.pbnopen_data_source_sync import PbnOpenDataSourceSync  # noqa: F401
     from app.models.performance_kinerja import (  # noqa: F401
+        PerformanceCorrectionEditLog,
         PerformanceKinerjaDataset,
         PerformanceKinerjaInsight,
         PerformanceKinerjaRecord,
@@ -376,6 +418,7 @@ def init_history_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _migrate_auth_level_role(engine)
+    _migrate_mutation_analysis_schema(engine)
 
     performance_columns = {
         column["name"]

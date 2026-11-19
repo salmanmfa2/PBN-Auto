@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -19,6 +19,8 @@ from app.api import (
     feedback,
     insights,
     insights_beta,
+    menu_access,
+    mutation_analysis,
     pelantikan_agenda,
     performance_kinerja,
     plt_plh,
@@ -81,9 +83,14 @@ def startup() -> None:
 
 
 app.include_router(auth.router)
-app.include_router(auth.admin_router)
+app.include_router(
+    auth.admin_router,
+    dependencies=[Depends(menu_access.require_menu_access("admin"))],
+)
+app.include_router(menu_access.router)
 app.include_router(chat.router)
 app.include_router(feedback.router)
+app.include_router(mutation_analysis.router)
 app.include_router(upload.router, tags=["upload"])
 app.include_router(cleaning.router)
 app.include_router(dataset.router)

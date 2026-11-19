@@ -19,8 +19,13 @@ from app.schemas.dataset import (
 from app.schemas.history import CleaningHistoryRead
 from app.schemas.dataset import CleaningMethodRecommendation
 from app.services import cleaning_recommendation_service
+from app.api.menu_access import require_menu_access
 
-router = APIRouter(prefix="/clean", tags=["cleaning"])
+router = APIRouter(
+    prefix="/clean",
+    tags=["cleaning"],
+    dependencies=[Depends(require_menu_access("analytics"))],
+)
 
 
 @router.get(

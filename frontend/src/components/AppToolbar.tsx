@@ -31,6 +31,7 @@ const PATCH_NOTES = [
       'Gap Status menghitung jumlah NKP Akhir Sangat Istimewa dikurangi NKP Perhitungan Sangat Istimewa. Nilai positif berwarna hijau, nol memakai warna teks bawaan, dan nilai negatif merah; Gap Status tersedia di Lite View.',
       'Tabel Unit Eselon II dan Daftar Pegawai memiliki area gulir dengan tinggi terbatas dan header beku. Baris filter Daftar Pegawai tetap terlihat, di Full View maupun Lite View.',
       'Tombol Compare pada Overview kini menggunakan ikon timbangan.',
+      'Akses View/Edit dapat diatur per menu oleh God User. Semua kartu menu tetap terlihat; akses tanpa izin menampilkan dialog No Auth dan tetap dibatasi pada route serta API. Admin Page memerlukan Super Admin secara default, dan Auth Level 2 ditampilkan sebagai Special User.',
     ],
   },
   {
@@ -97,7 +98,7 @@ type PatchNoteVersion = (typeof PATCH_NOTES)[number]['version'];
 function getAuthorityLabel(authLevel: number): string {
   if (authLevel === 4) return 'God User · Level 4';
   if (authLevel === 3) return 'Super Admin · Level 3';
-  if (authLevel === 2) return 'Admin · Level 2';
+  if (authLevel === 2) return 'Special User · Level 2';
   return 'User · Level 1';
 }
 

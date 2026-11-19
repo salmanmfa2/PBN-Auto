@@ -5,15 +5,21 @@ from app.services import dataset_service
 from app.services import stored_dataset_service
 from app.history_db import get_history_db
 from app.schemas.dataset import DatasetPreview
+from app.api.menu_access import require_menu_access
+from app.storage.dataset_store import DatasetStore
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_menu_access("analytics"))])
 
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
-@router.post("/upload", response_model=DatasetPreview, summary="Upload a CSV or Excel file")
-async def upload_file(file: UploadFile = File(...), history_db: Session = Depends(get_history_db)):
+async def persist_uploaded_file(
+    file: UploadFile,
+    history_db: Session,
+    *,
+    workspace_id: str | None = None,
+) -> dict:
     # Validate extension
     filename = file.filename or ""
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -38,10 +44,24 @@ async def upload_file(file: UploadFile = File(...), history_db: Session = Depend
             filename=filename,
             content=content,
             content_type=file.content_type,
+            workspace_id=workspace_id,
         )
     except ValueError as exc:
+        if "result" in locals():
+            DatasetStore.delete(result["dataset_id"])
         raise HTTPException(status_code=422, detail=str(exc))
     except RuntimeError as exc:
+        if "result" in locals():
+            DatasetStore.delete(result["dataset_id"])
         raise HTTPException(status_code=500, detail=str(exc))
+    except Exception:
+        if "result" in locals():
+            DatasetStore.delete(result["dataset_id"])
+        raise
 
     return result
+
+
+@router.post("/upload", response_model=DatasetPreview, summary="Upload a CSV or Excel file")
+async def upload_file(file: UploadFile = File(...), history_db: Session = Depends(get_history_db)):
+    return await persist_uploaded_file(file, history_db)
