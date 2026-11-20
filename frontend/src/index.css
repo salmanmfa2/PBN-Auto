@@ -231,6 +231,228 @@ html[data-theme="light"] .app-toolbar-capsule {
   border-color: #cbd5e1;
   box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.12), 0 2px 6px -1px rgba(15, 23, 42, 0.06);
 }
+/* Manajemen Plt./Plh. Light Mode Polish */
+html[data-theme="light"] .plt-plh-page .plt-header,
+html[data-theme="light"] .plt-plh-page .plt-card,
+html[data-theme="light"] .plt-plh-page .plt-modal {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+}
+
+html[data-theme="light"] .plt-plh-page .plt-kpi-card {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .plt-plh-page .plt-kpi-card:hover {
+  background-color: #f8fafc;
+  border-color: #0284c7;
+}
+
+html[data-theme="light"] .plt-plh-page .plt-subpanel {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .plt-plh-page .plt-table-head {
+  background-color: #f1f5f9;
+  color: #334155;
+}
+
+html[data-theme="light"] .plt-plh-page [class~="text-sky-300"],
+html[data-theme="light"] .plt-plh-page [class~="text-sky-400"] {
+  color: #0369a1;
+}
+
+html[data-theme="light"] .plt-plh-page [class~="text-amber-200"],
+html[data-theme="light"] .plt-plh-page [class~="text-amber-300"] {
+  color: #b45309;
+}
+
+html[data-theme="light"] .plt-plh-page [class~="text-emerald-300"] {
+  color: #15803d;
+}
+
+html[data-theme="light"] .plt-plh-page [class~="text-rose-200"],
+html[data-theme="light"] .plt-plh-page [class~="text-rose-300"] {
+  color: #be123c;
+}
+/* Analisis Kinerja Light Mode Polish */
+html[data-theme="light"] .performance-analysis-page .perf-header-card,
+html[data-theme="light"] .performance-analysis-page .perf-panel,
+html[data-theme="light"] .performance-analysis-page .perf-kpi-card,
+html[data-theme="light"] .performance-analysis-page .perf-subcard,
+html[data-theme="light"] .performance-analysis-page .perf-modal {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+}
+
+html[data-theme="light"] .performance-analysis-page .perf-subpanel {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .performance-analysis-page .perf-table-head {
+  background-color: #f1f5f9;
+  color: #334155;
+}
+
+html[data-theme="light"] .performance-analysis-page .perf-sticky-cell {
+  background-color: #ffffff;
+}
+
+html[data-theme="light"] .performance-analysis-page .perf-sticky-cell-parent {
+  background-color: #f8fafc;
+}
+
+html[data-theme="light"] .performance-analysis-page [class~="text-sky-200"],
+html[data-theme="light"] .performance-analysis-page [class~="text-sky-300"],
+html[data-theme="light"] .performance-analysis-page [class~="text-sky-400"] {
+  color: #0369a1;
+}
+
+html[data-theme="light"] .performance-analysis-page [class~="text-emerald-300"],
+html[data-theme="light"] .performance-analysis-page [class~="text-emerald-400"] {
+  color: #15803d;
+}
+
+html[data-theme="light"] .performance-analysis-page [class~="text-amber-200"],
+html[data-theme="light"] .performance-analysis-page [class~="text-amber-300"] {
+  color: #b45309;
+}
+
+html[data-theme="light"] .performance-analysis-page [class~="text-rose-200"],
+html[data-theme="light"] .performance-analysis-page [class~="text-rose-300"],
+html[data-theme="light"] .performance-analysis-page [class~="text-rose-400"] {
+  color: #be123c;
+}
+/* Generate ND Undangan Pelantikan Light Mode Polish */
+html[data-theme="light"] .pelantikan-page .pel-panel,
+html[data-theme="light"] .pelantikan-page .pel-card,
+html[data-theme="light"] .pelantikan-page .pel-modal {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+}
+
+html[data-theme="light"] .pelantikan-page .pel-subpanel {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .pelantikan-page .pel-table-head {
+  background-color: #f1f5f9;
+  color: #334155;
+}
+
+html[data-theme="light"] .pelantikan-page [class~="text-brand-200"],
+html[data-theme="light"] .pelantikan-page [class~="text-brand-300"],
+html[data-theme="light"] .pelantikan-page [class~="text-sky-300"] {
+  color: #0369a1;
+}
+
+html[data-theme="light"] .pelantikan-page [class~="text-emerald-200"],
+html[data-theme="light"] .pelantikan-page [class~="text-emerald-300"] {
+  color: #15803d;
+}
+
+html[data-theme="light"] .pelantikan-page [class~="text-amber-200"],
+html[data-theme="light"] .pelantikan-page [class~="text-amber-300"] {
+  color: #b45309;
+}
+
+html[data-theme="light"] .pelantikan-page [class~="text-rose-200"],
+html[data-theme="light"] .pelantikan-page [class~="text-rose-300"],
+html[data-theme="light"] .pelantikan-page [class~="text-rose-400"] {
+  color: #be123c;
+}
+/* Login Page Light Mode Polish */
+html[data-theme="light"] .login-page .login-shell {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 12px 32px -4px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .login-page .login-aside {
+  background: linear-gradient(160deg, #f0f9ff 0%, #f8fafc 100%);
+  border-color: #e2e8f0;
+}
+
+html[data-theme="light"] .login-page .login-tabs {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .login-page .login-tab-active {
+  background-color: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .login-page .login-divider-line {
+  background-color: #e2e8f0;
+}
+
+html[data-theme="light"] .login-page [class~="text-brand-200"],
+html[data-theme="light"] .login-page [class~="text-brand-300"] {
+  color: #0369a1;
+}
+
+html[data-theme="light"] .login-page [class~="text-rose-200"] {
+  color: #be123c;
+}
+
+/* PBN Analytics Workbench Light Mode Polish */
+html[data-theme="light"] .analytics-page {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html[data-theme="light"] .analytics-page .ana-header,
+html[data-theme="light"] .analytics-page .ana-sidebar,
+html[data-theme="light"] .analytics-page .ana-bar {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .analytics-page .ana-panel,
+html[data-theme="light"] .analytics-page .ana-modal,
+html[data-theme="light"] .analytics-page .ana-drawer {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .analytics-page .ana-subpanel {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .analytics-page .ana-resizer {
+  background-color: #cbd5e1;
+}
+
+html[data-theme="light"] .analytics-page [class~="text-brand-300"],
+html[data-theme="light"] .analytics-page [class~="text-brand-400"],
+html[data-theme="light"] .analytics-page [class~="text-sky-200"],
+html[data-theme="light"] .analytics-page [class~="text-sky-300"] {
+  color: #0369a1;
+}
+
+html[data-theme="light"] .analytics-page [class~="text-emerald-300"] {
+  color: #15803d;
+}
+
+html[data-theme="light"] .analytics-page [class~="text-amber-200"],
+html[data-theme="light"] .analytics-page [class~="text-amber-300"] {
+  color: #b45309;
+}
+
+html[data-theme="light"] .analytics-page [class~="text-rose-300"] {
+  color: #be123c;
+}
 
 html[data-theme="light"] .app-toolbar-popover,
 html[data-theme="light"] .app-toolbar-modal {

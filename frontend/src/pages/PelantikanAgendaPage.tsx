@@ -919,8 +919,8 @@ export default function PelantikanAgendaPage({
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-surface-950 px-4 pb-12 pt-28 text-slate-100">
-        <section className="mx-auto max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-6">
+      <main className="pelantikan-page min-h-screen bg-surface-950 px-4 pb-12 pt-28 text-slate-100">
+        <section className="pel-panel mx-auto max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-6">
           <h1 className="text-xl font-semibold">Masuk diperlukan</h1>
           <p className="mt-2 text-sm text-slate-400">
             Fitur ini menyimpan agenda pada akun pembuat. Silakan masuk dengan akun User atau Admin.
@@ -939,22 +939,23 @@ export default function PelantikanAgendaPage({
 
   if (!isLoading && agendaId && !agenda) {
     return (
-      <main className="min-h-screen bg-surface-950 px-4 pb-12 pt-28 text-slate-100">
-        <section className="mx-auto max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-6">
+      <main className="pelantikan-page min-h-screen bg-surface-950 px-4 pb-12 pt-28 text-slate-100">
+        <section className="pel-panel mx-auto max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-6">
           <h1 className="text-xl font-semibold">Agenda tidak tersedia</h1>
           <p className="mt-2 text-sm text-slate-400">
             {error ?? 'Agenda tidak ditemukan atau bukan milik akun ini.'}
           </p>
           <button
             type="button"
-            className="mt-5 inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-xs font-medium text-slate-200 transition hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
             onClick={() => navigate(agendaBasePath)}
             aria-label="Kembali ke riwayat agenda"
             title="Kembali ke riwayat agenda"
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
               <path d="M19 12H5m0 0 6 6m-6-6 6-6" />
             </svg>
+            <span>Kembali ke riwayat agenda</span>
           </button>
         </section>
       </main>
@@ -962,31 +963,65 @@ export default function PelantikanAgendaPage({
   }
 
   return (
-    <main className="min-h-screen bg-surface-950 px-4 pb-12 pt-24 text-slate-100 sm:px-6 lg:pt-28">
+    <main className="pelantikan-page relative isolate min-h-screen bg-surface-950 px-4 pb-14 pt-24 text-slate-100 sm:px-6 lg:pt-28">
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_80%_40%_at_50%_-5%,rgba(14,165,233,0.10),transparent)]"
+        aria-hidden="true"
+      />
+
       <div className="mx-auto w-full max-w-[1800px]">
-        <button
-          type="button"
-          onClick={navigateBack}
-          aria-label={agendaId ? 'Kembali ke riwayat agenda' : 'Kembali ke menu utama'}
-          title={agendaId ? 'Kembali ke riwayat agenda' : 'Kembali ke menu utama'}
-          className="mb-5 inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-brand-300 transition hover:bg-slate-800 hover:text-brand-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
-            <path d="M19 12H5m0 0 6 6m-6-6 6-6" />
-          </svg>
-        </button>
-        <header className="mb-7">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
-            Operasional
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">
-            Generate ND Undangan Pelantikan
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            {activeWorkflowMode === 'all_sheets'
-              ? 'Impor seluruh sheet roster dari workbook, periksa hasil pencocokan NIP dan sumber sheet, lalu pilih pegawai Daring atau Luring. Sheet kosong/tidak valid dilewati dengan pemberitahuan; dokumen tetap dikelompokkan per Unit Eselon II dan moda.'
-              : 'Buat agenda, unggah satu sheet workbook Excel, periksa hasil pencocokan NIP, lalu pilih pegawai Daring atau Luring. Dokumen dibuat per Unit Eselon II dan tidak menyimpan file sumber maupun hasil unduhan.'}
-          </p>
+        <header className="mb-7 flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <button
+              type="button"
+              onClick={navigateBack}
+              aria-label={agendaId ? 'Kembali ke riwayat agenda' : 'Kembali ke menu utama'}
+              title={agendaId ? 'Kembali ke riwayat agenda' : 'Kembali ke menu utama'}
+              className="mt-1 inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900/90 px-3.5 py-2 text-xs font-medium text-brand-300 transition hover:bg-slate-800 hover:text-brand-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                <path d="M19 12H5m0 0 6 6m-6-6 6-6" />
+              </svg>
+              <span>{agendaId ? 'Riwayat agenda' : 'Menu utama'}</span>
+            </button>
+
+            <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-brand-500/30 bg-brand-500/15 text-brand-300">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                <path d="M7 3h7l5 5v13H7z" />
+                <path d="M14 3v5h5M10 13h6M10 17h4" />
+              </svg>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">
+                Operasional
+              </p>
+              <h1 className="mt-0.5 text-2xl font-bold tracking-tight sm:text-3xl">
+                Generate ND Undangan Pelantikan
+              </h1>
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-400">
+                {activeWorkflowMode === 'all_sheets'
+                  ? 'Impor seluruh sheet roster dari workbook, periksa hasil pencocokan NIP dan sumber sheet, lalu pilih pegawai Daring atau Luring. Sheet kosong/tidak valid dilewati dengan pemberitahuan; dokumen tetap dikelompokkan per Unit Eselon II dan moda.'
+                  : 'Buat agenda, unggah satu sheet workbook Excel, periksa hasil pencocokan NIP, lalu pilih pegawai Daring atau Luring. Dokumen dibuat per Unit Eselon II dan tidak menyimpan file sumber maupun hasil unduhan.'}
+              </p>
+            </div>
+          </div>
+
+          {!agendaId && canEditAgenda && (
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setIsCreateModalOpen(true);
+              }}
+              className="btn-primary inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="size-4">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span>Buat agenda</span>
+            </button>
+          )}
         </header>
 
         {(visibleError || notice) && (
@@ -994,8 +1029,8 @@ export default function PelantikanAgendaPage({
             role={visibleError ? 'alert' : 'status'}
             className={`mb-5 rounded-xl border px-4 py-3 text-sm ${
               visibleError
-                ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
-                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                ? 'border-rose-500/35 bg-rose-500/10 text-rose-200'
+                : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200'
             }`}
           >
             {visibleError ?? notice}
@@ -1003,15 +1038,19 @@ export default function PelantikanAgendaPage({
         )}
 
         {isLoading ? (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-center text-sm text-slate-400">
+          <div className="pel-panel rounded-2xl border border-slate-800 bg-slate-900/75 p-10 text-center text-sm text-slate-400">
             Memuat agenda…
           </div>
         ) : agendaId ? (
           <div className="space-y-6">
-            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
-              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+            {/* AGENDA DETAIL CARD */}
+            <section className="pel-panel rounded-2xl border border-slate-800 bg-slate-900/75 p-5 sm:p-6">
+              <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-4">
                 <div>
-                  <h2 className="text-lg font-semibold">Detail agenda</h2>
+                  <h2 className="text-lg font-bold">Detail Agenda</h2>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Parameter surat dinas, jadwal pelaksanaan, dan ketentuan pakaian pelantikan.
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   {!isEditingAgenda && canEditAgenda && (
@@ -1020,11 +1059,12 @@ export default function PelantikanAgendaPage({
                       onClick={() => setIsEditingAgenda(true)}
                       aria-label="Edit detail agenda"
                       title="Edit detail agenda"
-                      className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/70 px-3 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                     >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
                         <path d="m14 5 5 5M4 20l4.5-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z" />
                       </svg>
+                      <span>Edit</span>
                     </button>
                   )}
                   {canEditAgenda && (
@@ -1034,9 +1074,9 @@ export default function PelantikanAgendaPage({
                       onClick={() => void deleteAgenda()}
                       aria-label={isDeleting ? 'Menghapus agenda' : 'Hapus agenda'}
                       title={isDeleting ? 'Menghapus agenda' : 'Hapus agenda'}
-                      className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/10 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex size-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-800/70 text-rose-300 transition hover:border-rose-500/50 hover:bg-rose-500/15 hover:text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
                         <path d="M4 7h16m-10 4v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" />
                       </svg>
                     </button>
@@ -1048,7 +1088,7 @@ export default function PelantikanAgendaPage({
                   <fieldset disabled={!canEditAgenda || isSaving}>
                     <AgendaFields fields={fields} onChange={updateFields} />
                   </fieldset>
-                  <div className="mt-5 flex justify-end gap-2">
+                  <div className="mt-5 flex justify-end gap-2 border-t border-slate-800 pt-4">
                     <button
                       type="button"
                       disabled={!canEditAgenda || isSaving}
@@ -1060,384 +1100,465 @@ export default function PelantikanAgendaPage({
                       }}
                       aria-label="Batalkan edit agenda"
                       title="Batalkan edit agenda"
-                      className="inline-flex size-10 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="btn-secondary inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="size-5">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="size-4">
                         <path d="m6 6 12 12M18 6 6 18" />
                       </svg>
+                      <span>Batal</span>
                     </button>
                     <button
                       type="submit"
                       disabled={!canEditAgenda || isSaving}
                       aria-label={isSaving ? 'Menyimpan detail agenda' : 'Simpan detail agenda'}
                       title={isSaving ? 'Menyimpan detail agenda' : 'Simpan detail agenda'}
-                      className="inline-flex size-10 items-center justify-center rounded-lg border border-emerald-500/30 text-emerald-300 transition hover:bg-emerald-500/10 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isSaving ? (
-                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="size-5 animate-spin">
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="size-4 animate-spin">
                           <path d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.36-6.36-2.12 2.12M7.76 16.24l-2.12 2.12m12.72 0-2.12-2.12M7.76 7.76 5.64 5.64" />
                         </svg>
                       ) : (
-                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
                           <path d="m5 12 4 4L19 6" />
                         </svg>
                       )}
+                      <span>{isSaving ? 'Menyimpan…' : 'Simpan perubahan'}</span>
                     </button>
                   </div>
                 </form>
               ) : (
-                <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                <dl className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
                   {[
                     {
                       label: 'Hari dan tanggal pelantikan',
                       value: agenda?.tanggal_pelantikan
                         ? `${agenda.hari_pelantikan}, ${formatDate(agenda.tanggal_pelantikan)}`
                         : '—',
+                      mono: false,
                     },
-                    { label: 'Nomor ND undangan', value: agenda?.nd_undangan_pelantikan || '—' },
+                    {
+                      label: 'Nomor ND undangan',
+                      value: agenda?.nd_undangan_pelantikan || '—',
+                      mono: true,
+                    },
                     {
                       label: 'Tanggal ND undangan',
                       value: agenda?.tanggal_nd_undangan_pelantikan
                         ? formatDate(agenda.tanggal_nd_undangan_pelantikan)
                         : '—',
+                      mono: false,
                     },
-                    { label: 'Jam pelantikan', value: agenda?.jam_pelantikan || '—' },
-                    { label: 'Dresscode', value: agenda?.dresscode || '—' },
-                    { label: 'Level jabatan', value: agenda?.level_jabatan || '—' },
+                    {
+                      label: 'Jam pelantikan',
+                      value: agenda?.jam_pelantikan ? `${agenda.jam_pelantikan} WIB` : '—',
+                      mono: true,
+                    },
+                    {
+                      label: 'Dresscode',
+                      value: agenda?.dresscode || '—',
+                      mono: false,
+                    },
+                    {
+                      label: 'Level jabatan',
+                      value: agenda?.level_jabatan || '—',
+                      mono: false,
+                    },
                   ].map((detail) => (
-                    <div key={detail.label}>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{detail.label}</dt>
-                      <dd className="mt-1 text-sm text-slate-100">{detail.value}</dd>
+                    <div
+                      key={detail.label}
+                      className="pel-subpanel rounded-xl border border-slate-800/90 bg-slate-950/45 px-4 py-3"
+                    >
+                      <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                        {detail.label}
+                      </dt>
+                      <dd className={`mt-1 text-sm font-medium text-slate-100 ${detail.mono ? 'font-mono' : ''}`}>
+                        {detail.value}
+                      </dd>
                     </div>
                   ))}
                 </dl>
               )}
             </section>
 
-            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
-              <h2 className="text-lg font-semibold">Unggah dan cocokkan pegawai</h2>
-              <p className="mt-1 text-sm leading-6 text-slate-400">
-                Baris ketiga digunakan sebagai header. Baris tanpa isi pada kolom Nama/NIP dilewati,
-                lalu NIP diambil dari baris terakhir kolom tersebut. Kolom No, Nama/NIP,
-                Jabatan Saat ini, dan Usul Jabatan Baru hanya menjadi referensi pratinjau; dokumen
-                memakai Jabatan saat ini dari database.
-                {activeWorkflowMode === 'all_sheets'
-                  ? ' Semua sheet diperiksa; sheet kosong atau tanpa kolom roster wajib dilewati dan dilaporkan.'
-                  : ''}
-              </p>
-              {activeWorkflowMode === 'all_sheets' && (
-                <div className="mt-4 max-w-xl">
-                  <label htmlFor="experimental-import-strategy" className="mb-1 block text-sm font-medium text-slate-300">
-                    Cara memproses sheet
-                  </label>
-                  <select
-                    id="experimental-import-strategy"
-                    value={importStrategy}
-                    onChange={(event) => {
-                      const nextStrategy = event.target.value as PelantikanImportStrategy;
-                      setImportStrategy(nextStrategy);
-                      setSelectedSheet(
-                        nextStrategy === 'single_sheet' && availableSheets.length === 1
-                          ? availableSheets[0]
-                          : '',
-                      );
-                      setSelectedSheets([]);
-                      setNotice(null);
-                    }}
-                    disabled={!canEditAgenda || isUploading || isLoadingSheets || isEditingAgenda}
-                    className="input-field w-full"
-                  >
-                    <option value="all_sheets">Gabungkan semua sheet roster</option>
-                    <option value="selected_sheets">Pilih beberapa sheet lalu gabungkan</option>
-                    <option value="isolated_sheets">Proses semua sheet secara terpisah</option>
-                    <option value="single_sheet">Pilih dan proses satu sheet</option>
-                  </select>
+            {/* WORKBOOK UPLOAD CARD */}
+            <section className="pel-panel rounded-2xl border border-slate-800 bg-slate-900/75 p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold">Unggah dan Cocokkan Pegawai</h2>
+                  <p className="mt-1 max-w-4xl text-xs leading-relaxed text-slate-400">
+                    Baris ketiga digunakan sebagai header. Baris tanpa isi pada kolom Nama/NIP dilewati,
+                    lalu NIP diambil dari baris terakhir kolom tersebut. Kolom No, Nama/NIP,
+                    Jabatan Saat ini, dan Usul Jabatan Baru hanya menjadi referensi pratinjau; dokumen
+                    memakai Jabatan saat ini dari database.
+                    {activeWorkflowMode === 'all_sheets'
+                      ? ' Semua sheet diperiksa; sheet kosong atau tanpa kolom roster wajib dilewati dan dilaporkan.'
+                      : ''}
+                  </p>
                 </div>
-              )}
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  aria-label="Pilih workbook Excel"
-                  disabled={!canEditAgenda || isLoadingSheets || isUploading || isEditingAgenda}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    event.currentTarget.value = '';
-                    setSelectedFile(file);
-                    setAvailableSheets([]);
-                    setSelectedSheet('');
-                    setError(null);
-                    setNotice(null);
-                    if (file) void chooseWorkbookSheet(file);
-                  }}
-                  className="block min-w-0 flex-1 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-200 hover:file:bg-slate-700"
-                />
-                {activeWorkflowMode === 'single_sheet' && (
+                {agenda?.uploaded_filename && (
+                  <span className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-300">
+                    File terakhir: <span className="font-medium text-slate-100">{agenda.uploaded_filename}</span>
+                    {agenda.uploaded_sheet ? ` · Sheet: ${agenda.uploaded_sheet}` : ''}
+                  </span>
+                )}
+              </div>
+
+              <div className="pel-subpanel mt-4 rounded-xl border border-slate-800 bg-slate-950/45 p-4">
+                {activeWorkflowMode === 'all_sheets' && (
+                  <div className="mb-4 max-w-xl">
+                    <label htmlFor="experimental-import-strategy" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Cara memproses sheet
+                    </label>
+                    <select
+                      id="experimental-import-strategy"
+                      value={importStrategy}
+                      onChange={(event) => {
+                        const nextStrategy = event.target.value as PelantikanImportStrategy;
+                        setImportStrategy(nextStrategy);
+                        setSelectedSheet(
+                          nextStrategy === 'single_sheet' && availableSheets.length === 1
+                            ? availableSheets[0]
+                            : '',
+                        );
+                        setSelectedSheets([]);
+                        setNotice(null);
+                      }}
+                      disabled={!canEditAgenda || isUploading || isLoadingSheets || isEditingAgenda}
+                      className="input w-full"
+                    >
+                      <option value="all_sheets">Gabungkan semua sheet roster</option>
+                      <option value="selected_sheets">Pilih beberapa sheet lalu gabungkan</option>
+                      <option value="isolated_sheets">Proses semua sheet secara terpisah</option>
+                      <option value="single_sheet">Pilih dan proses satu sheet</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    aria-label="Pilih workbook Excel"
+                    disabled={!canEditAgenda || isLoadingSheets || isUploading || isEditingAgenda}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      event.currentTarget.value = '';
+                      setSelectedFile(file);
+                      setAvailableSheets([]);
+                      setSelectedSheet('');
+                      setError(null);
+                      setNotice(null);
+                      if (file) void chooseWorkbookSheet(file);
+                    }}
+                    className="block min-w-0 flex-1 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3.5 file:py-2 file:text-xs file:font-semibold file:text-slate-100 hover:file:bg-slate-700"
+                  />
+                  {activeWorkflowMode === 'single_sheet' && (
+                    <button
+                      type="button"
+                      disabled={!canEditAgenda || !selectedFile || isLoadingSheets || isUploading || isSaving || isEditingAgenda}
+                      onClick={() => void chooseWorkbookSheet()}
+                      className="btn-secondary shrink-0"
+                    >
+                      {isLoadingSheets ? 'Membaca sheet…' : 'Pilih sheet'}
+                    </button>
+                  )}
                   <button
                     type="button"
-                    disabled={!canEditAgenda || !selectedFile || isLoadingSheets || isUploading || isSaving || isEditingAgenda}
-                    onClick={() => void chooseWorkbookSheet()}
-                    className="btn-secondary shrink-0"
+                    disabled={
+                      !selectedFile
+                      || !availableSheets.length
+                      || (activeWorkflowMode === 'single_sheet' && availableSheets.length > 1 && !selectedSheet)
+                      || (activeWorkflowMode === 'all_sheets'
+                        && importStrategy === 'selected_sheets'
+                        && selectedSheets.length === 0)
+                      || (activeWorkflowMode === 'all_sheets'
+                        && importStrategy === 'single_sheet'
+                        && !selectedSheet)
+                      || isLoadingSheets
+                      || isUploading
+                      || isSaving
+                      || isEditingAgenda
+                      || !canEditAgenda
+                    }
+                    onClick={() => void uploadWorkbook()}
+                    className="btn-primary shrink-0"
                   >
-                    {isLoadingSheets ? 'Membaca sheet…' : 'Pilih sheet'}
+                    {isUploading
+                      ? 'Memproses…'
+                      : activeWorkflowMode === 'single_sheet'
+                        ? 'Unggah dan cocokkan'
+                        : importStrategy === 'selected_sheets'
+                          ? 'Gabungkan sheet pilihan'
+                          : importStrategy === 'isolated_sheets'
+                            ? 'Proses sheet terpisah'
+                            : importStrategy === 'single_sheet'
+                              ? 'Proses satu sheet'
+                              : 'Gabungkan semua sheet'}
                   </button>
+                </div>
+
+                {selectedFile && (
+                  <p className="mt-2.5 text-xs text-slate-400">
+                    Workbook dipilih: <span className="font-mono text-slate-200">{selectedFile.name}</span>
+                  </p>
                 )}
-                <button
-                  type="button"
-                  disabled={
-                    !selectedFile
-                    || !availableSheets.length
-                    || (activeWorkflowMode === 'single_sheet' && availableSheets.length > 1 && !selectedSheet)
-                    || (activeWorkflowMode === 'all_sheets'
-                      && importStrategy === 'selected_sheets'
-                      && selectedSheets.length === 0)
-                    || (activeWorkflowMode === 'all_sheets'
-                      && importStrategy === 'single_sheet'
-                      && !selectedSheet)
-                    || isLoadingSheets
-                    || isUploading
-                    || isSaving
-                    || isEditingAgenda
-                    || !canEditAgenda
-                  }
-                  onClick={() => void uploadWorkbook()}
-                  className="btn-primary shrink-0"
-                >
-                  {isUploading
-                    ? 'Memproses…'
-                    : activeWorkflowMode === 'single_sheet'
-                      ? 'Unggah dan cocokkan'
-                      : importStrategy === 'selected_sheets'
-                        ? 'Gabungkan sheet pilihan'
-                        : importStrategy === 'isolated_sheets'
-                          ? 'Proses sheet terpisah'
-                          : importStrategy === 'single_sheet'
-                            ? 'Proses satu sheet'
-                            : 'Gabungkan semua sheet'}
-                </button>
-              </div>
-              {selectedFile && (
-                <p className="mt-3 text-xs text-slate-400">
-                  Workbook dipilih: <span className="text-slate-300">{selectedFile.name}</span>
-                </p>
-              )}
-              {activeWorkflowMode === 'single_sheet' && availableSheets.length > 0 && (
-                <div className="mt-4 max-w-xl">
-                  <label htmlFor="pelantikan-sheet" className="mb-1 block text-sm font-medium text-slate-300">
-                    Sheet workbook
-                  </label>
-                  <select
-                    id="pelantikan-sheet"
-                    value={selectedSheet}
-                    onChange={(event) => setSelectedSheet(event.target.value)}
-                    disabled={!canEditAgenda || isUploading || isLoadingSheets || isEditingAgenda}
-                    className="input-field w-full"
-                  >
-                    {availableSheets.length > 1 && <option value="">Pilih sheet yang akan diproses</option>}
-                    {availableSheets.map((sheet) => (
-                      <option key={sheet} value={sheet}>{sheet}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {activeWorkflowMode === 'all_sheets'
-                && importStrategy === 'selected_sheets'
-                && availableSheets.length > 0 && (
-                <fieldset className="mt-4 max-w-xl">
-                  <legend className="mb-2 block text-sm font-medium text-slate-300">
-                    Sheet yang digabung
-                  </legend>
-                  <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-                    {availableSheets.map((sheet) => (
-                      <label key={sheet} className="flex items-center gap-2 text-sm text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={selectedSheets.includes(sheet)}
-                          onChange={(event) => setSelectedSheets((current) => (
-                            event.target.checked
-                              ? [...current, sheet]
-                              : current.filter((selected) => selected !== sheet)
-                          ))}
-                          disabled={!canEditAgenda || isUploading || isLoadingSheets}
-                          className="size-4 accent-cyan-500"
-                        />
-                        <span>{sheet}</span>
-                      </label>
-                    ))}
+
+                {activeWorkflowMode === 'single_sheet' && availableSheets.length > 0 && (
+                  <div className="mt-4 max-w-xl">
+                    <label htmlFor="pelantikan-sheet" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Sheet workbook
+                    </label>
+                    <select
+                      id="pelantikan-sheet"
+                      value={selectedSheet}
+                      onChange={(event) => setSelectedSheet(event.target.value)}
+                      disabled={!canEditAgenda || isUploading || isLoadingSheets || isEditingAgenda}
+                      className="input w-full"
+                    >
+                      {availableSheets.length > 1 && <option value="">Pilih sheet yang akan diproses</option>}
+                      {availableSheets.map((sheet) => (
+                        <option key={sheet} value={sheet}>{sheet}</option>
+                      ))}
+                    </select>
                   </div>
-                </fieldset>
-              )}
-              {activeWorkflowMode === 'all_sheets'
-                && importStrategy === 'single_sheet'
-                && availableSheets.length > 0 && (
-                <div className="mt-4 max-w-xl">
-                  <label htmlFor="experimental-single-sheet" className="mb-1 block text-sm font-medium text-slate-300">
-                    Sheet workbook
-                  </label>
-                  <select
-                    id="experimental-single-sheet"
-                    value={selectedSheet}
-                    onChange={(event) => setSelectedSheet(event.target.value)}
-                    disabled={!canEditAgenda || isUploading || isLoadingSheets}
-                    className="input-field w-full"
-                  >
-                    {availableSheets.length > 1 && <option value="">Pilih satu sheet</option>}
-                    {availableSheets.map((sheet) => (
-                      <option key={sheet} value={sheet}>{sheet}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {activeWorkflowMode === 'all_sheets'
-                && ['all_sheets', 'isolated_sheets'].includes(importStrategy)
-                && availableSheets.length > 0 && (
-                <p className="mt-3 text-xs text-slate-400">
-                  {importStrategy === 'isolated_sheets'
-                    ? `Semua ${availableSheets.length} sheet roster diproses terpisah; peserta dari sheet berbeda tidak digabung dalam dokumen yang sama.`
-                    : `Semua ${availableSheets.length} sheet akan diperiksa dan sheet roster valid digabungkan.`}
-                </p>
-              )}
-              {agenda?.uploaded_filename && (
-                <p className="mt-3 text-xs text-slate-400">
-                  File terakhir: <span className="text-slate-300">{agenda.uploaded_filename}</span>
-                  {agenda.uploaded_sheet ? ` · Sheet: ${agenda.uploaded_sheet}` : ''}
-                </p>
-              )}
+                )}
+
+                {activeWorkflowMode === 'all_sheets'
+                  && importStrategy === 'selected_sheets'
+                  && availableSheets.length > 0 && (
+                  <fieldset className="mt-4 max-w-xl">
+                    <legend className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Sheet yang digabung
+                    </legend>
+                    <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                      {availableSheets.map((sheet) => (
+                        <label key={sheet} className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={selectedSheets.includes(sheet)}
+                            onChange={(event) => setSelectedSheets((current) => (
+                              event.target.checked
+                                ? [...current, sheet]
+                                : current.filter((selected) => selected !== sheet)
+                            ))}
+                            disabled={!canEditAgenda || isUploading || isLoadingSheets}
+                            className="size-4 accent-cyan-500"
+                          />
+                          <span>{sheet}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
+
+                {activeWorkflowMode === 'all_sheets'
+                  && importStrategy === 'single_sheet'
+                  && availableSheets.length > 0 && (
+                  <div className="mt-4 max-w-xl">
+                    <label htmlFor="experimental-single-sheet" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Sheet workbook
+                    </label>
+                    <select
+                      id="experimental-single-sheet"
+                      value={selectedSheet}
+                      onChange={(event) => setSelectedSheet(event.target.value)}
+                      disabled={!canEditAgenda || isUploading || isLoadingSheets}
+                      className="input w-full"
+                    >
+                      {availableSheets.length > 1 && <option value="">Pilih satu sheet</option>}
+                      {availableSheets.map((sheet) => (
+                        <option key={sheet} value={sheet}>{sheet}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {activeWorkflowMode === 'all_sheets'
+                  && ['all_sheets', 'isolated_sheets'].includes(importStrategy)
+                  && availableSheets.length > 0 && (
+                  <p className="mt-3 text-xs text-slate-400">
+                    {importStrategy === 'isolated_sheets'
+                      ? `Semua ${availableSheets.length} sheet roster diproses terpisah; peserta dari sheet berbeda tidak digabung dalam dokumen yang sama.`
+                      : `Semua ${availableSheets.length} sheet akan diperiksa dan sheet roster valid digabungkan.`}
+                  </p>
+                )}
+              </div>
             </section>
 
+            {/* ROSTER TABLE SECTION */}
             {agenda && agenda.people.length > 0 && (
-              <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+              <section className="pel-panel overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/75">
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 p-5 sm:p-6">
                   <div>
-                    <h2 className="text-lg font-semibold">Daftar pegawai</h2>
-                    <p className="mt-1 text-sm text-slate-400">
-                      {visiblePeople.length} dari {agenda.people.length} baris ditampilkan · {matchedCount} cocok
-                      {duplicateCount > 0 && ` · ${duplicateCount} NIP duplikat (pilih salah satu)`}
-                      {unmatchedCount > 0 && ` · ${unmatchedCount} perlu diperiksa`}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h2 className="text-lg font-bold">Daftar Pegawai</h2>
+                      <span className="rounded-full border border-brand-500/30 bg-brand-500/15 px-2.5 py-0.5 font-mono text-xs font-semibold text-brand-200">
+                        {selectedCount} dipilih
+                      </span>
+                    </div>
+                    <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                      <span>
+                        Menampilkan <strong className="text-slate-200">{visiblePeople.length}</strong> dari {agenda.people.length} baris
+                      </span>
+                      <span>·</span>
+                      <span className="text-emerald-300">{matchedCount} cocok</span>
+                      {duplicateCount > 0 && (
+                        <>
+                          <span>·</span>
+                          <span className="text-amber-300">{duplicateCount} NIP duplikat (pilih salah satu)</span>
+                        </>
+                      )}
+                      {unmatchedCount > 0 && (
+                        <>
+                          <span>·</span>
+                          <span className="text-amber-300">{unmatchedCount} perlu diperiksa</span>
+                        </>
+                      )}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-[11px] text-slate-500">
                       Tarik batas kanan judul kolom untuk mengatur lebarnya.
                     </p>
                   </div>
-                  <div role="group" aria-label="Aksi pegawai" className="inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
-                    <button
-                      type="button"
-                      aria-pressed={isLiteView}
-                      onClick={() => setIsLiteView((current) => !current)}
-                      title={isLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
-                      className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
-                        isLiteView
-                          ? 'bg-brand-500/20 text-brand-200'
-                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                      }`}
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                        <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                      <span>Lite View</span>
-                      <span className="sr-only">{isLiteView ? 'aktif' : 'nonaktif'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const defaults = { ...rosterColumnWidths };
-                        columnWidthsRef.current = defaults;
-                        setColumnWidths(defaults);
-                        setError(null);
-                        persistColumnWidths(defaults);
-                      }}
-                      aria-label="Atur ulang lebar kolom"
-                      title="Atur ulang lebar kolom"
-                      className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                        <path d="M4 7v5h5M20 17v-5h-5" />
-                        <path d="M5.5 12a7 7 0 0 1 12-4.9L20 9m-1.5 3a7 7 0 0 1-12 4.9L4 15" />
-                      </svg>
-                    </button>
+
+                  <div className="flex flex-wrap items-center gap-2">
                     {choicesDirty && (
-                      <span className="self-center text-xs text-amber-300">Ada pilihan yang belum disimpan</span>
+                      <span className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
+                        Ada pilihan belum disimpan
+                      </span>
                     )}
-                    <button
-                      type="button"
-                      disabled={!canEditAgenda || !selectableCount || selectedSelectableCount >= selectableCount || isSaving}
-                      onClick={selectAllSelectable}
-                      aria-label="Pilih semua pegawai yang dapat dipilih; satu baris per NIP"
-                      title="Pilih semua pegawai yang dapat dipilih; satu baris per NIP"
-                      className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                        <path d="m3.5 6.5 1.5 1.5 2.5-3" />
-                        <path d="M11 7h9" />
-                        <path d="m3.5 12.5 1.5 1.5 2.5-3" />
-                        <path d="M11 13h9" />
-                        <path d="m3.5 18.5 1.5 1.5 2.5-3" />
-                        <path d="M11 19h9" />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!canEditAgenda || selectedSelectableCount === 0 || isSaving}
-                      onClick={deselectAllSelectable}
-                      aria-label="Batalkan semua pilihan pegawai"
-                      title="Batalkan semua pilihan pegawai"
-                      className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                        <path d="M4 6.5h16M4 12h16M4 17.5h16" />
-                        <path d="m8 4 8 16" />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!canEditAgenda || !choicesDirty || isSaving}
-                      onClick={() => void saveChoices()}
-                      aria-label={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
-                      title={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
-                      className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                        <path d="M6 3.75h8.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
-                        <path d="M14 4v5h5" />
-                        <path d="m8 15 2.25 2.25L16 11.5" />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={selectedCount === 0}
-                      onClick={() => setIsPreviewOpen(true)}
-                      aria-label="Pratinjau dokumen"
-                      title="Pratinjau dokumen"
-                      className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                        <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={choicesDirty || isExportingMonitoring}
-                      onClick={() => void exportMonitoring()}
-                      aria-label={isExportingMonitoring ? 'Membuat file monitoring Excel' : 'Unduh monitoring pelantikan Excel'}
-                      title={choicesDirty ? 'Simpan pilihan terlebih dahulu' : 'Unduh monitoring pelantikan'}
-                      className="size-9 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {isExportingMonitoring ? (
-                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5 animate-pulse">
-                          <path d="M7 3.75h7.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
-                          <path d="M14 4v5h5M8 13h8M8 16h8" />
+
+                    <div role="group" aria-label="Aksi pegawai" className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-950/60 p-1">
+                      <button
+                        type="button"
+                        aria-pressed={isLiteView}
+                        onClick={() => setIsLiteView((current) => !current)}
+                        title={isLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                          isLiteView
+                            ? 'bg-brand-500/20 text-brand-200'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                        }`}
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                          <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
+                          <circle cx="12" cy="12" r="3" />
                         </svg>
-                      ) : (
-                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                          <path d="M7 3.75h7.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
-                          <path d="M14 4v5h5M12 12v6m0 0-2.5-2.5M12 18l2.5-2.5" />
+                        <span>Lite View</span>
+                        <span className="sr-only">{isLiteView ? 'aktif' : 'nonaktif'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const defaults = { ...rosterColumnWidths };
+                          columnWidthsRef.current = defaults;
+                          setColumnWidths(defaults);
+                          setError(null);
+                          persistColumnWidths(defaults);
+                        }}
+                        aria-label="Atur ulang lebar kolom"
+                        title="Atur ulang lebar kolom"
+                        className="size-8 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
+                          <path d="M4 7v5h5M20 17v-5h-5" />
+                          <path d="M5.5 12a7 7 0 0 1 12-4.9L20 9m-1.5 3a7 7 0 0 1-12 4.9L4 15" />
                         </svg>
-                      )}
-                    </button>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!canEditAgenda || !selectableCount || selectedSelectableCount >= selectableCount || isSaving}
+                        onClick={selectAllSelectable}
+                        aria-label="Pilih semua pegawai yang dapat dipilih; satu baris per NIP"
+                        title="Pilih semua pegawai yang dapat dipilih; satu baris per NIP"
+                        className="size-8 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
+                          <path d="m3.5 6.5 1.5 1.5 2.5-3" />
+                          <path d="M11 7h9" />
+                          <path d="m3.5 12.5 1.5 1.5 2.5-3" />
+                          <path d="M11 13h9" />
+                          <path d="m3.5 18.5 1.5 1.5 2.5-3" />
+                          <path d="M11 19h9" />
+                        </svg>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!canEditAgenda || selectedSelectableCount === 0 || isSaving}
+                        onClick={deselectAllSelectable}
+                        aria-label="Batalkan semua pilihan pegawai"
+                        title="Batalkan semua pilihan pegawai"
+                        className="size-8 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
+                          <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+                          <path d="m8 4 8 16" />
+                        </svg>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!canEditAgenda || !choicesDirty || isSaving}
+                        onClick={() => void saveChoices()}
+                        aria-label={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
+                        title={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40 ${
+                          choicesDirty
+                            ? 'bg-sky-500 text-white shadow-xs hover:bg-sky-400'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-brand-300'
+                        }`}
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                          <path d="M6 3.75h8.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
+                          <path d="M14 4v5h5" />
+                          <path d="m8 15 2.25 2.25L16 11.5" />
+                        </svg>
+                        <span>{isSaving ? 'Menyimpan…' : 'Simpan'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={selectedCount === 0}
+                        onClick={() => setIsPreviewOpen(true)}
+                        aria-label="Pratinjau dokumen"
+                        title="Pratinjau dokumen"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-brand-200 transition hover:bg-slate-800 hover:text-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                          <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        <span>Pratinjau ND</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={choicesDirty || isExportingMonitoring}
+                        onClick={() => void exportMonitoring()}
+                        aria-label={isExportingMonitoring ? 'Membuat file monitoring Excel' : 'Unduh monitoring pelantikan Excel'}
+                        title={choicesDirty ? 'Simpan pilihan terlebih dahulu' : 'Unduh monitoring pelantikan'}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isExportingMonitoring ? (
+                          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 animate-pulse">
+                            <path d="M7 3.75h7.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
+                            <path d="M14 4v5h5M8 13h8M8 16h8" />
+                          </svg>
+                        ) : (
+                          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                            <path d="M7 3.75h7.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
+                            <path d="M14 4v5h5M12 12v6m0 0-2.5-2.5M12 18l2.5-2.5" />
+                          </svg>
+                        )}
+                        <span>Monitoring</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
+
                 <div ref={setRosterTableElement} className="max-h-[70vh] overflow-auto">
                   <table
                     className="table-fixed border-collapse text-left text-sm"
@@ -1448,32 +1569,32 @@ export default function PelantikanAgendaPage({
                         <col key={key} style={{ width: `${visibleRosterColumnWidths[key]}px` }} />
                       ))}
                     </colgroup>
-                    <thead className="bg-slate-950 text-xs uppercase tracking-wide text-slate-400">
+                    <thead className="pel-table-head bg-slate-950 text-[11px] uppercase tracking-wider text-slate-300">
                       <tr>
-                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Pilih{columnResizeHandle('select', 'Pilih')}</th>
-                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">No{columnResizeHandle('number', 'No')}</th>
+                        <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Pilih{columnResizeHandle('select', 'Pilih')}</th>
+                        <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">No{columnResizeHandle('number', 'No')}</th>
                         {!isLiteView && (
-                          <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Sheet sumber{columnResizeHandle('source', 'Sheet sumber')}</th>
+                          <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Sheet sumber{columnResizeHandle('source', 'Sheet sumber')}</th>
                         )}
-                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Nama/NIP{columnResizeHandle('sourceName', 'Nama/NIP')}</th>
-                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Jabatan Saat ini/Grade{columnResizeHandle('sourcePosition', 'Jabatan Saat ini/Grade')}</th>
-                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Usul Jabatan Baru/Grade{columnResizeHandle('proposedPosition', 'Usul Jabatan Baru/Grade')}</th>
+                        <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Nama/NIP{columnResizeHandle('sourceName', 'Nama/NIP')}</th>
+                        <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Jabatan Saat ini/Grade{columnResizeHandle('sourcePosition', 'Jabatan Saat ini/Grade')}</th>
+                        <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Usul Jabatan Baru/Grade{columnResizeHandle('proposedPosition', 'Usul Jabatan Baru/Grade')}</th>
                         {!isLiteView && (
                           <>
-                            <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">NIP database{columnResizeHandle('nip', 'NIP database')}</th>
-                            <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Nama database{columnResizeHandle('name', 'Nama database')}</th>
-                            <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Jabatan database{columnResizeHandle('databasePosition', 'Jabatan database')}</th>
-                            <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Unit Eselon II{columnResizeHandle('unit', 'Unit Eselon II')}</th>
+                            <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">NIP database{columnResizeHandle('nip', 'NIP database')}</th>
+                            <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Nama database{columnResizeHandle('name', 'Nama database')}</th>
+                            <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Jabatan database{columnResizeHandle('databasePosition', 'Jabatan database')}</th>
+                            <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Unit Eselon II{columnResizeHandle('unit', 'Unit Eselon II')}</th>
                           </>
                         )}
-                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">Kota{columnResizeHandle('city', 'Kota')}</th>
-                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">
+                        <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">Kota{columnResizeHandle('city', 'Kota')}</th>
+                        <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">
                           Pencocokan
                           <select
                             aria-label="Filter pencocokan"
                             value={matchingFilter}
                             onChange={(event) => setMatchingFilter(event.target.value as MatchingFilter)}
-                            className="mt-2 block w-36 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] normal-case tracking-normal text-slate-200"
+                            className="input mt-2 block w-36 px-2 py-1 text-[11px] font-normal normal-case tracking-normal"
                           >
                             <option value="all">Semua</option>
                             <option value="matched">Cocok</option>
@@ -1484,13 +1605,13 @@ export default function PelantikanAgendaPage({
                           </select>
                           {columnResizeHandle('matching', 'Pencocokan')}
                         </th>
-                        <th className="sticky top-0 z-20 bg-slate-950 px-4 py-3">
+                        <th className="pel-table-head sticky top-0 z-20 bg-slate-950 px-4 py-3.5">
                           Pelantikan
                           <select
                             aria-label="Filter pelantikan"
                             value={modalityFilter}
                             onChange={(event) => setModalityFilter(event.target.value as ModalityFilter)}
-                            className="mt-2 block w-36 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] normal-case tracking-normal text-slate-200"
+                            className="input mt-2 block w-36 px-2 py-1 text-[11px] font-normal normal-case tracking-normal"
                           >
                             <option value="all">Semua</option>
                             <option value="unselected">Belum dipilih</option>
@@ -1518,7 +1639,16 @@ export default function PelantikanAgendaPage({
                         const nextModality = isLuring ? 'daring' : 'luring';
                         const nextModalityLabel = isLuring ? 'Daring' : 'Luring';
                         return (
-                          <tr key={person.id} className="align-top">
+                          <tr
+                            key={person.id}
+                            className={`align-top transition-colors ${
+                              pendamping
+                                ? 'bg-rose-950/10 opacity-75'
+                                : choice.selected
+                                  ? 'bg-sky-950/15 hover:bg-slate-800/45'
+                                  : 'hover:bg-slate-800/45'
+                            }`}
+                          >
                             <td className="px-4 py-3">
                               <input
                                 type="checkbox"
@@ -1529,28 +1659,28 @@ export default function PelantikanAgendaPage({
                                 className="mt-1 size-4 accent-cyan-500 disabled:opacity-40"
                               />
                             </td>
-                            <td className="whitespace-nowrap px-4 py-3 text-slate-300">{person.source_no || '—'}</td>
+                            <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-300">{person.source_no || '—'}</td>
                             {!isLiteView && (
-                              <td className="whitespace-nowrap px-4 py-3 text-slate-300">
+                              <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-300">
                                 {person.source_sheet
                                   ? `${person.source_sheet} · baris ${person.source_row_number ?? person.row_number}`
                                   : '—'}
                               </td>
                             )}
-                            <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-100">{person.source_nama_nip || '—'}</td>
+                            <td className="max-w-72 whitespace-normal px-4 py-3 font-medium text-slate-100">{person.source_nama_nip || '—'}</td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.source_jabatan_saat_ini || '—'}</td>
                             <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.source_usul_jabatan_baru || '—'}</td>
                             {!isLiteView && (
                               <>
                                 <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-300">{person.nip || '—'}</td>
-                                <td className="max-w-64 whitespace-normal px-4 py-3 text-slate-100">{person.nama || '—'}</td>
+                                <td className="max-w-64 whitespace-normal px-4 py-3 font-medium text-slate-100">{person.nama || '—'}</td>
                                 <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.jabatan || '—'}</td>
                                 <td className="max-w-72 whitespace-normal px-4 py-3 text-slate-300">{person.unit_eselon_ii || '—'}</td>
                               </>
                             )}
                             <td className="whitespace-nowrap px-4 py-3 text-slate-300">{person.unit_city || '—'}</td>
                             <td className="px-4 py-3">
-                              <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
                                 pendamping
                                   ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                                   : lookupClass(person.lookup_status)
@@ -1575,6 +1705,7 @@ export default function PelantikanAgendaPage({
                                   true,
                                   nextModality,
                                 )}
+                                className="disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 <span className="inline-flex items-center gap-2 rounded-lg px-1 py-1 text-sm">
                                   <span className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
@@ -1586,7 +1717,7 @@ export default function PelantikanAgendaPage({
                                       isLuring ? 'translate-x-6' : 'translate-x-0'
                                     }`} />
                                   </span>
-                                  <span className={`font-medium ${
+                                  <span className={`font-semibold ${
                                     isLuring ? 'text-amber-200' : 'text-brand-200'
                                   }`}>{modalityLabel}</span>
                                 </span>
@@ -1598,6 +1729,7 @@ export default function PelantikanAgendaPage({
                     </tbody>
                   </table>
                 </div>
+
                 <div className="border-t border-slate-800 px-5 py-3 text-xs leading-5 text-slate-400">
                   Pegawai yang tidak ditemukan, NIP duplikat, atau tidak memiliki Unit Eselon II tidak dapat dipilih.
                   Baris Pendamping pada kolom No selalu dikecualikan. Jika NIP terduplikasi, hanya kemunculan
@@ -1607,16 +1739,23 @@ export default function PelantikanAgendaPage({
             )}
           </div>
         ) : (
-          <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          /* AGENDA HISTORY LIST VIEW */
+          <section className="pel-panel rounded-2xl border border-slate-800 bg-slate-900/75 p-5 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
-                <h2 className="text-lg font-semibold">Riwayat agenda</h2>
-                <p className="mt-1 text-sm text-slate-400">Hanya agenda yang dibuat oleh akun ini.</p>
+                <h2 className="text-lg font-bold">Riwayat Agenda</h2>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Daftar agenda pelantikan yang dibuat oleh akun Anda.
+                </p>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-slate-300">
-                  {agendas.length}
-                </span>
+              <span className="rounded-full border border-slate-700 bg-slate-800/80 px-3 py-1 font-mono text-xs font-semibold text-slate-200">
+                {agendas.length} agenda
+              </span>
+            </div>
+
+            {agendas.length === 0 ? (
+              <div className="mt-6 rounded-2xl border border-dashed border-slate-700 p-8 text-center">
+                <p className="text-sm text-slate-400">Belum ada agenda pelantikan yang dibuat.</p>
                 {canEditAgenda && (
                   <button
                     type="button"
@@ -1624,77 +1763,114 @@ export default function PelantikanAgendaPage({
                       setError(null);
                       setIsCreateModalOpen(true);
                     }}
-                    className="btn-primary"
+                    className="btn-primary mt-4"
                   >
-                    Buat agenda
+                    Buat agenda pertama
                   </button>
                 )}
               </div>
-            </div>
-            {agendas.length === 0 ? (
-              <p className="mt-6 rounded-xl border border-dashed border-slate-700 p-5 text-center text-sm text-slate-400">
-                Belum ada agenda.
-              </p>
             ) : (
-              <ul className="mt-4 grid gap-3 md:grid-cols-2">
+              <ul className="mt-5 grid gap-4 md:grid-cols-2">
                 {agendas.map((item) => {
                   const daysUntil = daysUntilPelantikan(item.tanggal_pelantikan);
+                  const selectionPct = item.people_count > 0
+                    ? Math.min(100, Math.round((item.selected_count / item.people_count) * 100))
+                    : 0;
                   return (
                     <li key={item.id}>
-                      <div className="group overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60 transition hover:border-brand-500/50">
+                      <div className="pel-card group flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/55 transition hover:border-brand-500/50 hover:shadow-md">
                         <button
                           type="button"
-                          onClick={() => navigate(
-                            `${agendaBasePath}/${item.id}`,
-                          )}
-                          className="w-full p-4 text-left transition group-hover:bg-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                          onClick={() => navigate(`${agendaBasePath}/${item.id}`)}
+                          className="w-full flex-1 p-5 text-left transition group-hover:bg-slate-950/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                         >
-                          <span className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-medium text-slate-100">{formatDate(item.tanggal_pelantikan)}</span>
-                            <span className="flex flex-wrap items-center justify-end gap-2">
-                              <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300">
-                                {item.status === 'generated' ? 'Sudah dibuat' : item.status === 'ready' ? 'Siap diproses' : 'Draft'}
-                              </span>
-                              <span className={`rounded-full border px-2 py-0.5 text-xs ${
-                                daysUntil < 0
-                                  ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                              }`}>
-                                {daysUntil < 0 ? 'Berakhir' : `${daysUntil} Hari menuju pelantikan`}
-                              </span>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-base font-bold text-slate-100 group-hover:text-brand-200">
+                              {formatDate(item.tanggal_pelantikan)}
                             </span>
-                          </span>
-                          <span className="mt-2 block text-sm text-slate-300">{item.nd_undangan_pelantikan}</span>
-                          <span className="mt-1 block text-xs text-slate-500">
-                            {item.people_count} pegawai · {item.selected_count} dipilih
-                          </span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                                  item.status === 'generated'
+                                    ? 'border-sky-500/35 bg-sky-500/15 text-sky-300'
+                                    : item.status === 'ready'
+                                      ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+                                      : 'border-slate-700 bg-slate-800/80 text-slate-300'
+                                }`}
+                              >
+                                {item.status === 'generated'
+                                  ? 'Sudah dibuat'
+                                  : item.status === 'ready'
+                                    ? 'Siap diproses'
+                                    : 'Draft'}
+                              </span>
+                              <span
+                                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                                  daysUntil < 0
+                                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                }`}
+                              >
+                                {daysUntil < 0
+                                  ? 'Berakhir'
+                                  : daysUntil === 0
+                                    ? 'Hari ini'
+                                    : `${daysUntil} Hari menuju pelantikan`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <p className="mt-2.5 font-mono text-sm font-medium text-slate-200">
+                            {item.nd_undangan_pelantikan}
+                          </p>
+
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between text-xs text-slate-400">
+                              <span>
+                                <strong className="font-mono text-slate-200">{item.selected_count}</strong> dari{' '}
+                                <span className="font-mono">{item.people_count}</span> pegawai dipilih
+                              </span>
+                              <span className="font-mono text-[11px]">{selectionPct}%</span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                              <div
+                                className="h-full rounded-full bg-sky-400 transition-[width] duration-300"
+                                style={{ width: `${selectionPct}%` }}
+                              />
+                            </div>
+                          </div>
                         </button>
-                        <div className="flex justify-end border-t border-slate-800 px-3 py-1.5">
-                          {canEditAgenda && <button
-                            type="button"
-                            disabled={deletingHistoryAgendaId !== null}
-                            onClick={() => void deleteHistoryAgenda(item)}
-                            aria-label={`Hapus agenda ${item.nd_undangan_pelantikan}`}
-                            title="Hapus agenda"
-                            className="rounded-md p-1.5 text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <svg
-                              aria-hidden="true"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="size-4"
+
+                        {canEditAgenda && (
+                          <div className="flex items-center justify-between border-t border-slate-800/90 bg-slate-900/40 px-4 py-2">
+                            <span className="text-[11px] text-slate-500">Klik kartu untuk mengelola</span>
+                            <button
+                              type="button"
+                              disabled={deletingHistoryAgendaId !== null}
+                              onClick={() => void deleteHistoryAgenda(item)}
+                              aria-label={`Hapus agenda ${item.nd_undangan_pelantikan}`}
+                              title="Hapus agenda"
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <path d="M3 6h18" />
-                              <path d="M8 6V4h8v2" />
-                              <path d="m19 6-1 14H6L5 6" />
-                              <path d="M10 11v5M14 11v5" />
-                            </svg>
-                          </button>}
-                        </div>
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="size-3.5"
+                              >
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="m19 6-1 14H6L5 6" />
+                                <path d="M10 11v5M14 11v5" />
+                              </svg>
+                              <span>Hapus</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </li>
                   );
@@ -1703,9 +1879,11 @@ export default function PelantikanAgendaPage({
             )}
           </section>
         )}
+
+        {/* CREATE AGENDA MODAL */}
         {!agendaId && isCreateModalOpen && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
+            className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-xs"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) setIsCreateModalOpen(false);
             }}
@@ -1714,20 +1892,20 @@ export default function PelantikanAgendaPage({
               role="dialog"
               aria-modal="true"
               aria-labelledby="create-agenda-title"
-              className="my-auto w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
+              className="pel-modal my-auto w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
             >
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
-                  <h2 id="create-agenda-title" className="text-lg font-semibold">Buat agenda pelantikan</h2>
-                  <p className="mt-1 text-sm text-slate-400">
-                    Isi detail surat dan jadwal sebelum mengunggah Excel.
+                  <h2 id="create-agenda-title" className="text-lg font-bold">Buat Agenda Pelantikan</h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Isi detail surat dinas dan jadwal pelaksanaan sebelum mengunggah workbook Excel.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
                   aria-label="Tutup formulir agenda"
-                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                  className="flex size-8 items-center justify-center rounded-xl border border-slate-700 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                 >
                   <span aria-hidden="true">×</span>
                 </button>
@@ -1741,7 +1919,7 @@ export default function PelantikanAgendaPage({
                 <fieldset disabled={!canEditAgenda || isSaving}>
                   <AgendaFields fields={fields} onChange={updateFields} autoFocus />
                 </fieldset>
-                <div className="mt-5 flex justify-end gap-3">
+                <div className="mt-6 flex justify-end gap-3 border-t border-slate-800 pt-4">
                   <button
                     type="button"
                     onClick={() => setIsCreateModalOpen(false)}
@@ -1757,9 +1935,11 @@ export default function PelantikanAgendaPage({
             </section>
           </div>
         )}
+
+        {/* DOCUMENT PREVIEW & DOWNLOAD MODAL */}
         {agendaId && agenda && isPreviewOpen && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
+            className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-xs"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) setIsPreviewOpen(false);
             }}
@@ -1768,12 +1948,12 @@ export default function PelantikanAgendaPage({
               role="dialog"
               aria-modal="true"
               aria-labelledby="document-preview-title"
-              className="my-auto flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
+              className="pel-modal my-auto flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
             >
-              <header className="flex items-start justify-between gap-4">
+              <header className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
-                  <h2 id="document-preview-title" className="text-lg font-semibold">Pratinjau dokumen</h2>
-                  <p className="mt-1 text-sm leading-6 text-slate-400">
+                  <h2 id="document-preview-title" className="text-lg font-bold">Pratinjau Dokumen ND</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
                     Pilih dokumen per Unit Eselon II dan moda. Satu dokumen diunduh sebagai DOCX; beberapa dokumen digabung dalam ZIP.
                   </p>
                 </div>
@@ -1782,7 +1962,7 @@ export default function PelantikanAgendaPage({
                   onClick={() => setIsPreviewOpen(false)}
                   aria-label="Tutup pratinjau"
                   title="Tutup pratinjau"
-                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                  className="flex size-8 items-center justify-center rounded-xl border border-slate-700 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                 >
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="size-4">
                     <path d="m6 6 12 12M18 6 6 18" />
@@ -1806,31 +1986,31 @@ export default function PelantikanAgendaPage({
                 </div>
               )}
 
-              <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
+              <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                 {previewGroups.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-slate-700 p-5 text-center text-sm text-slate-400">
+                  <p className="pel-subpanel rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
                     Belum ada pegawai cocok yang dipilih untuk dokumen.
                   </p>
                 ) : (
                   previewGroups.map((group) => (
-                    <div key={group.key} className="overflow-hidden rounded-xl border border-slate-700 bg-slate-950/60">
+                    <div key={group.key} className="pel-subpanel overflow-hidden rounded-xl border border-slate-700 bg-slate-950/60">
                       <details>
                         <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 bg-slate-950/70 p-4 text-left transition hover:bg-slate-900">
                           <span className="min-w-0">
-                            <span className="block font-semibold text-brand-300">{group.unit}</span>
+                            <span className="block font-bold text-brand-300">{group.unit}</span>
                             {group.sourceSheet && (
                               <span className="mt-1 block text-xs text-slate-400">
                                 Sheet: {group.sourceSheet}
                               </span>
                             )}
-                            <span className="mt-1 flex flex-wrap gap-1.5">
+                            <span className="mt-1.5 flex flex-wrap gap-1.5">
                               {group.modalityCounts.daring > 0 && (
-                                <span className="inline-flex rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-200">
+                                <span className="inline-flex rounded-full border border-brand-500/30 bg-brand-500/10 px-2.5 py-0.5 text-xs font-semibold text-brand-200">
                                   Daring · {group.modalityCounts.daring} pegawai
                                 </span>
                               )}
                               {group.modalityCounts.luring > 0 && (
-                                <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-200">
+                                <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-200">
                                   Luring · {group.modalityCounts.luring} pegawai
                                 </span>
                               )}
@@ -1845,10 +2025,10 @@ export default function PelantikanAgendaPage({
                             <li key={person.id} className="flex flex-wrap items-start justify-between gap-2 border-l-2 border-brand-500/40 bg-slate-900/40 px-4 py-3 text-sm">
                               <span className="min-w-0 font-medium text-slate-100">
                                 {person.nama || person.source_nama_nip || `Baris ${person.row_number}`}
-                                {person.jabatan && <span className="mt-1 block text-xs text-slate-400">{person.jabatan}</span>}
+                                {person.jabatan && <span className="mt-0.5 block text-xs font-normal text-slate-400">{person.jabatan}</span>}
                               </span>
                               <span className="flex items-center gap-2 whitespace-nowrap">
-                                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                                   choices[person.id]?.modality === 'luring'
                                     ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
                                     : 'border-brand-500/30 bg-brand-500/10 text-brand-200'
@@ -1861,15 +2041,15 @@ export default function PelantikanAgendaPage({
                           ))}
                         </ul>
                       </details>
-                      <div className="flex flex-wrap items-center gap-3 border-t border-slate-800 px-4 py-3">
-                        <span className="text-xs font-medium text-slate-400">Dokumen:</span>
+                      <div className="flex flex-wrap items-center gap-4 border-t border-slate-800 px-4 py-3">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Dokumen:</span>
                         {(['daring', 'luring'] as const).map((modality) => {
                           const count = group.modalityCounts[modality];
                           if (count === 0) return null;
                           const key = `${group.key}\u0000${modality}`;
                           const label = modality === 'daring' ? 'Daring' : 'Luring';
                           return (
-                            <label key={key} className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-200">
+                            <label key={key} className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-200 sm:text-sm">
                               <input
                                 type="checkbox"
                                 checked={!excludedDocumentKeys.has(key)}
@@ -1888,76 +2068,90 @@ export default function PelantikanAgendaPage({
                 )}
               </div>
 
-              <footer className="mt-5 flex justify-end gap-2 border-t border-slate-800 pt-4">
-                <button
-                  type="button"
-                  disabled={!canEditAgenda || !choicesDirty || isSaving}
-                  onClick={() => void saveChoices()}
-                  aria-label={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
-                  title={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
-                  className="size-9 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 transition hover:bg-slate-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                    <path d="M6 3.75h8.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
-                    <path d="M14 4v5h5" />
-                    <path d="m8 15 2.25 2.25L16 11.5" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    selectedDownloadGroups.length === 0
-                    || !canEditAgenda
-                    || choicesDirty
-                    || isGenerating
-                    || isGeneratingAppendix
-                  }
-                  onClick={() => void generateDocuments()}
-                  aria-label={isGenerating
-                    ? 'Membuat dan mengunduh dokumen'
-                    : `Buat dan unduh ${selectedDownloadGroups.length} dokumen`}
-                  title={isGenerating
-                    ? 'Membuat dan mengunduh dokumen'
-                    : `Buat dan unduh ${selectedDownloadGroups.length} dokumen`}
-                  className="size-9 rounded-lg border border-brand-500/40 bg-brand-500/15 text-brand-200 transition hover:bg-brand-500/25 hover:text-brand-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                    <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
-                    <path d="M5 16v4h14v-4" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    previewGroups.length === 0
-                    || !canEditAgenda
-                    || choicesDirty
-                    || isGenerating
-                    || isGeneratingAppendix
-                  }
-                  onClick={() => void generateAppendix()}
-                  aria-label={isGeneratingAppendix ? 'Membuat Lampiran ND Pengantar' : 'Cetak Lampiran ND Pengantar'}
-                  title={
-                    choicesDirty
-                      ? 'Simpan pilihan terlebih dahulu'
-                      : isGeneratingAppendix
-                        ? 'Membuat Lampiran ND Pengantar'
-                        : 'Cetak Lampiran ND Pengantar'
-                  }
-                  className="size-9 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 transition hover:bg-emerald-500/20 hover:text-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isGeneratingAppendix ? (
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5 animate-pulse">
-                      <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                      <path d="M7 14h10v7H7zM17 11h.01" />
+              <footer className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+                <span className="text-xs text-slate-400">
+                  {selectedDownloadGroups.length} dokumen terpilih ({selectedDownloadPersonIds.length} pegawai)
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!canEditAgenda || !choicesDirty || isSaving}
+                    onClick={() => void saveChoices()}
+                    aria-label={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
+                    title={isSaving ? 'Menyimpan pilihan' : 'Simpan pilihan'}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                      <path d="M6 3.75h8.5L19 8.25v11.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-15a1 1 0 0 1 1-1Z" />
+                      <path d="M14 4v5h5" />
+                      <path d="m8 15 2.25 2.25L16 11.5" />
                     </svg>
-                  ) : (
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                      <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                      <path d="M7 14h10v7H7zM17 11h.01" />
+                    <span>Simpan pilihan</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={
+                      previewGroups.length === 0
+                      || !canEditAgenda
+                      || choicesDirty
+                      || isGenerating
+                      || isGeneratingAppendix
+                    }
+                    onClick={() => void generateAppendix()}
+                    aria-label={isGeneratingAppendix ? 'Membuat Lampiran ND Pengantar' : 'Cetak Lampiran ND Pengantar'}
+                    title={
+                      choicesDirty
+                        ? 'Simpan pilihan terlebih dahulu'
+                        : isGeneratingAppendix
+                          ? 'Membuat Lampiran ND Pengantar'
+                          : 'Cetak Lampiran ND Pengantar'
+                    }
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/25 hover:text-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isGeneratingAppendix ? (
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 animate-pulse">
+                        <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                        <path d="M7 14h10v7H7zM17 11h.01" />
+                      </svg>
+                    ) : (
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                        <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                        <path d="M7 14h10v7H7zM17 11h.01" />
+                      </svg>
+                    )}
+                    <span>{isGeneratingAppendix ? 'Membuat lampiran…' : 'Lampiran ND Pengantar'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={
+                      selectedDownloadGroups.length === 0
+                      || !canEditAgenda
+                      || choicesDirty
+                      || isGenerating
+                      || isGeneratingAppendix
+                    }
+                    onClick={() => void generateDocuments()}
+                    aria-label={isGenerating
+                      ? 'Membuat dan mengunduh dokumen'
+                      : `Buat dan unduh ${selectedDownloadGroups.length} dokumen`}
+                    title={isGenerating
+                      ? 'Membuat dan mengunduh dokumen'
+                      : `Buat dan unduh ${selectedDownloadGroups.length} dokumen`}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                      <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+                      <path d="M5 16v4h14v-4" />
                     </svg>
-                  )}
-                </button>
+                    <span>
+                      {isGenerating
+                        ? 'Mengunduh…'
+                        : `Unduh ${selectedDownloadGroups.length} Dokumen`}
+                    </span>
+                  </button>
+                </div>
               </footer>
             </section>
           </div>
@@ -1984,7 +2178,7 @@ function AgendaFields({
   );
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <label className="block text-sm text-slate-300">
+      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
         Tanggal pelantikan
         <input
           required
@@ -1992,46 +2186,46 @@ function AgendaFields({
           autoFocus={autoFocus}
           value={fields.tanggal_pelantikan}
           onChange={(event) => onChange('tanggal_pelantikan', event.target.value)}
-          className={inputClass}
+          className={`${inputClass} normal-case`}
         />
       </label>
-      <label className="block text-sm text-slate-300">
+      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
         Jam pelantikan
         <input
           required
           type="time"
           value={fields.jam_pelantikan}
           onChange={(event) => onChange('jam_pelantikan', event.target.value)}
-          className={inputClass}
+          className={`${inputClass} normal-case`}
         />
       </label>
-      <label className="block text-sm text-slate-300 sm:col-span-2">
+      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 sm:col-span-2">
         Nomor ND undangan pelantikan
         <input
           required
           maxLength={255}
           value={fields.nd_undangan_pelantikan}
           onChange={(event) => onChange('nd_undangan_pelantikan', event.target.value)}
-          className={inputClass}
+          className={`${inputClass} normal-case`}
         />
       </label>
-      <label className="block text-sm text-slate-300">
+      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
         Tanggal ND undangan
         <input
           required
           type="date"
           value={fields.tanggal_nd_undangan_pelantikan}
           onChange={(event) => onChange('tanggal_nd_undangan_pelantikan', event.target.value)}
-          className={inputClass}
+          className={`${inputClass} normal-case`}
         />
       </label>
-      <label className="block text-sm text-slate-300">
+      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
         Level jabatan
         <select
           required
           value={fields.level_jabatan}
           onChange={(event) => onChange('level_jabatan', event.target.value)}
-          className={inputClass}
+          className={`${inputClass} normal-case`}
         >
           <option value="" disabled>Pilih level jabatan</option>
           {fields.level_jabatan && !levelOptions.includes(fields.level_jabatan) && (
@@ -2041,7 +2235,7 @@ function AgendaFields({
           <option value="Tinggi Pratama">Tinggi Pratama</option>
         </select>
       </label>
-      <label className="block text-sm text-slate-300 sm:col-span-2">
+      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 sm:col-span-2">
         Dresscode
         <select
           required
@@ -2055,7 +2249,7 @@ function AgendaFields({
             setIsOtherDresscode(false);
             onChange('dresscode', event.target.value);
           }}
-          className={inputClass}
+          className={`${inputClass} normal-case`}
         >
           <option value="" disabled>Pilih dresscode</option>
           <option value="Wastra Nusantara">Wastra Nusantara</option>
@@ -2064,14 +2258,14 @@ function AgendaFields({
         </select>
       </label>
       {isOtherDresscode && (
-        <label className="block text-sm text-slate-300 sm:col-span-2">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 sm:col-span-2">
           Dresscode lainnya
           <input
             required
             maxLength={1000}
             value={fields.dresscode}
             onChange={(event) => onChange('dresscode', event.target.value)}
-            className={inputClass}
+            className={`${inputClass} normal-case`}
             placeholder="Masukkan dresscode"
           />
         </label>
