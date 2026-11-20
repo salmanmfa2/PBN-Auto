@@ -15,6 +15,7 @@ Current web update: **1.4.1** — [Web update notes](./Update%20Notes/Update%20N
 | **Insight Hub** | ✅ Live | PBN Open + Edu + HB employee analytics and distributions |
 | **Analisis Kinerja DJPb (web)** | ✅ Live | Quarter-specific performance dashboards, comparisons, records, and exports |
 | **Generate ND Undangan Pelantikan (web)** | ✅ Live | Multi-sheet agenda workflow, employee matching, previews, selective document downloads, and appendix generation |
+| **Analisis Mutasi/Promosi (Experimental)** | ✅ Live | Administrator and Pengawas workspaces, persisted dataset uploads, NIP lookup, category enrichment, and Talent Finder |
 
 ## Tech Stack
 
@@ -41,7 +42,33 @@ Project PBNCleaner/
 │   │   │   ├── sitasi_esiii.py    # Sitasi Es.III mode
 │   │   │   └── sitasi_esiv.py     # Sitasi Es.IV mode
 │   │   ├── services/
-│   │   │   └── dataset_service.py # DataFrame logic & mode routing
+│   │   │   ├── auth_service.py              # Account, session, role, and password handling
+│   │   │   ├── chat_service.py              # Groq chat assistant integration
+│   │   │   ├── cleaning_recommendation_service.py # Suggests the appropriate cleaning mode
+│   │   │   ├── dataset_service.py           # DataFrame parsing, cleaning, and export
+│   │   │   ├── feedback_service.py          # User feedback and Admin inbox persistence
+│   │   │   ├── history_service.py           # Cleaning history recording and retrieval
+│   │   │   ├── kinerja/                     # Performance Kinerja workflows
+│   │   │   │   ├── cache.py                 # Dashboard cache
+│   │   │   │   ├── common.py                # Shared calculations and constants
+│   │   │   │   ├── corrections.py           # Manual and E-PRIDE corrections
+│   │   │   │   ├── dashboard.py             # Dashboard aggregation
+│   │   │   │   ├── exports.py               # Workbook exports
+│   │   │   │   ├── record_data.py           # Record-data ranges and filters
+│   │   │   │   ├── records.py               # Record queries and insights
+│   │   │   │   └── uploads.py               # Upload validation and replacement
+│   │   │   ├── menu_access_service.py       # Menu-level role policies
+│   │   │   ├── pbn_dashboard_service.py     # PBN dashboard analytics
+│   │   │   ├── pbnopen_import_service.py    # PBN Open and employee-table maintenance
+│   │   │   ├── pelantikan_agenda/           # Pelantikan agenda workflows
+│   │   │   │   ├── agendas.py               # Agenda persistence and serialization
+│   │   │   │   ├── common.py                # Shared lookup and formatting helpers
+│   │   │   │   ├── documents.py             # DOCX template generation
+│   │   │   │   ├── exports.py               # Workbook, DOCX, and ZIP exports
+│   │   │   │   └── roster.py                # Roster import and employee matching
+│   │   │   ├── plt_plh_service.py           # PLT/PLH monitoring and documents
+│   │   │   ├── powerpoint_service.py        # Sitasi presentation generation
+│   │   │   └── stored_dataset_service.py    # Persistent original and cleaned dataset files
 │   │   ├── schemas/
 │   │   │   └── dataset.py         # Pydantic models
 │   │   └── storage/
@@ -148,8 +175,12 @@ The app uses **React Router v7** for URL-based navigation:
 |---|---|---|
 | `/` | LandingPage | Feature selector with cards for each module |
 | `/pbn-analytics` | AnalyticsPage | PBN dataset cleaning (active) |
-| `/menu-builder` | MenuBuilderPage | Link builder (coming soon) |
-| `/insights` | InsightHubPage | Analytics hub (coming soon) |
+| `/insights` | InsightHubPage | Employee analytics and distributions |
+| `/insights-beta` | InsightHubBetaPage | Beta dashboard experience |
+| `/analisis-kinerja` | PerformanceAnalysisPage | Kinerja DJPb analysis, records, dashboard, and corrections |
+| `/undangan-pelantikan` | PelantikanAgendaPage | Pelantikan agenda and document generation |
+| `/manajemen-plt-plh` | PltPlhManagementPage | Alternate-management monitoring and document workflows |
+| `/analisis-mutasi` | MutationAnalysisPage | Experimental Administrator/Pengawas mutation analysis and Talent Finder |
 
 Users can bookmark routes or share URLs directly to jump into any feature.
 
@@ -173,6 +204,58 @@ VITE_API_URL=http://localhost:8000
 | `GET` | `/dataset/{id}` | Fetch current dataset preview |
 | `GET` | `/export/csv/{id}` | Download as CSV |
 | `GET` | `/export/excel/{id}` | Download as Excel |
+| `POST` | `/mutation-analysis/lookup-nips` | Match employee NIPs with `dt_employee` |
+| `POST` | `/mutation-analysis/workspaces/{id}/dataset/analyze` | Apply workspace-specific category and tenure enrichment |
+| `PUT` | `/mutation-analysis/workspaces/{id}/categories` | Save manual Kategori selections |
+| `GET` | `/mutation-analysis/talent-finder/filter-options` | Load Eselon and rumpun filter options |
+| `POST` | `/mutation-analysis/talent-finder/count` | Count employees matching Talent Finder filters |
+| `POST` | `/mutation-analysis/talent-finder/search` | Fetch paginated and sortable Talent Finder results |
+
+## Analisis Mutasi/Promosi
+
+The Experimental Mutasi/Promosi module is available under `/analisis-mutasi`. It separates Administrator and Pengawas workspaces and keeps each workspace tied to its own uploaded dataset.
+
+### Data Load
+
+- Persistently uploads and restores CSV or Excel datasets.
+- Cleans Administrator data with Sitasi Es.III logic and Pengawas data with Sitasi Es.IV logic.
+- Looks up NIPs against `pbncleaner.dt_employee`.
+- Enriches the `Kategori` column using workspace-specific Eselon rules.
+- Allows manual dropdown correction of `Kategori` values for both workspace types.
+- Replaces the old TMT position field with `Masa Jabatan` in `X Tahun Y Bulan` format.
+
+Automatic Kategori mappings:
+
+| Workspace | Eselon IDs | Category |
+|---|---|---|
+| Administrator | 11, 3 | Mutasi |
+| Administrator | 4, 5, 6 | Promosi |
+| Administrator | 2 | Demosi |
+| Pengawas | 4 | Mutasi |
+| Pengawas | 6 | Perpindahan dari Fungsional |
+| Pengawas | 5, 7, 8, 9, 10 | Promosi |
+| Pengawas | 1, 2, 3, 11 | Demosi |
+
+Unmatched or unmapped employees remain `Pilih/Unidentified` until corrected manually.
+
+### Talent Finder
+
+Talent Finder searches `dt_employee` directly and does not require an uploaded CSV or Excel file. It supports checkbox filters for Eselon and Rumpun, plus a name filter.
+
+The result table is paginated and sortable. It includes:
+
+- Nama
+- Eselon
+- Usia
+- Jabatan
+- Pendidikan
+- Jurusan
+- Universitas/Sekolah Tinggi
+- Lama Eselon
+- Lama Jabatan
+- Homebase
+
+The interface counts matching IDs before explicitly loading result rows, and each header can toggle ascending or descending sorting.
 
 ## MySQL Setup (Cleaning History)
 
@@ -246,7 +329,9 @@ Response includes stats:
 
 ### In-Memory Storage
 
-Datasets are stored in a Python dict keyed by UUID. This means:
+General datasets are cached in a Python dict keyed by UUID. Mutation/Promosi workspace datasets also have persistent file and workspace-assignment records, so uploaded and cleaned files can be restored.
+
+The in-memory cache means:
 
 - No database setup required
 - Data is lost on server restart
