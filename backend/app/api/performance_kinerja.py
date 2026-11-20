@@ -27,7 +27,14 @@ from app.schemas.performance_kinerja import (
     PerformanceCorrectionBatchResult,
     PerformanceUploadValidation,
 )
-from app.services import performance_kinerja_service as service
+from app.services.kinerja import (
+    common as kinerja_common,
+    corrections as kinerja_corrections,
+    dashboard as kinerja_dashboard,
+    exports as kinerja_exports,
+    records as kinerja_records,
+    uploads as kinerja_uploads,
+)
 
 
 router = APIRouter(
@@ -90,7 +97,7 @@ def get_performance_analysis(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.get_analysis(db, group_by, period)
+        return kinerja_records.get_analysis(db, group_by, period)
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
@@ -107,7 +114,7 @@ def get_performance_dashboard(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.get_dashboard(
+        return kinerja_dashboard.get_dashboard(
             db,
             unit_eselon_ii,
             eselon,
@@ -124,7 +131,7 @@ def get_performance_dashboard(
 @router.get("/insight", response_model=PerformanceInsightRead)
 def get_performance_insight(db: Session = Depends(get_history_db)):
     try:
-        return service.get_insight(db)
+        return kinerja_records.get_insight(db)
     except SQLAlchemyError as exc:
         raise _database_error("Could not load the performance insight text.") from exc
 
@@ -136,7 +143,7 @@ def update_performance_insight(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.update_insight(
+        return kinerja_records.update_insight(
             db,
             request.content,
             updated_by_user=user.user,
@@ -158,7 +165,7 @@ def get_performance_records(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.get_records(
+        return kinerja_records.get_records(
             db,
             page,
             page_size,
@@ -181,8 +188,8 @@ def delete_performance_dataset_period(
     db: Session = Depends(get_history_db),
 ):
     try:
-        service.delete_dataset_period(db, period)
-    except service.PerformanceDatasetNotFoundError as exc:
+        kinerja_common.delete_dataset_period(db, period)
+    except kinerja_common.PerformanceDatasetNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise _validation_error(exc) from exc
@@ -195,7 +202,7 @@ def delete_performance_dataset_period(
 def download_performance_correction_batch_template(
     _: User = Depends(get_current_user),
 ):
-    content = service.create_correction_batch_template()
+    content = kinerja_corrections.create_correction_batch_template()
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -221,14 +228,14 @@ async def batch_update_performance_corrections(
         max_size=MAX_CORRECTION_BATCH_UPLOAD_SIZE,
     )
     try:
-        return service.update_manual_corrections_from_excel(
+        return kinerja_corrections.update_manual_corrections_from_excel(
             db,
             content,
             period,
             edited_by_user=user.user,
             edited_by_name=user.name,
         )
-    except service.PerformanceCorrectionNotFoundError as exc:
+    except kinerja_common.PerformanceCorrectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise _validation_error(exc) from exc
@@ -246,7 +253,7 @@ def update_manual_performance_correction(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.update_manual_correction(
+        return kinerja_corrections.update_manual_correction(
             db,
             request.period,
             request.nip,
@@ -254,7 +261,7 @@ def update_manual_performance_correction(
             edited_by_user=user.user,
             edited_by_name=user.name,
         )
-    except service.PerformanceCorrectionNotFoundError as exc:
+    except kinerja_common.PerformanceCorrectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise _validation_error(exc) from exc
@@ -274,7 +281,7 @@ def get_performance_correction_edit_log(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.get_correction_edit_logs(db, page, page_size, period)
+        return kinerja_corrections.get_correction_edit_logs(db, page, page_size, period)
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except SQLAlchemyError as exc:
@@ -291,10 +298,10 @@ def undo_performance_correction_edit(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.undo_manual_correction(db, log_id)
-    except service.PerformanceCorrectionNotFoundError as exc:
+        return kinerja_corrections.undo_manual_correction(db, log_id)
+    except kinerja_common.PerformanceCorrectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except service.PerformanceCorrectionConflictError as exc:
+    except kinerja_common.PerformanceCorrectionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except SQLAlchemyError as exc:
         raise _database_error("Could not undo the manual performance correction.") from exc
@@ -306,7 +313,7 @@ def download_unit_analysis(
     db: Session = Depends(get_history_db),
 ):
     try:
-        content = service.create_unit_analysis_workbook(db, period)
+        content = kinerja_exports.create_unit_analysis_workbook(db, period)
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
@@ -328,7 +335,7 @@ def download_performance_records(
     db: Session = Depends(get_history_db),
 ):
     try:
-        content = service.create_performance_records_workbook(
+        content = kinerja_exports.create_performance_records_workbook(
             db,
             search,
             _parse_record_filters(filters),
@@ -356,7 +363,7 @@ async def validate_full_performance_data(
 ):
     content = await _read_upload(file, ".csv")
     try:
-        return service.validate_full_upload(content, period, employee_source)
+        return kinerja_uploads.validate_full_upload(content, period, employee_source)
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:
@@ -375,7 +382,7 @@ async def replace_full_performance_data(
 ):
     content = await _read_upload(file, ".csv")
     try:
-        return service.replace_full_upload(
+        return kinerja_uploads.replace_full_upload(
             db,
             content,
             period,
@@ -397,7 +404,7 @@ def get_performance_correction_source_periods(
     _: User = Depends(get_super_admin),
 ):
     try:
-        return service.get_available_epride_source_periods()
+        return kinerja_corrections.get_available_epride_source_periods()
     except (RuntimeError, SQLAlchemyError) as exc:
         raise _database_error(
             "Could not load available EPRIDE source periods. Check its database configuration and connection."
@@ -414,7 +421,7 @@ def sync_performance_adjustments(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.sync_adjustments_from_epride(
+        return kinerja_corrections.sync_adjustments_from_epride(
             db,
             period,
             source_year,
@@ -438,7 +445,7 @@ def check_performance_adjustments(
     db: Session = Depends(get_history_db),
 ):
     try:
-        return service.check_adjustments_from_epride(
+        return kinerja_corrections.check_adjustments_from_epride(
             db,
             period,
             source_year,

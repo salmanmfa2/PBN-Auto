@@ -113,3 +113,4 @@ def update_menu_access_settings(
         raise
 
     return get_menu_access_settings(db)
+

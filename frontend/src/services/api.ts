@@ -23,7 +23,14 @@ import type {
   AuthUser,
   MenuAccessPolicy,
   MutationWorkspace,
+  MutationWorkspaceDatasetState,
+  MutationWorkspaceDatasetAnalysis,
+  MutationCategorySelection,
   MutationLookupResponse,
+  MutationTalentFinderFilterOptions,
+  MutationTalentFinderCountResponse,
+  MutationTalentFinderSearchRequest,
+  MutationTalentFinderSearchResponse,
   PbnOpenCsvValidation,
   PbnOpenDataSourceSyncStatus,
   DatabaseMaintenanceTarget,
@@ -195,6 +202,38 @@ export async function assignMutationWorkspaceDataset(
   return data;
 }
 
+export async function restoreMutationWorkspaceDataset(
+  workspaceId: string,
+): Promise<MutationWorkspaceDatasetState> {
+  const { data } = await api.post<MutationWorkspaceDatasetState>(
+    `/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}/dataset/restore`,
+  );
+  return data;
+}
+
+export async function analyzeMutationWorkspaceDataset(
+  workspaceId: string,
+  sheetName: string,
+): Promise<MutationWorkspaceDatasetAnalysis> {
+  const { data } = await api.post<MutationWorkspaceDatasetAnalysis>(
+    `/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}/dataset/analyze`,
+    { sheet_name: sheetName },
+  );
+  return data;
+}
+
+export async function saveMutationWorkspaceCategories(
+  workspaceId: string,
+  sheetName: string,
+  categories: MutationCategorySelection[],
+): Promise<DatasetPreview> {
+  const { data } = await api.put<DatasetPreview>(
+    `/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}/categories`,
+    { sheet_name: sheetName, categories },
+  );
+  return data;
+}
+
 export async function deleteMutationWorkspace(workspaceId: string): Promise<void> {
   await api.delete(`/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}`);
 }
@@ -203,6 +242,33 @@ export async function lookupMutationNips(nips: string[]): Promise<MutationLookup
   const { data } = await api.post<MutationLookupResponse>(
     '/mutation-analysis/lookup-nips',
     { nips },
+  );
+  return data;
+}
+
+export async function getMutationTalentFinderFilterOptions(): Promise<MutationTalentFinderFilterOptions> {
+  const { data } = await api.get<MutationTalentFinderFilterOptions>(
+    '/mutation-analysis/talent-finder/filter-options',
+  );
+  return data;
+}
+
+export async function searchMutationTalentFinderEmployees(
+  request: MutationTalentFinderSearchRequest,
+): Promise<MutationTalentFinderSearchResponse> {
+  const { data } = await api.post<MutationTalentFinderSearchResponse>(
+    '/mutation-analysis/talent-finder/search',
+    request,
+  );
+  return data;
+}
+
+export async function countMutationTalentFinderEmployees(
+  request: MutationTalentFinderSearchRequest,
+): Promise<MutationTalentFinderCountResponse> {
+  const { data } = await api.post<MutationTalentFinderCountResponse>(
+    '/mutation-analysis/talent-finder/count',
+    request,
   );
   return data;
 }

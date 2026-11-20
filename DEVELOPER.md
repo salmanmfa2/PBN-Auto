@@ -53,7 +53,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/repositories/pbn_dashboard_repository.py` — isolates reads from the shared employee-source table.
   - `app/services/pbn_dashboard_service.py` — validates cleaned dashboard columns, applies filters, and calculates employee totals and chart distributions using the repository.
   - Insight Hub Beta reuses the same dashboard service calculations and response schemas; it reads `pbncleaner.fetch_pbnopen` from the configured SQLAlchemy engine.
-  - `app/services/kinerja/` — performance workflows split across shared calculations, uploads, corrections, dashboard/cache, record data, queries, and exports. `app/services/performance_kinerja_service.py` remains the compatibility facade used by existing API/auth callers.
+  - `app/services/kinerja/` — performance workflows split across shared calculations, uploads, corrections, dashboard/cache, record data, queries, and exports. Keep `__init__.py` lightweight; API/auth callers import the specific modules they use.
   - `app/models/performance_kinerja.py` and `app/schemas/performance_kinerja.py` — persisted performance data models and API types.
   - `app/services/pbnopen_import_service.py` — allowlisted source replacement, key-preserving reference-table maintenance, and NIP-based employee synchronization, with preview and transactional apply paths.
   - `app/services/auth_service.py` — account/session lifecycle, role invariants, and persisted appearance preferences.
@@ -65,7 +65,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/models/auth.py` — account, session, and per-user preference models.
   - `app/models/cleaning_history.py` — SQLAlchemy model for cleaning history table.
   - `app/models/plt_plh.py` and `app/services/plt_plh_service.py` — monitoring records, derived tenure/status, Excel export, and replacement-employee lookup.
-  - `app/models/pelantikan_agenda.py` and `app/services/pelantikan_agenda_service.py` — persistent agenda/participant snapshots and DOCX/ZIP generation.
+  - `app/models/pelantikan_agenda.py` and `app/services/pelantikan_agenda/` — persistent agenda/participant snapshots and modular roster, document, and export workflows.
   - `app/models/user_feedback.py` and `app/services/feedback_service.py` — persisted user feedback and Admin inbox operations.
   - `app/utils/employee_formatting.py` — shared definitive job-title formatting for employee-backed workflows.
   - `app/schemas/pbn_dashboard.py` — dashboard filter request schema.
@@ -221,7 +221,7 @@ This file helps new contributors (especially juniors) understand where to make c
 - The preview can also generate one ND Pengantar appendix DOCX from selected participants. Its rows are ordered Luring before Daring and then by unit ID; the template is `backend/templates/undangan_pelantikan/template_lampiran_pengantar.docx`.
 - Pelantikan monitoring has an Excel export with four columns and counts by unit.
 - The source workbook and generated documents are not retained on the server. The agenda and participant snapshot remain so the owner can resume the workflow; re-uploading a workbook or switching sheets replaces that agenda's participant snapshot. The frontend keeps the current workbook and sheet selected after upload so the owner can replace the roster without creating another agenda.
-- Keep recipient wording and the shared job-title formatting rules in `pelantikan_agenda_service.py` and `employee_formatting.py` aligned.
+- Keep recipient wording and the shared job-title formatting rules in `pelantikan_agenda/common.py` and `employee_formatting.py` aligned.
 
 **Frontend architecture for junior devs**
 - The app uses **React Router v7** with pages as separate route components in `src/pages/`.

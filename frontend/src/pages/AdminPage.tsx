@@ -233,6 +233,32 @@ export default function AdminPage() {
       .finally(() => setIsLoadingDatabaseTargets(false));
   };
 
+  const refreshDatabaseTargets = useCallback(async () => {
+    if (!isGodUser) return;
+    setIsLoadingDatabaseTargets(true);
+    setDatabaseDialogError(null);
+    setDatabasePreview(null);
+    setDatabaseFile(null);
+    setDatabaseApplyFailed(false);
+    if (databaseFileInput.current) databaseFileInput.current.value = '';
+    try {
+      const targets = await apiClient.getDatabaseMaintenanceTargets();
+      setDatabaseTargets(targets);
+      if (
+        !targets.some((target) => target.key === selectedDatabaseTarget)
+        && targets.length > 0
+      ) {
+        setSelectedDatabaseTarget(targets[0].key);
+      }
+    } catch (loadError: unknown) {
+      setDatabaseDialogError(
+        loadError instanceof Error ? loadError.message : String(loadError),
+      );
+    } finally {
+      setIsLoadingDatabaseTargets(false);
+    }
+  }, [isGodUser, selectedDatabaseTarget]);
+
   useEffect(() => {
     void refreshUsers();
   }, [refreshUsers]);
@@ -852,25 +878,40 @@ export default function AdminPage() {
               <div className="flex justify-center py-8"><Spinner label="Memuat tabel database…" /></div>
             ) : (
               <div className="mt-4 space-y-4">
-                <label className="block text-sm text-slate-300">
-                  Tabel database
-                  <select
-                    value={selectedDatabaseTarget}
-                    onChange={(event) => {
-                      setSelectedDatabaseTarget(event.target.value);
-                      setDatabaseFile(null);
-                      setDatabasePreview(null);
-                      setDatabaseDialogError(null);
-                      setDatabaseApplyFailed(false);
-                      if (databaseFileInput.current) databaseFileInput.current.value = '';
-                    }}
-                    className="input mt-1.5"
+                <div className="flex items-end justify-between gap-3">
+                  <label className="block flex-1 text-sm text-slate-300">
+                    Tabel database
+                    <select
+                      value={selectedDatabaseTarget}
+                      onChange={(event) => {
+                        setSelectedDatabaseTarget(event.target.value);
+                        setDatabaseFile(null);
+                        setDatabasePreview(null);
+                        setDatabaseDialogError(null);
+                        setDatabaseApplyFailed(false);
+                        if (databaseFileInput.current) databaseFileInput.current.value = '';
+                      }}
+                      className="input mt-1.5"
+                    >
+                      {databaseTargets.map((target) => (
+                        <option key={target.key} value={target.key}>{target.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void refreshDatabaseTargets()}
+                    disabled={isLoadingDatabaseTargets}
+                    className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 text-sm text-sky-200 transition hover:border-sky-400/50 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Refresh/sync daftar tabel database"
                   >
-                    {databaseTargets.map((target) => (
-                      <option key={target.key} value={target.key}>{target.label}</option>
-                    ))}
-                  </select>
-                </label>
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                      <path d="M20 11a8 8 0 1 0-2.34 5.66" />
+                      <path d="M20 4v7h-7" />
+                    </svg>
+                    Refresh tabel
+                  </button>
+                </div>
                 {(() => {
                   const target = databaseTargets.find((item) => item.key === selectedDatabaseTarget);
                   if (!target) return null;

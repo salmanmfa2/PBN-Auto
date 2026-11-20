@@ -21,7 +21,7 @@ from app.schemas.pelantikan_agenda import (
     PelantikanAgendaUpdate,
     PelantikanImportStrategy,
 )
-from app.services import pelantikan_agenda_service
+from app.services.pelantikan_agenda import agendas, common, documents, exports, roster
 
 
 router = APIRouter(
@@ -36,7 +36,7 @@ def get_agendas(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_history_db),
 ):
-    return pelantikan_agenda_service.list_agendas(db, user.user)
+    return agendas.list_agendas(db, user.user)
 
 
 @router.post("/agendas", response_model=PelantikanAgendaRead, status_code=201)
@@ -46,8 +46,8 @@ def create_agenda(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.create_agenda(db, user.user, request)
-        return pelantikan_agenda_service.agenda_to_read(agenda)
+        agenda = agendas.create_agenda(db, user.user, request)
+        return agendas.agenda_to_read(agenda)
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(
@@ -63,10 +63,10 @@ def get_agenda(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
-    return pelantikan_agenda_service.agenda_to_detail(agenda)
+    return agendas.agenda_to_detail(agenda)
 
 
 @router.put("/agendas/{agenda_id}", response_model=PelantikanAgendaRead)
@@ -77,13 +77,13 @@ def update_agenda(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(
+        agenda = agendas.get_owned_agenda(
             db,
             agenda_id,
             user.user,
             include_people=False,
         )
-        updated = pelantikan_agenda_service.update_agenda(
+        updated = agendas.update_agenda(
             db,
             agenda,
             PelantikanAgendaFields(**request.model_dump()),
@@ -93,7 +93,7 @@ def update_agenda(
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Agenda tidak dapat diperbarui.") from exc
-    return pelantikan_agenda_service.agenda_to_read(updated)
+    return agendas.agenda_to_read(updated)
 
 
 @router.post(
@@ -108,14 +108,14 @@ async def upload_agenda_excel(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
         filename = file.filename or ""
-        content = await file.read(pelantikan_agenda_service.MAX_UPLOAD_SIZE + 1)
-        if len(content) > pelantikan_agenda_service.MAX_UPLOAD_SIZE:
+        content = await file.read(common.MAX_UPLOAD_SIZE + 1)
+        if len(content) > common.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=413, detail="Ukuran file Excel melebihi 50 MB.")
         if not content:
             raise HTTPException(status_code=400, detail="File Excel kosong.")
-        updated = pelantikan_agenda_service.upload_and_match(
+        updated = roster.upload_and_match(
             db,
             agenda,
             content,
@@ -142,7 +142,7 @@ async def upload_agenda_excel(
     return {
         "selected_sheet": updated.uploaded_sheet or "",
         "row_count": len(updated.people),
-        "people": pelantikan_agenda_service.people_to_read(updated.people),
+        "people": agendas.people_to_read(updated.people),
         "processed_sheets": [updated.uploaded_sheet] if updated.uploaded_sheet else [],
         "skipped_sheets": [],
         "duplicate_count": sum(
@@ -164,15 +164,15 @@ async def upload_agenda_excel_sheets(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
         filename = file.filename or ""
-        content = await file.read(pelantikan_agenda_service.MAX_UPLOAD_SIZE + 1)
-        if len(content) > pelantikan_agenda_service.MAX_UPLOAD_SIZE:
+        content = await file.read(common.MAX_UPLOAD_SIZE + 1)
+        if len(content) > common.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=413, detail="Ukuran file Excel melebihi 50 MB.")
         if not content:
             raise HTTPException(status_code=400, detail="File Excel kosong.")
         updated, processed_sheets, skipped_sheets, duplicate_count = (
-            pelantikan_agenda_service.upload_sheets_and_match(
+            roster.upload_sheets_and_match(
                 db,
                 agenda,
                 content,
@@ -201,7 +201,7 @@ async def upload_agenda_excel_sheets(
     return {
         "selected_sheet": updated.uploaded_sheet or "",
         "row_count": len(updated.people),
-        "people": pelantikan_agenda_service.people_to_read(updated.people),
+        "people": agendas.people_to_read(updated.people),
         "processed_sheets": processed_sheets,
         "skipped_sheets": skipped_sheets,
         "duplicate_count": duplicate_count,
@@ -219,15 +219,15 @@ async def upload_agenda_excel_all_sheets(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
         filename = file.filename or ""
-        content = await file.read(pelantikan_agenda_service.MAX_UPLOAD_SIZE + 1)
-        if len(content) > pelantikan_agenda_service.MAX_UPLOAD_SIZE:
+        content = await file.read(common.MAX_UPLOAD_SIZE + 1)
+        if len(content) > common.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=413, detail="Ukuran file Excel melebihi 50 MB.")
         if not content:
             raise HTTPException(status_code=400, detail="File Excel kosong.")
         updated, processed_sheets, skipped_sheets, duplicate_count = (
-            pelantikan_agenda_service.upload_all_sheets_and_match(
+            roster.upload_all_sheets_and_match(
                 db,
                 agenda,
                 content,
@@ -272,14 +272,14 @@ async def list_agenda_excel_sheets(
     db: Session = Depends(get_history_db),
 ):
     try:
-        pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        agendas.get_owned_agenda(db, agenda_id, user.user)
         filename = file.filename or ""
-        content = await file.read(pelantikan_agenda_service.MAX_UPLOAD_SIZE + 1)
-        if len(content) > pelantikan_agenda_service.MAX_UPLOAD_SIZE:
+        content = await file.read(common.MAX_UPLOAD_SIZE + 1)
+        if len(content) > common.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=413, detail="Ukuran file Excel melebihi 50 MB.")
         if not content:
             raise HTTPException(status_code=400, detail="File Excel kosong.")
-        return pelantikan_agenda_service.list_workbook_sheets(content, filename)
+        return roster.list_workbook_sheets(content, filename)
     except HTTPException:
         raise
     except KeyError as exc:
@@ -301,8 +301,8 @@ def update_people(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
-        updated = pelantikan_agenda_service.save_person_choices(
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
+        updated = roster.save_person_choices(
             db,
             agenda,
             request.people,
@@ -314,7 +314,7 @@ def update_people(
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Pilihan pegawai tidak dapat disimpan.") from exc
-    return pelantikan_agenda_service.agenda_to_detail(updated)
+    return agendas.agenda_to_detail(updated)
 
 
 @router.get("/agendas/{agenda_id}/monitoring-export")
@@ -324,8 +324,8 @@ def export_agenda_monitoring(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
-        data = pelantikan_agenda_service.export_monitoring_excel(agenda)
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
+        data = exports.export_monitoring_excel(agenda)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except SQLAlchemyError as exc:
@@ -349,8 +349,8 @@ def generate_agenda_documents(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
-        data, group_count = pelantikan_agenda_service.generate_agenda_zip(db, agenda)
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
+        data, group_count = exports.generate_agenda_zip(db, agenda)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:
@@ -385,9 +385,9 @@ def generate_selected_agenda_documents(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
         data, filename, media_type, group_count = (
-            pelantikan_agenda_service.generate_selected_agenda_documents(
+            exports.generate_selected_agenda_documents(
                 db,
                 agenda,
                 request.person_ids,
@@ -425,8 +425,8 @@ def generate_agenda_appendix(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(db, agenda_id, user.user)
-        data = pelantikan_agenda_service.generate_lampiran_pengantar_docx(agenda)
+        agenda = agendas.get_owned_agenda(db, agenda_id, user.user)
+        data = documents.generate_lampiran_pengantar_docx(agenda)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc).strip("'\"")) from exc
     except ValueError as exc:
@@ -454,7 +454,7 @@ def delete_agenda(
     db: Session = Depends(get_history_db),
 ):
     try:
-        agenda = pelantikan_agenda_service.get_owned_agenda(
+        agenda = agendas.get_owned_agenda(
             db,
             agenda_id,
             user.user,

@@ -159,12 +159,24 @@ def _read_csv(content: bytes, expected_columns: list[str]) -> pd.DataFrame:
 def _get_maintenance_target(target_key: str) -> TableMaintenanceTarget:
     target = TABLE_MAINTENANCE_TARGETS.get(target_key)
     if target is None:
+        with engine.connect() as connection:
+            existing_tables = set(
+                inspect(connection).get_table_names(schema=TABLE_SCHEMA)
+            )
+            if target_key in existing_tables:
+                target = TableMaintenanceTarget(
+                    target_key,
+                    target_key,
+                    f"Database table: {target_key}",
+                    "replace",
+                )
+    if target is None:
         raise ValueError(f"'{target_key}' is not an allowed database-maintenance target.")
     return target
 
 
 def get_table_maintenance_catalog() -> list[dict[str, str | None]]:
-    return [
+    catalog = [
         {
             "key": target.key,
             "table_name": target.table_name,
@@ -174,6 +186,26 @@ def get_table_maintenance_catalog() -> list[dict[str, str | None]]:
         }
         for target in TABLE_MAINTENANCE_TARGETS.values()
     ]
+    catalog_keys = {item["key"] for item in catalog}
+    try:
+        with engine.connect() as connection:
+            existing_tables = inspect(connection).get_table_names(schema=TABLE_SCHEMA)
+    except Exception:
+        existing_tables = []
+
+    for table_name in sorted(existing_tables):
+        if table_name in catalog_keys:
+            continue
+        catalog.append(
+            {
+                "key": table_name,
+                "table_name": table_name,
+                "label": f"Database table: {table_name}",
+                "operation": "replace",
+                "source_table": None,
+            }
+        )
+    return catalog
 
 
 def _table_for(connection: Any, table_name: str) -> Table:

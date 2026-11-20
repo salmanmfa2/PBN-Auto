@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDataset } from '../hooks/useDataset';
 import * as apiClient from '../services/api';
+import MutationTalentFinder from '../components/MutationTalentFinder';
 import type {
   DatasetPreview,
   MutationEselonChoice,
+  MutationCategory,
+  MutationCategorySelection,
   MutationWorkspace,
   MutationLookupResponse,
 } from '../types';
@@ -19,6 +22,14 @@ const MUTATION_WORKSPACE_TABS: { id: MutationWorkspaceTab; label: string }[] = [
   { id: 'employees', label: 'Daftar Pegawai' },
   { id: 'talent-finder', label: 'Talent Finder' },
 ];
+const MANUAL_CATEGORY_COLUMN = '__mutation_manual_category';
+const MUTATION_CATEGORY_OPTIONS: MutationCategory[] = [
+  'Mutasi',
+  'Perpindahan dari Fungsional',
+  'Promosi',
+  'Demosi',
+];
+const UNIDENTIFIED_CATEGORY = 'Pilih/Unidentified';
 
 function getTodayDateInput(): string {
   const today = new Date();
@@ -32,21 +43,20 @@ function formatWorkspaceDate(value: string | null): string {
   return new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('id-ID');
 }
 
-function normalizeLookupNip(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  const text = String(value).replace(/\s+/g, '');
-  const last18 = text.slice(-18);
-  return /^\d{18}$/.test(last18) ? last18 : null;
-}
-
 function PreviewTable({
   title,
   preview,
   emptyMessage,
+  renderCell,
 }: {
   title: string;
   preview: DatasetPreview | null;
   emptyMessage: string;
+  renderCell?: (
+    row: Record<string, unknown>,
+    column: string,
+    rowIndex: number,
+  ) => ReactNode;
 }) {
   if (!preview) {
     return (
@@ -90,9 +100,11 @@ function PreviewTable({
                       key={column}
                       className="max-w-64 whitespace-normal break-words border-b border-r border-surface-700 px-3 py-2 text-slate-300 last:border-r-0"
                     >
-                      {row[column] === null || row[column] === undefined
-                        ? ''
-                        : String(row[column])}
+                      {renderCell?.(row, column, rowIndex) ?? (
+                        row[column] === null || row[column] === undefined
+                          ? ''
+                          : String(row[column])
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -125,6 +137,9 @@ export default function MutationAnalysisPage() {
   const [showPreviewPopup, setShowPreviewPopup] = useState(false);
   const [lookupResult, setLookupResult] = useState<MutationLookupResponse | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [manualCategoryDrafts, setManualCategoryDrafts] = useState<Record<number, string>>({});
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categorySaveMessage, setCategorySaveMessage] = useState<string | null>(null);
   const cleaningStarted = useRef(false);
   const activeWorkspaceId = useRef<string | null>(null);
   const lookupRequestId = useRef(0);
@@ -163,43 +178,28 @@ export default function MutationAnalysisPage() {
     ) {
       return;
     }
-    const nameNipColumn = workspacePreview.columns.find((column) => {
-      const normalized = column.replace(/[^a-z0-9]/gi, '').toLowerCase();
-      return normalized === 'namenip';
-    });
-    const nipColumn = workspacePreview.columns.find((column) => (
-      column.trim().toLowerCase() === 'nip'
-    ));
-    const lookupColumn = nipColumn ?? nameNipColumn;
-    if (!lookupColumn) {
-      setLookupResult({
-        matched_count: 0,
-        unmatched_count: 0,
-        invalid_count: workspacePreview.rows.length,
-        matches: {},
-      });
-      return;
-    }
-    const lookupValues = workspacePreview.rows.map((row) => {
-      const value = row[lookupColumn];
-      return normalizeLookupNip(value) ?? (value === null || value === undefined ? '' : String(value));
-    });
-    const nips = lookupValues;
     const requestId = ++lookupRequestId.current;
     setLookupLoading(true);
-    void apiClient.lookupMutationNips(nips)
+    void dataset.analyzeMutationWorkspace(
+      activeWorkspace.id,
+      workspacePreview.selected_sheet,
+    )
       .then((result) => {
-        if (requestId === lookupRequestId.current) setLookupResult(result);
-      })
-      .catch((error: unknown) => {
-        if (requestId === lookupRequestId.current) {
+        if (requestId !== lookupRequestId.current) return;
+        if (result) {
+          setLookupResult({
+            matched_count: result.matched_count,
+            unmatched_count: result.unmatched_count,
+            invalid_count: result.invalid_count,
+            matches: result.matches,
+          });
+        } else {
           setLookupResult({
             matched_count: 0,
-            unmatched_count: nips.length,
-            invalid_count: workspacePreview.rows.length - nips.length,
+            unmatched_count: workspacePreview.row_count,
+            invalid_count: 0,
             matches: {},
           });
-          setWorkspaceError(error instanceof Error ? error.message : String(error));
         }
       })
       .finally(() => {
@@ -208,6 +208,7 @@ export default function MutationAnalysisPage() {
   }, [
     activeWorkspace,
     cleaningMode,
+    dataset.analyzeMutationWorkspace,
     dataset.activeAutoCleanMode,
     dataset.preview,
     lookupLoading,
@@ -233,10 +234,12 @@ export default function MutationAnalysisPage() {
     setEselonChoice(choice);
     setActiveWorkspace(null);
     activeWorkspaceId.current = null;
+    setManualCategoryDrafts({});
+    setCategorySaveMessage(null);
     setStep(2);
   };
 
-  const openDraft = (workspace: MutationWorkspace) => {
+  const openDraft = async (workspace: MutationWorkspace) => {
     activeWorkspaceId.current = workspace.id;
     cleaningStarted.current = false;
     lookupRequestId.current += 1;
@@ -245,12 +248,19 @@ export default function MutationAnalysisPage() {
     setShowPreviewPopup(false);
     setLookupResult(null);
     setLookupLoading(false);
+    setManualCategoryDrafts({});
+    setCategorySaveMessage(null);
     setWorkspaceError(null);
     dataset.reset();
     setActiveWorkspace(workspace);
     setActiveWorkspaceTab('data-load');
     setStep(3);
-    if (workspace.dataset_id) void dataset.restoreRun(workspace.dataset_id);
+    if (!workspace.dataset_id) return;
+    cleaningStarted.current = true;
+    const restored = await dataset.restoreWorkspaceRun(workspace.id);
+    if (activeWorkspaceId.current !== workspace.id || !restored) return;
+    setRawPreview(restored.rawPreview);
+    cleaningStarted.current = restored.autoCleanMode !== null;
   };
 
   const openCreateWorkspace = () => {
@@ -327,6 +337,8 @@ export default function MutationAnalysisPage() {
         setShowPreviewPopup(false);
         setLookupResult(null);
         setLookupLoading(false);
+        setManualCategoryDrafts({});
+        setCategorySaveMessage(null);
         cleaningStarted.current = false;
         dataset.reset();
       }
@@ -347,6 +359,8 @@ export default function MutationAnalysisPage() {
     setShowPreviewPopup(false);
     setLookupResult(null);
     setLookupLoading(false);
+    setManualCategoryDrafts({});
+    setCategorySaveMessage(null);
     setWorkspaceError(null);
     dataset.reset();
     const uploaded = await dataset.upload(file, workspace.id);
@@ -361,6 +375,73 @@ export default function MutationAnalysisPage() {
     if (activeWorkspaceId.current === workspace.id) {
       setActiveWorkspace(updatedWorkspace);
     }
+  };
+
+  const saveManualCategories = async () => {
+    if (!activeWorkspace || !workspacePreview) return;
+    const categories: MutationCategorySelection[] = Object.entries(
+      manualCategoryDrafts,
+    ).map(([rowIndex, value]) => ({
+      row_index: Number(rowIndex),
+      category: MUTATION_CATEGORY_OPTIONS.find((option) => option === value) ?? null,
+    }));
+    if (categories.length === 0) return;
+
+    setCategorySaving(true);
+    setCategorySaveMessage(null);
+    try {
+      const saved = await dataset.saveMutationWorkspaceCategories(
+        activeWorkspace.id,
+        workspacePreview.selected_sheet,
+        categories,
+      );
+      if (saved && activeWorkspaceId.current === activeWorkspace.id) {
+        setManualCategoryDrafts({});
+        setCategorySaveMessage('Kategori berhasil disimpan.');
+      }
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const renderLoadedCell = (
+    row: Record<string, unknown>,
+    column: string,
+    rowIndex: number,
+  ): ReactNode | undefined => {
+    if (column !== 'Kategori') return undefined;
+
+    const savedManualCategory = row[MANUAL_CATEGORY_COLUMN];
+    const savedCategory = MUTATION_CATEGORY_OPTIONS.find(
+      (category) => category === savedManualCategory,
+    );
+    const displayedCategory = MUTATION_CATEGORY_OPTIONS.find(
+      (category) => category === row[column],
+    );
+    const selectedCategory = manualCategoryDrafts[rowIndex]
+      ?? savedCategory
+      ?? displayedCategory
+      ?? '';
+    return (
+      <select
+        aria-label={`Pilih kategori untuk baris ${rowIndex + 1}`}
+        value={selectedCategory}
+        disabled={categorySaving}
+        onChange={(event) => {
+          setManualCategoryDrafts((current) => ({
+            ...current,
+            [rowIndex]: event.target.value,
+          }));
+          setCategorySaveMessage(null);
+        }}
+        className="min-w-52 rounded-md border border-surface-600 bg-surface-950 px-2 py-1 text-xs text-slate-200"
+      >
+        <option value="">{UNIDENTIFIED_CATEGORY}</option>
+        {MUTATION_CATEGORY_OPTIONS.map((category) => (
+          <option key={category} value={category}>{category}</option>
+        ))}
+      </select>
+    );
   };
 
   return (
@@ -396,6 +477,8 @@ export default function MutationAnalysisPage() {
                 setApproved(false);
                 setShowPreviewPopup(false);
                 setLookupResult(null);
+                setManualCategoryDrafts({});
+                setCategorySaveMessage(null);
                 lookupRequestId.current += 1;
                 cleaningStarted.current = false;
                 dataset.reset();
@@ -811,12 +894,41 @@ export default function MutationAnalysisPage() {
               </section>
             )}
 
-            {approved && workspacePreview && (
-              <PreviewTable
-                title="Tabel data yang dimuat"
-                preview={workspacePreview}
-                emptyMessage="Data belum tersedia."
-              />
+            {approved && workspacePreview && lookupLoading && (
+              <section className="rounded-xl border border-surface-700 bg-surface-900 p-4 text-sm text-slate-300">
+                Menyelaraskan kategori dan masa jabatan dengan data pegawai…
+              </section>
+            )}
+
+            {approved && workspacePreview && lookupResult && !lookupLoading && (
+              <>
+                {Object.keys(manualCategoryDrafts).length > 0 && (
+                  <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                    <p className="text-sm text-slate-200">
+                      {Object.keys(manualCategoryDrafts).length} pilihan kategori belum disimpan.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void saveManualCategories()}
+                      disabled={categorySaving}
+                      className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {categorySaving ? 'Menyimpan…' : 'Simpan kategori'}
+                    </button>
+                  </section>
+                )}
+                {categorySaveMessage && (
+                  <p role="status" className="text-sm text-emerald-300">
+                    {categorySaveMessage}
+                  </p>
+                )}
+                <PreviewTable
+                  title="Tabel data yang dimuat"
+                  preview={workspacePreview}
+                  emptyMessage="Data belum tersedia."
+                  renderCell={renderLoadedCell}
+                />
+              </>
             )}
 
             {showPreviewPopup && (
@@ -861,6 +973,15 @@ export default function MutationAnalysisPage() {
               </div>
             )}
             </div>
+            ) : activeWorkspaceTab === 'talent-finder' ? (
+              <div
+                id="mutation-panel-talent-finder"
+                role="tabpanel"
+                aria-labelledby="mutation-tab-talent-finder"
+                className="space-y-4"
+              >
+                <MutationTalentFinder />
+              </div>
             ) : (
               <section
                 id={`mutation-panel-${activeWorkspaceTab}`}

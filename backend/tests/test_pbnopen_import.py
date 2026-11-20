@@ -17,6 +17,33 @@ from main import app
 
 
 class PbnOpenCsvValidationTests(unittest.TestCase):
+    def test_database_maintenance_catalog_discovers_live_schema_tables(self) -> None:
+        fake_connection = unittest.mock.MagicMock()
+        fake_context = unittest.mock.MagicMock()
+        fake_context.__enter__.return_value = fake_connection
+        fake_context.__exit__.return_value = False
+        fake_inspector = SimpleNamespace(
+            get_table_names=lambda schema=None: [
+                "fetch_pbnopen",
+                "dt_employee",
+                "new_live_table",
+            ],
+        )
+        with patch(
+            "app.services.pbnopen_import_service.engine.connect",
+            return_value=fake_context,
+        ), patch(
+            "app.services.pbnopen_import_service.inspect",
+            return_value=fake_inspector,
+        ):
+            catalog = pbnopen_import_service.get_table_maintenance_catalog()
+
+        discovered = next(
+            item for item in catalog if item["key"] == "new_live_table"
+        )
+        self.assertEqual(discovered["label"], "Database table: new_live_table")
+        self.assertEqual(discovered["operation"], "replace")
+
     def test_csv_columns_can_be_in_different_order(self) -> None:
         dataframe = _read_csv(b"Name,Age\nAlice,30\n", ["Age", "Name"])
 

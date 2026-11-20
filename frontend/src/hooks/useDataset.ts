@@ -3,6 +3,8 @@ import type {
   DatasetPreview,
   AppStatus,
   CleaningMethodRecommendation,
+  MutationCategorySelection,
+  MutationWorkspaceDatasetAnalysis,
   StoredDatasetRun,
 } from '../types';
 import * as api from '../services/api';
@@ -150,6 +152,83 @@ export function useDataset() {
       return null;
     }
   }, [storedRuns]);
+
+  const restoreWorkspaceRun = useCallback(async (
+    workspaceId: string,
+  ): Promise<{
+    rawPreview: DatasetPreview;
+    preview: DatasetPreview;
+    autoCleanMode: string | null;
+  } | null> => {
+    const requestId = ++datasetRequestId.current;
+    setError(null);
+    setStatus('cleaning');
+    try {
+      const result = await api.restoreMutationWorkspaceDataset(workspaceId);
+      if (requestId === datasetRequestId.current) {
+        setPreview(result.preview);
+        setActiveAutoCleanMode(result.auto_clean_mode);
+        setDupStats(null);
+        recommendationRequestId.current += 1;
+        setCleaningRecommendation(null);
+        setRecommendationStatus('idle');
+        setRecommendationError(null);
+        setStatus('ready');
+      }
+      return {
+        rawPreview: result.raw_preview,
+        preview: result.preview,
+        autoCleanMode: result.auto_clean_mode,
+      };
+    } catch (err) {
+      if (requestId === datasetRequestId.current) {
+        setError((err as Error).message);
+        setStatus('idle');
+      }
+      return null;
+    }
+  }, []);
+
+  const analyzeMutationWorkspace = useCallback(async (
+    workspaceId: string,
+    sheetName: string,
+  ): Promise<MutationWorkspaceDatasetAnalysis | null> => {
+    const requestId = ++datasetRequestId.current;
+    setError(null);
+    try {
+      const result = await api.analyzeMutationWorkspaceDataset(workspaceId, sheetName);
+      if (requestId === datasetRequestId.current) setPreview(result.preview);
+      return requestId === datasetRequestId.current ? result : null;
+    } catch (err) {
+      if (requestId === datasetRequestId.current) {
+        setError((err as Error).message);
+      }
+      return null;
+    }
+  }, []);
+
+  const saveMutationWorkspaceCategories = useCallback(async (
+    workspaceId: string,
+    sheetName: string,
+    categories: MutationCategorySelection[],
+  ): Promise<DatasetPreview | null> => {
+    const requestId = ++datasetRequestId.current;
+    setError(null);
+    try {
+      const result = await api.saveMutationWorkspaceCategories(
+        workspaceId,
+        sheetName,
+        categories,
+      );
+      if (requestId === datasetRequestId.current) setPreview(result);
+      return requestId === datasetRequestId.current ? result : null;
+    } catch (err) {
+      if (requestId === datasetRequestId.current) {
+        setError((err as Error).message);
+      }
+      return null;
+    }
+  }, []);
 
   const deleteRun = useCallback(async (datasetId: string) => {
     setHistoryError(null);
@@ -349,6 +428,9 @@ export function useDataset() {
     upload,
     saveRunName,
     restoreRun,
+    restoreWorkspaceRun,
+    analyzeMutationWorkspace,
+    saveMutationWorkspaceCategories,
     deleteRun,
     refreshStoredRuns,
     applyRemoveColumns,

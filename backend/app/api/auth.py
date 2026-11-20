@@ -21,7 +21,7 @@ from app.schemas.auth import (
 )
 from app.schemas.pbnopen_data_source import PbnOpenDataSourceSyncStatus
 from app.services import auth_service
-from app.services import performance_kinerja_service
+from app.services.kinerja.cache import invalidate_dashboard_cache
 from app.services import pbnopen_import_service
 
 
@@ -130,7 +130,7 @@ async def replace_pbnopen_data_source(
             status_code=503,
             detail="Could not replace 'pbncleaner.fetch_pbnopen'. Verify the table state before retrying; check database connectivity and schema.",
         ) from exc
-    performance_kinerja_service.invalidate_dashboard_cache()
+    invalidate_dashboard_cache()
     return {"message": "PBN Open data source replaced successfully.", "row_count": row_count}
 
 
@@ -177,7 +177,7 @@ def sync_dt_employee_from_pbnopen(
             status_code=503,
             detail="Could not sync 'pbncleaner.dt_employee' from 'pbncleaner.fetch_pbnopen'. Check database connectivity and schema.",
         ) from exc
-    performance_kinerja_service.invalidate_dashboard_cache()
+    invalidate_dashboard_cache()
     return {
         "message": "'pbncleaner.dt_employee' synced successfully from 'pbncleaner.fetch_pbnopen'.",
         "row_count": row_count,
@@ -234,7 +234,7 @@ async def apply_database_maintenance(
             status_code=503,
             detail=f"Could not apply the database update for '{target_key}'. Verify the table state before retrying.",
         ) from exc
-    performance_kinerja_service.invalidate_dashboard_cache()
+    invalidate_dashboard_cache()
     return {
         "message": f"Database table '{target_key}' updated successfully.",
         **result,
@@ -271,7 +271,7 @@ def apply_database_employee_sync(
             status_code=503,
             detail=f"Could not sync the employee table '{target_key}'. Verify the table state before retrying.",
         ) from exc
-    performance_kinerja_service.invalidate_dashboard_cache()
+    invalidate_dashboard_cache()
     return {
         "message": f"Employee table '{target_key}' synced successfully.",
         **result,
@@ -403,7 +403,7 @@ def update_managed_user(
     account.auth_level = request.auth_level
     account.is_active = request.is_active
     if request.password is not None:
-        account.password = request.password
+        account.password = auth_service.hash_password(request.password)
     db.commit()
     db.refresh(account)
     auth_service.revoke_user_sessions(db, account.user)

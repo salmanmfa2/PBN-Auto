@@ -104,6 +104,23 @@ export interface MutationWorkspace {
   updated_at: string;
 }
 
+export interface MutationWorkspaceDatasetState {
+  raw_preview: DatasetPreview;
+  preview: DatasetPreview;
+  auto_clean_mode: string | null;
+}
+
+export type MutationCategory =
+  | 'Mutasi'
+  | 'Perpindahan dari Fungsional'
+  | 'Promosi'
+  | 'Demosi';
+
+export interface MutationCategorySelection {
+  row_index: number;
+  category: MutationCategory | null;
+}
+
 export interface MutationLookupEmployee {
   nip: string;
   nama: string;
@@ -112,6 +129,9 @@ export interface MutationLookupEmployee {
   unit_eselon_iii: string;
   unit_eselon_iv: string;
   eselon: string;
+  eselon_id: number | null;
+  kategori: MutationCategory | null;
+  masa_jabatan: string | null;
 }
 
 export interface MutationLookupResponse {
@@ -119,6 +139,67 @@ export interface MutationLookupResponse {
   unmatched_count: number;
   invalid_count: number;
   matches: Record<string, MutationLookupEmployee>;
+}
+
+export interface MutationWorkspaceDatasetAnalysis extends MutationLookupResponse {
+  preview: DatasetPreview;
+}
+
+export interface MutationTalentFinderOption {
+  id: number;
+  label: string;
+}
+
+export interface MutationTalentFinderFilterOptions {
+  eselon: MutationTalentFinderOption[];
+  rumpun: MutationTalentFinderOption[];
+}
+
+export interface MutationTalentFinderSearchRequest {
+  eselon_ids: number[];
+  name: string;
+  rumpun_ids: number[];
+  page: number;
+  page_size: number;
+  sort_by: MutationTalentFinderSortField;
+  sort_order: 'asc' | 'desc';
+}
+
+export type MutationTalentFinderSortField =
+  | 'nama'
+  | 'eselon'
+  | 'usia'
+  | 'jabatan'
+  | 'pendidikan'
+  | 'jurusan'
+  | 'universitas'
+  | 'homebase'
+  | 'lama_jabatan'
+  | 'lama_eselon';
+
+export interface MutationTalentFinderCountResponse {
+  total: number;
+}
+
+export interface MutationTalentFinderEmployee {
+  employee_id: number;
+  nama: string;
+  eselon: string;
+  usia: number | null;
+  jabatan: string;
+  pendidikan: string;
+  jurusan: string;
+  universitas: string;
+  lama_eselon: string | null;
+  lama_jabatan: string | null;
+  homebase: string;
+}
+
+export interface MutationTalentFinderSearchResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  employees: MutationTalentFinderEmployee[];
 }
 
 export interface AuthSessionResponse {

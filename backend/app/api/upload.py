@@ -36,6 +36,7 @@ async def persist_uploaded_file(
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 50 MB limit.")
 
+    result: dict | None = None
     try:
         result = dataset_service.parse_upload(content, filename)
         stored_dataset_service.create_run(
@@ -47,15 +48,15 @@ async def persist_uploaded_file(
             workspace_id=workspace_id,
         )
     except ValueError as exc:
-        if "result" in locals():
+        if result is not None:
             DatasetStore.delete(result["dataset_id"])
         raise HTTPException(status_code=422, detail=str(exc))
     except RuntimeError as exc:
-        if "result" in locals():
+        if result is not None:
             DatasetStore.delete(result["dataset_id"])
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception:
-        if "result" in locals():
+        if result is not None:
             DatasetStore.delete(result["dataset_id"])
         raise
 

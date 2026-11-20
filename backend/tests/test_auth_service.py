@@ -37,7 +37,8 @@ class AuthServiceTests(unittest.TestCase):
         self.assertEqual(user.user, "alice")
         self.assertEqual(user.name, "Alice Example")
         self.assertEqual(user.auth_level, 1)
-        self.assertEqual(user.password, "plain-password")
+        self.assertNotEqual(user.password, "plain-password")
+        self.assertTrue(user.password.startswith("$argon2id$"))
         self.assertTrue(user.is_active)
 
     def test_authenticate_requires_exact_password_and_active_account(self):
@@ -54,6 +55,55 @@ class AuthServiceTests(unittest.TestCase):
         self.db.commit()
         with self.assertRaises(PermissionError):
             auth_service.authenticate(self.db, "alice", "plain-password")
+
+    def test_legacy_plaintext_password_is_migrated_after_successful_authentication(self):
+        account = User(
+            user="alice",
+            name="Alice",
+            auth_level=1,
+            password="legacy-password",
+            is_active=True,
+        )
+        self.db.add(account)
+        self.db.commit()
+
+        with self.assertRaises(ValueError):
+            auth_service.authenticate(self.db, "alice", "incorrect")
+        self.assertEqual(account.password, "legacy-password")
+
+        self.assertEqual(
+            auth_service.authenticate(self.db, "alice", "legacy-password").user,
+            "alice",
+        )
+        self.assertNotEqual(account.password, "legacy-password")
+        self.assertTrue(account.password.startswith("$argon2id$"))
+
+    def test_managed_password_update_is_hashed_and_authenticatable(self):
+        super_admin = auth_service.create_user(
+            self.db,
+            "super",
+            "Super Admin",
+            "admin-password",
+            auth_level=3,
+        )
+        auth_service.create_user(self.db, "alice", "Alice", "old-password")
+
+        update_managed_user(
+            "alice",
+            AdminUserUpdate(
+                name="Alice",
+                auth_level=1,
+                password="new-password",
+                is_active=True,
+            ),
+            super_admin,
+            self.db,
+        )
+
+        self.assertNotEqual(self.db.get(User, "alice").password, "new-password")
+        self.assertEqual(auth_service.authenticate(self.db, "alice", "new-password").user, "alice")
+        with self.assertRaises(ValueError):
+            auth_service.authenticate(self.db, "alice", "old-password")
 
     def test_sessions_are_persisted_and_revocable(self):
         account = auth_service.create_user(self.db, "alice", "Alice", "plain-password")

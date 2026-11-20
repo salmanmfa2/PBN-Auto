@@ -79,7 +79,12 @@ def _build_preview(dataset_id: str, sheets: Dict[str, pd.DataFrame], selected_sh
 
 
 def _parse_excel_sheets(file_bytes: bytes, engine: str) -> Dict[str, pd.DataFrame]:
-    sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None, engine=engine)
+    sheets = pd.read_excel(
+        io.BytesIO(file_bytes),
+        sheet_name=None,
+        engine=engine,
+        dtype={"NIP": str},
+    )
     parsed: Dict[str, pd.DataFrame] = {}
     for name, df in sheets.items():
         if not isinstance(df, pd.DataFrame):
@@ -96,7 +101,7 @@ def parse_upload(file_bytes: bytes, filename: str, dataset_id: Optional[str] = N
 
     try:
         if lower.endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(file_bytes))
+            df = pd.read_csv(io.BytesIO(file_bytes), dtype={"NIP": str})
             sheets = {"Sheet1": df}
         elif lower.endswith(".xlsx"):
             sheets = _parse_excel_sheets(file_bytes, engine="openpyxl")

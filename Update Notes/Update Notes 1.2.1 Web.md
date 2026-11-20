@@ -58,5 +58,5 @@ Version 1.2.1 adds the web-only **Generate ND Undangan Pelantikan** workflow. It
 ## Implementation and verification
 
 - Frontend: `frontend/src/pages/PelantikanAgendaPage.tsx`, `frontend/src/services/api.ts`, and `frontend/src/types/index.ts`.
-- Backend: `backend/app/api/pelantikan_agenda.py`, `backend/app/services/pelantikan_agenda_service.py`, `backend/app/models/pelantikan_agenda.py`, and `backend/app/schemas/pelantikan_agenda.py`.
+- Backend: `backend/app/api/pelantikan_agenda.py`, `backend/app/services/pelantikan_agenda/`, `backend/app/models/pelantikan_agenda.py`, and `backend/app/schemas/pelantikan_agenda.py`.
 - Verification: 7 focused Plt./Plh. tests and 9 Pelantikan tests passed; toolbar lint and the frontend production build passed. The build reports the existing advisory for a JavaScript chunk over 500 kB. Full backend unittest discovery did not complete under Python 3.14, and the live PBN Open lookup/database migration has not been tested against the production database.

@@ -5,7 +5,7 @@ This note describes the planned scope for Web 1.4.2. Web 1.4.1 remains the curre
 ## Refactoring
 
 - Split the Analisis Kinerja DJPb service into workflow-focused modules under `backend/app/services/kinerja/`: shared calculations and period handling, uploads, corrections, dashboard/cache, record data, queries, and exports.
-- Keep `backend/app/services/performance_kinerja_service.py` as a compatibility facade so existing API and authentication callers retain their service import path.
+- Remove the `performance_kinerja_service.py` compatibility facade and keep `kinerja/__init__.py` lightweight; API and authentication code import only the modules they use.
 - Preserve existing endpoint behavior, data rules, correction transactions, and dashboard cache invalidation while reorganizing the implementation.
 
 ## Performance improvement focus

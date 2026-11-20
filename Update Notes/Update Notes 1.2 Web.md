@@ -225,7 +225,7 @@ The database has a generated primary key used internally by API mutations and ta
 - In the generated roster, append the formal Unit Eselon II name to `Jabatan` only when the employee has a known `eselon` value other than 2. Keep the title alone for Eselon II and when `eselon` is unavailable.
 - Replace only the app-owned parenthesized placeholders in the templates. Preserve square-bracket placeholders such as `[@NomorND]` and `[@TanggalND]` for the official internal app.
 - The source templates are `backend/templates/undangan_pelantikan/template_pelantikan_daring.docx` and `backend/templates/undangan_pelantikan/template_pelantikan_luring.docx`.
-- Implementation map: `frontend/src/pages/PelantikanAgendaPage.tsx`, `frontend/src/services/api.ts`, `frontend/src/types/index.ts`, `backend/app/api/pelantikan_agenda.py`, `backend/app/services/pelantikan_agenda_service.py`, `backend/app/models/pelantikan_agenda.py`, `backend/app/schemas/pelantikan_agenda.py`, and `backend/sql/005_create_pelantikan_agendas.sql`. Application startup adds any missing source columns to an existing `pelantikan_agenda_people` table.
+- Implementation map: `frontend/src/pages/PelantikanAgendaPage.tsx`, `frontend/src/services/api.ts`, `frontend/src/types/index.ts`, `backend/app/api/pelantikan_agenda.py`, `backend/app/services/pelantikan_agenda/`, `backend/app/models/pelantikan_agenda.py`, `backend/app/schemas/pelantikan_agenda.py`, and `backend/sql/005_create_pelantikan_agendas.sql`. Application startup adds any missing source columns to an existing `pelantikan_agenda_people` table.
 
 ## 7. Groq chat assistant (web-only)
 

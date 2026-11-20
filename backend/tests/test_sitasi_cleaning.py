@@ -4,11 +4,48 @@ from io import BytesIO
 import pandas as pd
 from openpyxl import load_workbook
 
-from app.services.dataset_service import add_sitasi_category, apply_auto_clean, export_excel
+from app.services.dataset_service import (
+    add_sitasi_category,
+    apply_auto_clean,
+    export_excel,
+    parse_upload,
+)
 from app.storage.dataset_store import DatasetStore
 
 
 class SitasiCategoryTests(unittest.TestCase):
+    def test_nip_remains_text_when_parsing_csv(self) -> None:
+        content = b"NIP,Name\n197107201997031001,Example Person\n,Missing NIP\n"
+
+        preview = parse_upload(content, "employees.csv")
+        self.addCleanup(DatasetStore.delete, preview["dataset_id"])
+
+        nip = preview["rows"][0]["NIP"]
+        self.assertEqual(nip, "197107201997031001")
+        self.assertIsInstance(nip, str)
+
+    def test_nip_remains_text_after_excel_export_and_restore(self) -> None:
+        nip = "197107201997031001"
+        dataset_id = DatasetStore.save(
+            {
+                "Data": pd.DataFrame(
+                    {
+                        "NIP": [nip, None],
+                        "Nama/NIP": [f"Example Person\n{nip}", None],
+                    }
+                )
+            }
+        )
+        self.addCleanup(DatasetStore.delete, dataset_id)
+
+        content = export_excel(dataset_id, "Data")
+        preview = parse_upload(content, "employees-cleaned.xlsx")
+        self.addCleanup(DatasetStore.delete, preview["dataset_id"])
+
+        restored_nip = preview["rows"][0]["NIP"]
+        self.assertEqual(restored_nip, nip)
+        self.assertIsInstance(restored_nip, str)
+
     def test_esiii_adds_nip_from_nama_nip_cell(self) -> None:
         columns = [f"Column {index}" for index in range(1, 20)]
         rows = [

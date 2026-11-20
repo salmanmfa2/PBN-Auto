@@ -1,5 +1,6 @@
 import csv
 import unittest
+from decimal import Decimal
 from io import BytesIO, StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -19,8 +20,12 @@ from app.models.performance_kinerja import (
     PerformanceKinerjaInsight,
     PerformanceKinerjaRecord,
 )
-from app.services import performance_kinerja_service as service
+from app.services.kinerja import cache as kinerja_cache
+from app.services.kinerja import common as kinerja_common
 from app.services.kinerja import corrections as kinerja_corrections
+from app.services.kinerja import dashboard as kinerja_dashboard
+from app.services.kinerja import exports as kinerja_exports
+from app.services.kinerja import records as kinerja_records
 from app.services.kinerja import uploads as kinerja_uploads
 from main import app
 
@@ -74,7 +79,7 @@ def full_csv(
     ]
     output = StringIO()
     writer = csv.writer(output, delimiter=";")
-    writer.writerow(service.FULL_DATA_HEADERS)
+    writer.writerow(kinerja_common.FULL_DATA_HEADERS)
     writer.writerow(row)
     return output.getvalue().encode("utf-8")
 
@@ -117,7 +122,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.addCleanup(self.session.close)
 
     def import_active_dataset(self) -> None:
-        service.replace_full_upload(
+        kinerja_uploads.replace_full_upload(
             self.session,
             full_csv(),
             "Q3-2026",
@@ -159,7 +164,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             nkp_akhir="119",
         )
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
-            result = service.validate_full_upload(content, "q3-2026")
+            result = kinerja_uploads.validate_full_upload(content, "q3-2026")
 
         self.assertEqual(
             result,
@@ -170,7 +175,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 "normalized_penalty_count": 0,
             },
         )
-        service.replace_full_upload(
+        kinerja_uploads.replace_full_upload(
             self.session,
             content,
             "Q3-2026",
@@ -179,7 +184,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         record = self.get_record(NIP, "Q3-2026")
         self.assertEqual(record.nkp_awal, 84)
-        self.assertEqual(record.nkp_perhitungan, service.Decimal("84.6000000000"))
+        self.assertEqual(record.nkp_perhitungan, Decimal("84.6000000000"))
         self.assertEqual(record.status_nkp_perhitungan, "Rendah")
         self.assertEqual(record.nkp_akhir, 119)
         self.assertEqual(record.unit_eselon_iii, "Subdirektorat Contoh")
@@ -200,40 +205,40 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         }
         for value, expected in cases.items():
             with self.subTest(value=value):
-                self.assertEqual(service.get_status(service.Decimal(value)), expected)
-        self.assertEqual(service.get_status(None), "Tidak tersedia")
+                self.assertEqual(kinerja_common.get_status(Decimal(value)), expected)
+        self.assertEqual(kinerja_common.get_status(None), "Tidak tersedia")
 
     def test_nkp_perhitungan_uses_nko_weighting_and_existing_bands(self) -> None:
-        above_nko = service._calculate_nkp_perhitungan(
-            service.Decimal("120"),
-            service.Decimal("100"),
+        above_nko = kinerja_common._calculate_nkp_perhitungan(
+            Decimal("120"),
+            Decimal("100"),
         )
-        below_nko = service._calculate_nkp_perhitungan(
-            service.Decimal("100"),
-            service.Decimal("120"),
+        below_nko = kinerja_common._calculate_nkp_perhitungan(
+            Decimal("100"),
+            Decimal("120"),
         )
 
-        self.assertEqual(above_nko, service.Decimal("114.00"))
-        self.assertEqual(below_nko, service.Decimal("102.00"))
-        self.assertEqual(service.get_status(above_nko), "Istimewa")
-        self.assertEqual(service.get_status(below_nko), "Tinggi")
+        self.assertEqual(above_nko, Decimal("114.00"))
+        self.assertEqual(below_nko, Decimal("102.00"))
+        self.assertEqual(kinerja_common.get_status(above_nko), "Istimewa")
+        self.assertEqual(kinerja_common.get_status(below_nko), "Tinggi")
         self.assertIsNone(
-            service._calculate_nkp_perhitungan(None, service.Decimal("120"))
+            kinerja_common._calculate_nkp_perhitungan(None, Decimal("120"))
         )
 
     def test_nkp_perhitungan_status_uses_displayed_two_decimal_score(self) -> None:
         self.assertEqual(
-            service._get_nkp_perhitungan_status(service.Decimal("114.998")),
+            kinerja_common._get_nkp_perhitungan_status(Decimal("114.998")),
             "Sangat Istimewa",
         )
         self.assertEqual(
-            service._get_nkp_perhitungan_status(service.Decimal("114.994")),
+            kinerja_common._get_nkp_perhitungan_status(Decimal("114.994")),
             "Istimewa",
         )
-        self.assertEqual(service._get_nkp_perhitungan_status(None), "Tidak tersedia")
+        self.assertEqual(kinerja_common._get_nkp_perhitungan_status(None), "Tidak tersedia")
 
     def test_full_import_status_uses_displayed_nkp_perhitungan(self) -> None:
-        service.replace_full_upload(
+        kinerja_uploads.replace_full_upload(
             self.session,
             full_csv(nkp_awal="114.51", nko="119.39"),
             "Q3-2026",
@@ -242,7 +247,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
 
         record = self.get_record(NIP, "Q3-2026")
-        self.assertEqual(record.nkp_perhitungan, service.Decimal("114.9980000000"))
+        self.assertEqual(record.nkp_perhitungan, Decimal("114.9980000000"))
         self.assertEqual(record.status_nkp_perhitungan, "Sangat Istimewa")
 
     def test_full_import_rejects_duplicate_nips_without_replacing_data(self) -> None:
@@ -253,7 +258,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         duplicate_csv = full_csv() + full_csv().split(b"\n", 1)[1]
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
             with self.assertRaisesRegex(ValueError, "Duplicate NIPs"):
-                service.replace_full_upload(
+                kinerja_uploads.replace_full_upload(
                     self.session,
                     duplicate_csv,
                     "Q4-2026",
@@ -263,7 +268,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(self.get_dataset("Q3-2026").period, "Q3-2026")
 
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
-            result = service.replace_full_upload(
+            result = kinerja_uploads.replace_full_upload(
                 self.session,
                 full_csv(nip="1234567890123456", hukdis="26"),
                 "Q4-2026",
@@ -280,14 +285,14 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
     def test_quarter_uploads_are_retained_and_same_period_replacement_is_isolated(self) -> None:
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
-            service.replace_full_upload(
+            kinerja_uploads.replace_full_upload(
                 self.session,
                 full_csv(npk="80", nkp_akhir="89"),
                 "Q2-2026",
                 uploaded_by_user="admin",
                 uploaded_by_name="Admin",
             )
-            service.replace_full_upload(
+            kinerja_uploads.replace_full_upload(
                 self.session,
                 full_csv(npk="100", nkp_akhir="100"),
                 "Q3-2026",
@@ -296,7 +301,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             )
 
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE) as lookup:
-            dashboard = service.get_dashboard(self.session, None, [], "Q3-2026")
+            dashboard = kinerja_dashboard.get_dashboard(self.session, None, [], "Q3-2026")
             unit = dashboard["units"][0]
             comparison = unit["comparison"]
 
@@ -329,10 +334,10 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 comparison["nkp_akhir_status_counts.Rendah"]["percentage_change"],
                 -100,
             )
-            service.get_dashboard(self.session, None, [], "Q3-2026")
+            kinerja_dashboard.get_dashboard(self.session, None, [], "Q3-2026")
             self.assertEqual(lookup.call_count, 0)
 
-            service.replace_full_upload(
+            kinerja_uploads.replace_full_upload(
                 self.session,
                 full_csv(npk="90", nkp_akhir="90"),
                 "Q2-2026",
@@ -340,7 +345,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 uploaded_by_name="Admin",
             )
 
-            updated = service.get_dashboard(self.session, None, [], "Q3-2026")
+            updated = kinerja_dashboard.get_dashboard(self.session, None, [], "Q3-2026")
             self.assertEqual(updated["available_periods"][0]["period"], "Q2-2026")
             self.assertEqual(updated["available_periods"][1]["period"], "Q3-2026")
             self.assertEqual(updated["units"][0]["comparison"]["average_npk"]["previous"], 90)
@@ -351,7 +356,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
     def test_comparison_requires_the_immediately_previous_calendar_quarter(self) -> None:
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
             for period in ("Q1-2026", "Q3-2026"):
-                service.replace_full_upload(
+                kinerja_uploads.replace_full_upload(
                     self.session,
                     full_csv(),
                     period,
@@ -359,7 +364,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     uploaded_by_name="Admin",
                 )
 
-            dashboard = service.get_dashboard(self.session, None, [])
+            dashboard = kinerja_dashboard.get_dashboard(self.session, None, [])
 
         self.assertEqual(dashboard["dataset"]["period"], "Q3-2026")
         self.assertIsNone(dashboard["previous_period"])
@@ -374,9 +379,9 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         current_record.unit_eselon_iii = "Subunit A"
         current_record.unit_eselon_iv = "Section A"
         current_record.eselon = "III"
-        current_record.npk = service.Decimal("100")
-        current_record.nkp_akhir = service.Decimal("115")
-        current_record.nilai_koreksi = service.Decimal("0")
+        current_record.npk = Decimal("100")
+        current_record.nkp_akhir = Decimal("115")
+        current_record.nilai_koreksi = Decimal("0")
         self.session.commit()
         current_dataset = self.get_dataset("Q3-2026")
         self.session.add(
@@ -392,7 +397,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         current_dataset.row_count = 2
 
-        service.replace_full_upload(
+        kinerja_uploads.replace_full_upload(
             self.session,
             full_csv(npk="80", nkp_akhir="90", koreksi="2"),
             "Q2-2026",
@@ -412,9 +417,9 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 nama="Pegawai Unit B",
                 unit_eselon_ii="Unit B",
                 eselon="IV",
-                npk=service.Decimal("120"),
-                nkp_akhir=service.Decimal("89"),
-                nilai_koreksi=service.Decimal("3"),
+                npk=Decimal("120"),
+                nkp_akhir=Decimal("89"),
+                nilai_koreksi=Decimal("3"),
             )
         )
         self.session.add(
@@ -432,7 +437,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.session.commit()
 
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=EMPLOYEE):
-            dashboard = service.get_dashboard(
+            dashboard = kinerja_dashboard.get_dashboard(
                 self.session,
                 "Unit A",
                 ["III"],
@@ -522,7 +527,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             self.assertEqual(record.nama, "Pegawai Lama")
             self.assertEqual(record.unit_eselon_iv, "Unidentified")
             self.assertIsNone(record.unit_kerja_id)
-            self.assertEqual(record.nkp_perhitungan, service.Decimal("114.0000000000"))
+            self.assertEqual(record.nkp_perhitungan, Decimal("114.0000000000"))
             self.assertEqual(record.status_nkp_perhitungan, "Istimewa")
             boundary_record = session.get(
                 PerformanceKinerjaRecord,
@@ -608,8 +613,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             )
 
         with patch.object(kinerja_uploads, "engine", employee_engine):
-            employees = service._lookup_employee_records({NIP})
-            q2_employees = service._lookup_employee_records(
+            employees = kinerja_uploads._lookup_employee_records({NIP})
+            q2_employees = kinerja_uploads._lookup_employee_records(
                 {NIP},
                 employee_source="dt_employee_q2_2026",
             )
@@ -626,7 +631,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
     def test_employee_lookup_rejects_unallowlisted_reference_source(self) -> None:
         self.employee_lookup_patcher.stop()
         with self.assertRaisesRegex(ValueError, "Employee source"):
-            service._lookup_employee_records({NIP}, employee_source="dt_employee")
+            kinerja_uploads._lookup_employee_records({NIP}, employee_source="dt_employee")
 
     def test_full_dataset_replacement_uses_selected_employee_source(self) -> None:
         q2_employee = {
@@ -643,7 +648,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             "_lookup_employee_records",
             return_value=q2_employee,
         ) as employee_lookup:
-            result = service.replace_full_upload(
+            result = kinerja_uploads.replace_full_upload(
                 self.session,
                 full_csv(),
                 "Q2-2026",
@@ -660,9 +665,9 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         record = self.get_record(NIP, "Q2-2026")
         self.assertEqual(record.nama, "Pegawai Q2 Referensi")
         self.assertEqual(record.unit_eselon_ii, "Direktorat Q2")
-        dashboard = service.get_dashboard(self.session, None, [], "Q2-2026")
+        dashboard = kinerja_dashboard.get_dashboard(self.session, None, [], "Q2-2026")
         self.assertEqual(dashboard["units"][0]["label"], "Direktorat Q2")
-        records = service.get_records(
+        records = kinerja_records.get_records(
             self.session,
             page=1,
             page_size=50,
@@ -680,23 +685,23 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             dampak_perilaku="1",
         )
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
-            result = service.validate_full_upload(content, "Q3-2026")
+            result = kinerja_uploads.validate_full_upload(content, "Q3-2026")
         self.assertEqual(result["unidentified_count"], 1)
         self.assertEqual(result["normalized_penalty_count"], 3)
-        parsed = service._read_full_csv(content)[0]
+        parsed = kinerja_uploads._read_full_csv(content)[0]
         self.assertEqual(parsed["nilai_hukuman_disiplin"], -26)
         self.assertEqual(parsed["nilai_dampak_pelanggaran_disiplin"], -2)
         self.assertEqual(parsed["nilai_dampak_perilaku"], -1)
 
     def test_invalid_decimal_and_range_are_reported_with_nip(self) -> None:
         with self.assertRaisesRegex(ValueError, "NPK must be between 0 and 120"):
-            service._read_full_csv(full_csv(npk="121"))
+            kinerja_uploads._read_full_csv(full_csv(npk="121"))
         with self.assertRaisesRegex(ValueError, f"NIP {NIP}.*Nilai Koreksi"):
-            service._read_full_csv(full_csv(koreksi="21"))
+            kinerja_uploads._read_full_csv(full_csv(koreksi="21"))
 
     def test_epride_filter_ignores_long_unit_ids_and_resolves_zero_duplicates(self) -> None:
         other_nip = "223456789012345678"
-        result = service._prepare_epride_corrections(
+        result = kinerja_corrections._prepare_epride_corrections(
             [
                 {
                     "form_id": 1,
@@ -730,8 +735,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             result,
             {
                 "corrections": {
-                    NIP: service.Decimal("-3"),
-                    other_nip: service.ZERO,
+                    NIP: Decimal("-3"),
+                    other_nip: kinerja_common.ZERO,
                 },
                 "conflicts": [],
                 "source_row_count": 3,
@@ -751,7 +756,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 {"year": 2026, "tw": 2},
             ],
         ):
-            result = service.get_available_epride_source_periods()
+            result = kinerja_corrections.get_available_epride_source_periods()
 
         self.assertEqual(
             result,
@@ -764,11 +769,11 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
     def test_epride_sync_updates_matched_and_zeroes_unmatched_records(self) -> None:
         other_nip = "223456789012345678"
         self.import_active_dataset()
-        service.update_manual_correction(
+        kinerja_corrections.update_manual_correction(
             self.session,
             "Q3-2026",
             NIP,
-            service.Decimal("3"),
+            Decimal("3"),
             edited_by_user="admin",
             edited_by_name="Admin",
         )
@@ -778,12 +783,12 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 dataset_id=dataset.id,
                 nip=other_nip,
                 nama="Pegawai Tidak Cocok",
-                nkp_awal=service.Decimal("85"),
-                nilai_hukuman_disiplin=service.ZERO,
-                nilai_dampak_pelanggaran_disiplin=service.ZERO,
-                nilai_koreksi=service.Decimal("7"),
-                nko=service.Decimal("90"),
-                nkp_akhir=service.Decimal("90"),
+                nkp_awal=Decimal("85"),
+                nilai_hukuman_disiplin=kinerja_common.ZERO,
+                nilai_dampak_pelanggaran_disiplin=kinerja_common.ZERO,
+                nilai_koreksi=Decimal("7"),
+                nko=Decimal("90"),
+                nkp_akhir=Decimal("90"),
             )
         )
         dataset.row_count = 2
@@ -801,7 +806,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 }
             ],
         ) as fetch_rows:
-            result = service.sync_adjustments_from_epride(
+            result = kinerja_corrections.sync_adjustments_from_epride(
                 self.session,
                 "Q3-2026",
                 2026,
@@ -818,10 +823,10 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(result["source_row_count"], 1)
         self.assertEqual(result["matched_count"], 1)
         self.assertEqual(result["unmatched_count"], 1)
-        self.assertEqual(matched.nilai_koreksi, service.Decimal("2"))
-        self.assertEqual(matched.nkp_akhir, service.Decimal("84.6"))
-        self.assertEqual(unmatched.nilai_koreksi, service.ZERO)
-        self.assertEqual(unmatched.nkp_akhir, service.Decimal("85.5"))
+        self.assertEqual(matched.nilai_koreksi, Decimal("2"))
+        self.assertEqual(matched.nkp_akhir, Decimal("84.6"))
+        self.assertEqual(unmatched.nilai_koreksi, kinerja_common.ZERO)
+        self.assertEqual(unmatched.nkp_akhir, Decimal("85.5"))
         self.assertEqual(
             self.session.scalars(select(PerformanceCorrectionEditLog)).all(),
             [],
@@ -830,33 +835,33 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
     def test_manual_correction_edit_recalculates_and_records_editor(self) -> None:
         self.import_active_dataset()
 
-        result = service.update_manual_correction(
+        result = kinerja_corrections.update_manual_correction(
             self.session,
             "Q3-2026",
             NIP,
-            service.Decimal("2.75"),
+            Decimal("2.75"),
             edited_by_user="admin",
             edited_by_name="Admin User",
         )
 
         record = self.get_record(NIP, "Q3-2026")
         log = self.session.scalar(select(PerformanceCorrectionEditLog))
-        expected_score = service.calculate_nkp_akhir(
+        expected_score = kinerja_common.calculate_nkp_akhir(
             record.nkp_awal,
             record.nko,
             record.nilai_hukuman_disiplin,
             record.nilai_dampak_pelanggaran_disiplin,
-            service.Decimal("2.75"),
+            Decimal("2.75"),
         )
         self.assertTrue(result["changed"])
-        self.assertEqual(record.nilai_koreksi, service.Decimal("2.75"))
+        self.assertEqual(record.nilai_koreksi, Decimal("2.75"))
         self.assertEqual(record.nkp_akhir, expected_score)
-        self.assertEqual(result["nkp_akhir"], service._format_decimal(expected_score))
+        self.assertEqual(result["nkp_akhir"], kinerja_common._format_decimal(expected_score))
         self.assertEqual(log.period, "Q3-2026")
         self.assertEqual(log.nip, NIP)
         self.assertEqual(log.employee_name, "Pegawai Contoh")
-        self.assertEqual(log.old_value, service.Decimal("1"))
-        self.assertEqual(log.new_value, service.Decimal("2.75"))
+        self.assertEqual(log.old_value, Decimal("1"))
+        self.assertEqual(log.new_value, Decimal("2.75"))
         self.assertEqual(log.edited_by_user, "admin")
         self.assertEqual(log.edited_by_name, "Admin User")
 
@@ -865,18 +870,18 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
         for value in ("-5", "5"):
             with self.subTest(value=value):
-                service.update_manual_correction(
+                kinerja_corrections.update_manual_correction(
                     self.session,
                     "Q3-2026",
                     NIP,
-                    service.Decimal(value),
+                    Decimal(value),
                     edited_by_user="admin",
                     edited_by_name="Admin",
                 )
 
         self.assertEqual(
             self.get_record(NIP, "Q3-2026").nilai_koreksi,
-            service.Decimal("5"),
+            Decimal("5"),
         )
         logs = self.session.scalars(
             select(PerformanceCorrectionEditLog).order_by(
@@ -885,16 +890,16 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         ).all()
         self.assertEqual(
             [log.new_value for log in logs],
-            [service.Decimal("-5"), service.Decimal("5")],
+            [Decimal("-5"), Decimal("5")],
         )
 
         for value in ("-5.00000001", "5.00000001", "1.000000001"):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                service.update_manual_correction(
+                kinerja_corrections.update_manual_correction(
                     self.session,
                     "Q3-2026",
                     NIP,
-                    service.Decimal(value),
+                    Decimal(value),
                     edited_by_user="admin",
                     edited_by_name="Admin",
                 )
@@ -905,12 +910,12 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             self.get_record(NIP, "Q3-2026").nilai_koreksi,
-            service.Decimal("5"),
+            Decimal("5"),
         )
 
     def test_batch_correction_template_contains_two_text_headers(self) -> None:
         workbook = load_workbook(
-            BytesIO(service.create_correction_batch_template()),
+            BytesIO(kinerja_corrections.create_correction_batch_template()),
             read_only=True,
         )
         try:
@@ -932,12 +937,12 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 dataset_id=dataset.id,
                 nip=other_nip,
                 nama="Pegawai Kedua",
-                nkp_awal=service.Decimal("85"),
-                nilai_hukuman_disiplin=service.Decimal("-1"),
-                nilai_dampak_pelanggaran_disiplin=service.Decimal("-2"),
-                nilai_koreksi=service.Decimal("-1"),
-                nko=service.Decimal("90"),
-                nkp_akhir=service.Decimal("80.8"),
+                nkp_awal=Decimal("85"),
+                nilai_hukuman_disiplin=Decimal("-1"),
+                nilai_dampak_pelanggaran_disiplin=Decimal("-2"),
+                nilai_koreksi=Decimal("-1"),
+                nko=Decimal("90"),
+                nkp_akhir=Decimal("80.8"),
             )
         )
         dataset.row_count = 2
@@ -947,7 +952,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             (f"'{other_nip}", "-1,5"),
         ])
 
-        result = service.update_manual_corrections_from_excel(
+        result = kinerja_corrections.update_manual_corrections_from_excel(
             self.session,
             content,
             "Q3-2026",
@@ -968,28 +973,28 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             "updated_count": 2,
             "unchanged_count": 0,
         })
-        self.assertEqual(first_record.nilai_koreksi, service.Decimal("2.25"))
+        self.assertEqual(first_record.nilai_koreksi, Decimal("2.25"))
         self.assertEqual(
             first_record.nkp_akhir,
-            service.calculate_nkp_akhir(
+            kinerja_common.calculate_nkp_akhir(
                 first_record.nkp_awal,
                 first_record.nko,
                 first_record.nilai_hukuman_disiplin,
                 first_record.nilai_dampak_pelanggaran_disiplin,
-                service.Decimal("2.25"),
+                Decimal("2.25"),
             ),
         )
-        self.assertEqual(second_record.nilai_koreksi, service.Decimal("-1.5"))
+        self.assertEqual(second_record.nilai_koreksi, Decimal("-1.5"))
         self.assertEqual(
             [(log.nip, log.old_value, log.new_value) for log in logs],
             [
-                (NIP, service.Decimal("1"), service.Decimal("2.25")),
-                (other_nip, service.Decimal("-1"), service.Decimal("-1.5")),
+                (NIP, Decimal("1"), Decimal("2.25")),
+                (other_nip, Decimal("-1"), Decimal("-1.5")),
             ],
         )
         self.assertTrue(all(log.edited_by_user == "admin" for log in logs))
 
-        no_change_result = service.update_manual_corrections_from_excel(
+        no_change_result = kinerja_corrections.update_manual_corrections_from_excel(
             self.session,
             content,
             "Q3-2026",
@@ -1012,18 +1017,18 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 dataset_id=dataset.id,
                 nip=other_nip,
                 nama="Pegawai Kedua",
-                nkp_awal=service.Decimal("85"),
-                nilai_hukuman_disiplin=service.Decimal("-1"),
-                nilai_dampak_pelanggaran_disiplin=service.Decimal("-2"),
-                nilai_koreksi=service.Decimal("-1"),
-                nko=service.Decimal("90"),
-                nkp_akhir=service.Decimal("80.8"),
+                nkp_awal=Decimal("85"),
+                nilai_hukuman_disiplin=Decimal("-1"),
+                nilai_dampak_pelanggaran_disiplin=Decimal("-2"),
+                nilai_koreksi=Decimal("-1"),
+                nko=Decimal("90"),
+                nkp_akhir=Decimal("80.8"),
             )
         )
         dataset.row_count = 2
         self.session.commit()
 
-        result = service.update_manual_corrections_from_excel(
+        result = kinerja_corrections.update_manual_corrections_from_excel(
             self.session,
             correction_batch_xlsx([(NIP, "-5"), (other_nip, "5")]),
             "Q3-2026",
@@ -1034,11 +1039,11 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(result["updated_count"], 2)
         self.assertEqual(
             self.get_record(NIP, "Q3-2026").nilai_koreksi,
-            service.Decimal("-5"),
+            Decimal("-5"),
         )
         self.assertEqual(
             self.get_record(other_nip, "Q3-2026").nilai_koreksi,
-            service.Decimal("5"),
+            Decimal("5"),
         )
 
     def test_batch_correction_rejects_invalid_rows_atomically(self) -> None:
@@ -1069,7 +1074,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
         for content in invalid_workbooks:
             with self.subTest(content=content[:12]), self.assertRaises(ValueError):
-                service.update_manual_corrections_from_excel(
+                kinerja_corrections.update_manual_corrections_from_excel(
                     self.session,
                     content,
                     "Q3-2026",
@@ -1078,7 +1083,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 )
             self.assertEqual(
                 self.get_record(NIP, "Q3-2026").nilai_koreksi,
-                service.Decimal("1"),
+                Decimal("1"),
             )
             self.assertEqual(
                 self.session.scalars(select(PerformanceCorrectionEditLog)).all(),
@@ -1087,33 +1092,33 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
     def test_undo_removes_later_edits_for_only_the_selected_period_and_nip(self) -> None:
         self.import_active_dataset()
-        service.replace_full_upload(
+        kinerja_uploads.replace_full_upload(
             self.session,
             full_csv(),
             "Q4-2026",
             uploaded_by_user="admin",
             uploaded_by_name="Admin",
         )
-        service.update_manual_correction(
-            self.session, "Q3-2026", NIP, service.Decimal("2"), "admin", "Admin"
+        kinerja_corrections.update_manual_correction(
+            self.session, "Q3-2026", NIP, Decimal("2"), "admin", "Admin"
         )
-        service.update_manual_correction(
-            self.session, "Q3-2026", NIP, service.Decimal("3"), "admin", "Admin"
+        kinerja_corrections.update_manual_correction(
+            self.session, "Q3-2026", NIP, Decimal("3"), "admin", "Admin"
         )
-        service.update_manual_correction(
-            self.session, "Q3-2026", NIP, service.Decimal("4"), "admin", "Admin"
+        kinerja_corrections.update_manual_correction(
+            self.session, "Q3-2026", NIP, Decimal("4"), "admin", "Admin"
         )
-        service.update_manual_correction(
-            self.session, "Q4-2026", NIP, service.Decimal("2"), "admin", "Admin"
+        kinerja_corrections.update_manual_correction(
+            self.session, "Q4-2026", NIP, Decimal("2"), "admin", "Admin"
         )
         selected_log = self.session.scalar(
             select(PerformanceCorrectionEditLog).where(
                 PerformanceCorrectionEditLog.period == "Q3-2026",
-                PerformanceCorrectionEditLog.new_value == service.Decimal("3"),
+                PerformanceCorrectionEditLog.new_value == Decimal("3"),
             )
         )
 
-        result = service.undo_manual_correction(self.session, selected_log.id)
+        result = kinerja_corrections.undo_manual_correction(self.session, selected_log.id)
 
         remaining_logs = self.session.scalars(
             select(PerformanceCorrectionEditLog).order_by(
@@ -1124,25 +1129,25 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(result["nilai_koreksi"], 2.0)
         self.assertEqual(
             self.get_record(NIP, "Q3-2026").nilai_koreksi,
-            service.Decimal("2"),
+            Decimal("2"),
         )
         self.assertEqual(
             self.get_record(NIP, "Q4-2026").nilai_koreksi,
-            service.Decimal("2"),
+            Decimal("2"),
         )
         self.assertEqual(
             [(log.period, log.new_value) for log in remaining_logs],
-            [("Q3-2026", service.Decimal("2")), ("Q4-2026", service.Decimal("2"))],
+            [("Q3-2026", Decimal("2")), ("Q4-2026", Decimal("2"))],
         )
 
     def test_full_upload_clears_correction_edit_history_and_failed_upload_keeps_it(self) -> None:
         self.import_active_dataset()
-        service.update_manual_correction(
-            self.session, "Q3-2026", NIP, service.Decimal("2"), "admin", "Admin"
+        kinerja_corrections.update_manual_correction(
+            self.session, "Q3-2026", NIP, Decimal("2"), "admin", "Admin"
         )
 
         with self.assertRaises(ValueError):
-            service.replace_full_upload(
+            kinerja_uploads.replace_full_upload(
                 self.session,
                 b"not a valid performance CSV",
                 "Q3-2026",
@@ -1154,7 +1159,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             1,
         )
 
-        service.replace_full_upload(
+        kinerja_uploads.replace_full_upload(
             self.session,
             full_csv(),
             "Q3-2026",
@@ -1168,8 +1173,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
     def test_failed_epride_sync_keeps_correction_edit_history(self) -> None:
         self.import_active_dataset()
-        service.update_manual_correction(
-            self.session, "Q3-2026", NIP, service.Decimal("2"), "admin", "Admin"
+        kinerja_corrections.update_manual_correction(
+            self.session, "Q3-2026", NIP, Decimal("2"), "admin", "Admin"
         )
 
         with (
@@ -1180,7 +1185,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             ),
             self.assertRaises(RuntimeError),
         ):
-            service.sync_adjustments_from_epride(
+            kinerja_corrections.sync_adjustments_from_epride(
                 self.session,
                 "Q3-2026",
                 2026,
@@ -1210,7 +1215,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 }
             ],
         ):
-            preview = service.check_adjustments_from_epride(
+            preview = kinerja_corrections.check_adjustments_from_epride(
                 self.session,
                 "Q3-2026",
                 2025,
@@ -1228,27 +1233,27 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(record.nkp_akhir, original_score)
 
     def test_nkp_akhir_formula_weights_adjusted_base_against_nko(self) -> None:
-        nko_above_adjusted_base = service.Decimal("98")
+        nko_above_adjusted_base = Decimal("98")
 
         self.assertEqual(
-            service.calculate_nkp_akhir(
-                service.Decimal("100"),
-                service.Decimal("90"),
-                service.Decimal("-5"),
-                service.Decimal("-2"),
-                service.Decimal("3"),
+            kinerja_common.calculate_nkp_akhir(
+                Decimal("100"),
+                Decimal("90"),
+                Decimal("-5"),
+                Decimal("-2"),
+                Decimal("3"),
             ),
-            service.Decimal("94.20"),
+            Decimal("94.20"),
         )
         self.assertEqual(
-            service.calculate_nkp_akhir(
-                service.Decimal("100"),
+            kinerja_common.calculate_nkp_akhir(
+                Decimal("100"),
                 nko_above_adjusted_base,
-                service.Decimal("5"),
-                service.Decimal("2"),
-                service.Decimal("3"),
+                Decimal("5"),
+                Decimal("2"),
+                Decimal("3"),
             ),
-            service.Decimal("96.20"),
+            Decimal("96.20"),
         )
 
     def test_epride_conflicts_require_and_apply_per_nip_choices(self) -> None:
@@ -1276,7 +1281,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 },
             ],
         ):
-            preview = service.check_adjustments_from_epride(
+            preview = kinerja_corrections.check_adjustments_from_epride(
                 self.session,
                 "Q3-2026",
                 2026,
@@ -1304,7 +1309,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 ],
             )
             with self.assertRaisesRegex(ValueError, "Choose exactly one"):
-                service.sync_adjustments_from_epride(
+                kinerja_corrections.sync_adjustments_from_epride(
                     self.session,
                     "Q3-2026",
                     2026,
@@ -1314,7 +1319,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             self.assertEqual(record.nilai_koreksi, original_correction)
             self.assertEqual(record.nkp_akhir, original_score)
 
-            result = service.sync_adjustments_from_epride(
+            result = kinerja_corrections.sync_adjustments_from_epride(
                 self.session,
                 "Q3-2026",
                 2026,
@@ -1323,7 +1328,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(result["resolved_conflict_count"], 1)
-        self.assertEqual(self.get_record(NIP, "Q3-2026").nilai_koreksi, service.Decimal("-2"))
+        self.assertEqual(self.get_record(NIP, "Q3-2026").nilai_koreksi, Decimal("-2"))
 
     def test_epride_sync_rejects_stale_conflict_choices(self) -> None:
         self.import_active_dataset()
@@ -1336,7 +1341,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             ],
         ):
             with self.assertRaisesRegex(ValueError, "no longer matches"):
-                service.sync_adjustments_from_epride(
+                kinerja_corrections.sync_adjustments_from_epride(
                     self.session,
                     "Q3-2026",
                     2026,
@@ -1346,13 +1351,13 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
     def test_epride_sync_blocks_out_of_range_values_and_empty_filtered_sources(self) -> None:
         with self.assertRaisesRegex(ValueError, "outside -20 to 20"):
-            service._prepare_epride_corrections(
+            kinerja_corrections._prepare_epride_corrections(
                 [{"id_unit": "1234567890123", "nip": NIP, "nilai_koreksi": "20.01"}],
                 2026,
                 2,
             )
         with self.assertRaisesRegex(ValueError, "No submitted EPRIDE corrections"):
-            service._prepare_epride_corrections(
+            kinerja_corrections._prepare_epride_corrections(
                 [{"id_unit": "123456789012345", "nip": NIP, "nilai_koreksi": "0"}],
                 2026,
                 3,
@@ -1361,7 +1366,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
     def test_analysis_uses_employee_reference_snapshot_and_counts_nonzero_penalties(self) -> None:
         self.import_active_dataset()
         self.employee_lookup.reset_mock()
-        result = service.get_analysis(self.session, "unit_eselon_ii")
+        result = kinerja_records.get_analysis(self.session, "unit_eselon_ii")
         self.employee_lookup.assert_not_called()
         self.assertEqual(result["dataset"]["period"], "Q3-2026")
         self.assertEqual(result["groups"][0]["label"], "Direktorat Contoh")
@@ -1382,11 +1387,11 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 nip=f"{index:018}",
                 dataset_id=1,
                 nama="Pegawai",
-                npk=service.Decimal(value),
+                npk=Decimal(value),
             )
             for index, value in enumerate(values, start=1)
         ]
-        bins = service._make_histogram(records)
+        bins = kinerja_dashboard._make_histogram(records)
         self.assertEqual(len(bins), 20)
         self.assertEqual((bins[0]["start"], bins[0]["end"], bins[0]["count"]), (80, 82, 2))
         self.assertEqual((bins[-1]["start"], bins[-1]["end"], bins[-1]["count"]), (118, 120, 2))
@@ -1401,11 +1406,11 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     nip=f"{index:018}",
                     dataset_id=1,
                     nama=f"Pegawai {index}",
-                    nilai_koreksi=service.Decimal(value),
+                    nilai_koreksi=Decimal(value),
                 )
             )
-        self.get_record(NIP, "Q3-2026").nilai_koreksi = service.Decimal(values[0])
-        result = service.get_analysis(self.session, "overall")
+        self.get_record(NIP, "Q3-2026").nilai_koreksi = Decimal(values[0])
+        result = kinerja_records.get_analysis(self.session, "overall")
         correction = result["groups"][0]["correction"]
         self.assertEqual(correction["count"], 6)
         self.assertEqual(correction["negative_count"], 2)
@@ -1436,7 +1441,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.session.commit()
 
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
-            dashboard = service.get_dashboard(self.session, None, [], "Q3-2026")
+            dashboard = kinerja_dashboard.get_dashboard(self.session, None, [], "Q3-2026")
 
         self.assertEqual(
             [unit["label"] for unit in dashboard["units"]],
@@ -1454,17 +1459,17 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         first.unit_eselon_iii = "Unit A - III"
         first.unit_eselon_iv = "Unit A - IV"
         first.eselon = "III"
-        first.npk = service.Decimal("100")
-        first.nhk = service.Decimal("90")
-        first.nkp_awal = service.Decimal("116")
-        first.nkp_akhir = service.Decimal("115")
-        first.nko = service.Decimal("120")
-        first.nkp_perhitungan = service._calculate_nkp_perhitungan(
+        first.npk = Decimal("100")
+        first.nhk = Decimal("90")
+        first.nkp_awal = Decimal("116")
+        first.nkp_akhir = Decimal("115")
+        first.nko = Decimal("120")
+        first.nkp_perhitungan = kinerja_common._calculate_nkp_perhitungan(
             first.nkp_awal,
             first.nko,
         )
-        first.status_nkp_perhitungan = service.get_status(first.nkp_perhitungan)
-        first.nilai_koreksi = service.Decimal("0")
+        first.status_nkp_perhitungan = kinerja_common.get_status(first.nkp_perhitungan)
+        first.nilai_koreksi = Decimal("0")
         self.session.add_all(
             [
                 PerformanceKinerjaRecord(
@@ -1475,17 +1480,17 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     unit_eselon_iii="Unit A - IV",
                     unit_eselon_iv="Unit A - IV - IV",
                     eselon="IV",
-                    nhk=service.Decimal("70"),
-                    npk=service.Decimal("80"),
-                    nkp_awal=service.Decimal("114"),
-                    nkp_akhir=service.Decimal("110"),
-                    nko=service.Decimal("100"),
-                    nkp_perhitungan=service._calculate_nkp_perhitungan(
-                        service.Decimal("114"),
-                        service.Decimal("100"),
+                    nhk=Decimal("70"),
+                    npk=Decimal("80"),
+                    nkp_awal=Decimal("114"),
+                    nkp_akhir=Decimal("110"),
+                    nko=Decimal("100"),
+                    nkp_perhitungan=kinerja_common._calculate_nkp_perhitungan(
+                        Decimal("114"),
+                        Decimal("100"),
                     ),
                     status_nkp_perhitungan="Tinggi",
-                    nilai_koreksi=service.Decimal("-2"),
+                    nilai_koreksi=Decimal("-2"),
                 ),
                 PerformanceKinerjaRecord(
                     nip="123456789012345680",
@@ -1494,11 +1499,11 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     unit_eselon_ii="Unit B",
                     unit_eselon_iii="Unit B - III",
                     eselon="III",
-                    nhk=service.Decimal("90"),
-                    npk=service.Decimal("110"),
-                    nkp_awal=service.Decimal("120"),
-                    nkp_akhir=service.Decimal("115"),
-                    nilai_koreksi=service.Decimal("3"),
+                    nhk=Decimal("90"),
+                    npk=Decimal("110"),
+                    nkp_awal=Decimal("120"),
+                    nkp_akhir=Decimal("115"),
+                    nilai_koreksi=Decimal("3"),
                 ),
                 PerformanceKinerjaRecord(
                     nip="123456789012345681",
@@ -1506,15 +1511,15 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     nama="Pegawai C",
                     unit_eselon_ii="Unit C",
                     eselon="III",
-                    nkp_perhitungan=service.Decimal("115"),
+                    nkp_perhitungan=Decimal("115"),
                     status_nkp_perhitungan="Sangat Istimewa",
-                    nkp_akhir=service.Decimal("114"),
+                    nkp_akhir=Decimal("114"),
                 ),
             ]
         )
         self.session.commit()
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
-            result = service.get_dashboard(
+            result = kinerja_dashboard.get_dashboard(
                 self.session,
                 "Unit A",
                 ["IV"],
@@ -1562,7 +1567,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(unit_c["status_gap_count"], -1)
 
     def test_unit_comparison_uses_nkp_perhitungan_status_distribution(self) -> None:
-        current = service._make_unit_metrics(
+        current = kinerja_dashboard._make_unit_metrics(
             "Unit A",
             [
                 PerformanceKinerjaRecord(
@@ -1570,13 +1575,13 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     dataset_id=1,
                     nama="Current",
                     unit_eselon_ii="Unit A",
-                    nkp_awal=service.Decimal("80"),
-                    nkp_perhitungan=service.Decimal("115"),
+                    nkp_awal=Decimal("80"),
+                    nkp_perhitungan=Decimal("115"),
                     status_nkp_perhitungan="Sangat Istimewa",
                 ),
             ],
         )
-        previous = service._make_unit_metrics(
+        previous = kinerja_dashboard._make_unit_metrics(
             "Unit A",
             [
                 PerformanceKinerjaRecord(
@@ -1584,14 +1589,14 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     dataset_id=2,
                     nama="Previous",
                     unit_eselon_ii="Unit A",
-                    nkp_awal=service.Decimal("120"),
-                    nkp_perhitungan=service.Decimal("114.99"),
+                    nkp_awal=Decimal("120"),
+                    nkp_perhitungan=Decimal("114.99"),
                     status_nkp_perhitungan="Istimewa",
                 ),
             ],
         )
 
-        comparison = service._unit_comparison_values(current, previous)
+        comparison = kinerja_dashboard._unit_comparison_values(current, previous)
 
         very_special = comparison["nkp_perhitungan_status_counts.Sangat Istimewa"]
         special = comparison["nkp_perhitungan_status_counts.Istimewa"]
@@ -1605,7 +1610,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         first.nama = "Zelda"
         first.unit_eselon_ii = "Unit A"
         first.unit_eselon_iv = "Seksi A"
-        first.nhk = service.Decimal("100")
+        first.nhk = Decimal("100")
         self.session.add_all(
             [
                 PerformanceKinerjaRecord(
@@ -1614,7 +1619,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     nama="Alpha",
                     unit_eselon_ii="Unit A",
                     unit_eselon_iv="Seksi A",
-                    nhk=service.Decimal("110"),
+                    nhk=Decimal("110"),
                 ),
                 PerformanceKinerjaRecord(
                     nip="123456789012345680",
@@ -1622,15 +1627,15 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                     nama="Beta",
                     unit_eselon_ii="Unit B",
                     unit_eselon_iv="Seksi B",
-                    nhk=service.Decimal("120"),
+                    nhk=Decimal("120"),
                 ),
             ]
         )
         self.session.commit()
-        service.invalidate_dashboard_cache()
+        kinerja_cache.invalidate_dashboard_cache()
 
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
-            descending = service.get_records(
+            descending = kinerja_records.get_records(
                 self.session,
                 page=1,
                 page_size=1,
@@ -1639,7 +1644,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 sort_by="nhk",
                 sort_order="desc",
             )
-            ascending = service.get_records(
+            ascending = kinerja_records.get_records(
                 self.session,
                 page=1,
                 page_size=2,
@@ -1648,7 +1653,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 sort_by="nama",
                 sort_order="asc",
             )
-            filtered_by_unit_iv = service.get_records(
+            filtered_by_unit_iv = kinerja_records.get_records(
                 self.session,
                 page=1,
                 page_size=10,
@@ -1657,7 +1662,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 sort_by="nama",
                 sort_order="asc",
             )
-            filtered_by_unit_ii = service.get_records(
+            filtered_by_unit_ii = kinerja_records.get_records(
                 self.session,
                 page=1,
                 page_size=10,
@@ -1666,7 +1671,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 sort_by="nama",
                 sort_order="asc",
             )
-            filtered_by_search = service.get_records(
+            filtered_by_search = kinerja_records.get_records(
                 self.session,
                 page=1,
                 page_size=10,
@@ -1704,8 +1709,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.import_active_dataset()
         self.employee_lookup.reset_mock()
 
-        service.get_dashboard(self.session, None, [])
-        service.get_dashboard(self.session, None, ["III"])
+        kinerja_dashboard.get_dashboard(self.session, None, [])
+        kinerja_dashboard.get_dashboard(self.session, None, ["III"])
         self.employee_lookup.assert_not_called()
 
         with patch.object(
@@ -1720,14 +1725,14 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 }
             ],
         ):
-            service.sync_adjustments_from_epride(
+            kinerja_corrections.sync_adjustments_from_epride(
                 self.session,
                 "Q3-2026",
                 2026,
                 2,
                 {},
             )
-        service.get_dashboard(self.session, None, [])
+        kinerja_dashboard.get_dashboard(self.session, None, [])
         self.employee_lookup.assert_not_called()
 
     def test_excel_exports_include_unit_children_and_search_all_matching_records(self) -> None:
@@ -1748,7 +1753,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             },
         }
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=employees):
-            service.replace_full_upload(
+            kinerja_uploads.replace_full_upload(
                 self.session,
                 content,
                 "Q3-2026",
@@ -1756,16 +1761,16 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 uploaded_by_name="Admin",
             )
             unit_workbook = load_workbook(
-                BytesIO(service.create_unit_analysis_workbook(self.session)),
+                BytesIO(kinerja_exports.create_unit_analysis_workbook(self.session)),
                 data_only=True,
             )
             records_workbook = load_workbook(
-                BytesIO(service.create_performance_records_workbook(self.session)),
+                BytesIO(kinerja_exports.create_performance_records_workbook(self.session)),
                 data_only=True,
             )
             filtered_workbook = load_workbook(
                 BytesIO(
-                    service.create_performance_records_workbook(
+                    kinerja_exports.create_performance_records_workbook(
                         self.session,
                         search=second_nip[-6:],
                     )
@@ -1799,7 +1804,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         filtered_workbook.close()
 
     def test_get_records_returns_paginated_rows_and_unidentified_group(self) -> None:
-        service.replace_full_upload(
+        kinerja_uploads.replace_full_upload(
             self.session,
             full_csv(nip="1234567890123456"),
             "Q3-2026",
@@ -1807,7 +1812,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             uploaded_by_name="Admin",
         )
         with patch.object(kinerja_uploads, "_lookup_employee_records", return_value={}):
-            result = service.get_records(self.session, page=1, page_size=1, search="Pegawai")
+            result = kinerja_records.get_records(self.session, page=1, page_size=1, search="Pegawai")
         self.assertEqual(result["total"], 1)
         self.assertEqual(len(result["records"]), 1)
         self.assertEqual(result["records"][0]["unit_eselon_ii"], "Unidentified")
@@ -1953,12 +1958,12 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
                     dataset_id=dataset.id,
                     nip=NIP,
                     nama="Pegawai Contoh",
-                    nkp_awal=service.Decimal("85"),
-                    nilai_hukuman_disiplin=service.Decimal("-1"),
-                    nilai_dampak_pelanggaran_disiplin=service.Decimal("-2"),
-                    nilai_koreksi=service.Decimal("1"),
-                    nko=service.Decimal("90"),
-                    nkp_akhir=service.Decimal("83.5"),
+                    nkp_awal=Decimal("85"),
+                    nilai_hukuman_disiplin=Decimal("-1"),
+                    nilai_dampak_pelanggaran_disiplin=Decimal("-2"),
+                    nilai_koreksi=Decimal("1"),
+                    nko=Decimal("90"),
+                    nkp_akhir=Decimal("83.5"),
                 )
             )
             session.commit()
@@ -2044,11 +2049,11 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
         result = {**preview, "resolved_conflict_count": 0}
         try:
             with (
-                patch.object(service, "get_available_epride_source_periods", return_value=[
+                patch.object(kinerja_corrections, "get_available_epride_source_periods", return_value=[
                     {"year": 2026, "available_tw": [2]},
                 ]),
-                patch.object(service, "check_adjustments_from_epride", return_value=preview),
-                patch.object(service, "sync_adjustments_from_epride", return_value=result),
+                patch.object(kinerja_corrections, "check_adjustments_from_epride", return_value=preview),
+                patch.object(kinerja_corrections, "sync_adjustments_from_epride", return_value=result),
             ):
                 client = TestClient(app)
                 source_periods_response = client.get("/performance/adjustments/source-periods")
@@ -2101,7 +2106,7 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
                     dataset_id=dataset.id,
                     nip=NIP,
                     nama="Pegawai Contoh",
-                    nilai_koreksi=service.Decimal("2"),
+                    nilai_koreksi=Decimal("2"),
                 )
             )
             session.add(
@@ -2109,8 +2114,8 @@ class PerformanceKinerjaAuthorizationTests(unittest.TestCase):
                     period="Q3-2026",
                     nip=NIP,
                     employee_name="Pegawai Contoh",
-                    old_value=service.Decimal("1"),
-                    new_value=service.Decimal("2"),
+                    old_value=Decimal("1"),
+                    new_value=Decimal("2"),
                     edited_by_user="admin",
                     edited_by_name="Admin",
                 )

@@ -14,30 +14,36 @@ from app.history_db import Base
 from app.models.auth import User
 from app.models.pelantikan_agenda import PelantikanAgenda, PelantikanAgendaPerson
 from app.schemas.pelantikan_agenda import PelantikanAgendaPersonRead, PelantikanPersonChoice
-from app.services import pelantikan_agenda_service as service
+from app.services.pelantikan_agenda import (
+    agendas,
+    common,
+    documents,
+    exports,
+    roster,
+)
 
 
 class PelantikanAgendaServiceTests(unittest.TestCase):
     def test_normalize_nip_accepts_only_eighteen_digits(self):
-        self.assertEqual(service.normalize_nip(123456789012345678), "123456789012345678")
-        self.assertEqual(service.normalize_nip("1234 5678 9012 3456 78"), "123456789012345678")
-        self.assertIsNone(service.normalize_nip("12345678901234567"))
-        self.assertIsNone(service.normalize_nip(float("nan")))
+        self.assertEqual(common.normalize_nip(123456789012345678), "123456789012345678")
+        self.assertEqual(common.normalize_nip("1234 5678 9012 3456 78"), "123456789012345678")
+        self.assertIsNone(common.normalize_nip("12345678901234567"))
+        self.assertIsNone(common.normalize_nip(float("nan")))
 
     def test_formal_recipient_names_are_derived_from_known_unit_prefixes(self):
         self.assertEqual(
-            service._format_formal_recipient("Kanwil DJPb Prov. Kalimantan Tengah"),
+            common._format_formal_recipient("Kanwil DJPb Prov. Kalimantan Tengah"),
             "Kepala Kantor Wilayah Direktorat Jenderal Perbendaharaan Provinsi Kalimantan Tengah",
         )
         self.assertEqual(
-            service._format_formal_recipient("Direktorat Jenderal Perbendaharaan"),
+            common._format_formal_recipient("Direktorat Jenderal Perbendaharaan"),
             "Direktur Jenderal Perbendaharaan",
         )
         self.assertEqual(
-            service._format_formal_recipient("Badan Kebijakan Fiskal"),
+            common._format_formal_recipient("Badan Kebijakan Fiskal"),
             "Kepala Badan Kebijakan Fiskal",
         )
-        self.assertEqual(service._format_formal_recipient("Unit Lain"), "Unit Lain")
+        self.assertEqual(common._format_formal_recipient("Unit Lain"), "Unit Lain")
 
     def test_people_to_read_includes_unit_city_from_reference_table(self):
         person = SimpleNamespace(
@@ -63,9 +69,9 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             {"unit_kerja_id": 12, "value": "Unit A", "city": "Jakarta"},
         ]
 
-        with patch.object(service.engine, "connect") as connect:
+        with patch.object(common.engine, "connect") as connect:
             connect.return_value.__enter__.return_value = connection
-            people = service.people_to_read([person])
+            people = agendas.people_to_read([person])
 
         self.assertEqual(people[0]["unit_city"], "Jakarta")
         self.assertEqual(people[0]["unit_kerja_id"], 12)
@@ -124,17 +130,17 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             "unit c": (30, ""),
         }
 
-        with patch.object(service, "_unit_reference_by_name", return_value=unit_references):
-            document = service.generate_lampiran_pengantar_docx(agenda)
+        with patch.object(documents, "_unit_reference_by_name", return_value=unit_references):
+            document = documents.generate_lampiran_pengantar_docx(agenda)
 
         with ZipFile(BytesIO(document)) as archive:
             root = etree.fromstring(archive.read("word/document.xml"))
-        roster = service._find_roster_table(root)
-        rows = roster.findall("./w:tr", service.NS)
+        roster = documents._find_roster_table(root)
+        rows = roster.findall("./w:tr", common.NS)
         rendered_rows = [
             (
-                service._cell_text(row.findall("./w:tc", service.NS)[1]),
-                service._cell_text(row.findall("./w:tc", service.NS)[3]),
+                documents._cell_text(row.findall("./w:tc", common.NS)[1]),
+                documents._cell_text(row.findall("./w:tc", common.NS)[3]),
             )
             for row in rows[1:]
         ]
@@ -186,7 +192,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             ]
         )
 
-        workbook = load_workbook(BytesIO(service.export_monitoring_excel(agenda)))
+        workbook = load_workbook(BytesIO(exports.export_monitoring_excel(agenda)))
         worksheet = workbook["Monitoring Pelantikan"]
         rows = list(worksheet.values)
 
@@ -202,7 +208,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
 
     def test_roster_job_adds_formal_unit_only_for_known_non_eselon_two(self):
         self.assertEqual(
-            service._format_job_with_unit(
+            common._format_job_with_unit(
                 SimpleNamespace(
                     jabatan="Kepala Bagian Umum",
                     unit_eselon_ii="Kanwil DJPb Prov. Banteng",
@@ -212,7 +218,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             "Kepala Bagian Umum Kantor Wilayah Direktorat Jenderal Perbendaharaan Provinsi Banteng",
         )
         self.assertEqual(
-            service._format_job_with_unit(
+            common._format_job_with_unit(
                 SimpleNamespace(
                     jabatan="Kepala Kantor Wilayah",
                     unit_eselon_ii="Kanwil DJPb Prov. Banteng",
@@ -222,7 +228,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             "Kepala Kantor Wilayah",
         )
         self.assertEqual(
-            service._format_job_with_unit(
+            common._format_job_with_unit(
                 SimpleNamespace(
                     jabatan="Kepala Bagian Umum",
                     unit_eselon_ii="Kanwil DJPb Prov. Banteng",
@@ -234,7 +240,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
 
     def test_roster_document_uses_database_current_job_not_proposed_job(self):
         table = etree.fromstring(
-            f"""<w:tbl xmlns:w="{service.W_NS}">
+            f"""<w:tbl xmlns:w="{common.W_NS}">
               <w:tr>
                 <w:tc><w:p><w:r><w:t>No</w:t></w:r></w:p></w:tc>
                 <w:tc><w:p><w:r><w:t>Nama/NIP</w:t></w:r></w:p></w:tc>
@@ -247,7 +253,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
               </w:tr>
             </w:tbl>"""
         )
-        service._populate_roster(
+        documents._populate_roster(
             table,
             [
                 SimpleNamespace(
@@ -261,9 +267,9 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             ],
         )
 
-        data_row = table.findall("./w:tr", service.NS)[1]
-        job_cell = data_row.findall("./w:tc", service.NS)[2]
-        job_text = service._cell_text(job_cell)
+        data_row = table.findall("./w:tr", common.NS)[1]
+        job_cell = data_row.findall("./w:tc", common.NS)[2]
+        job_text = documents._cell_text(job_cell)
         self.assertIn("Jabatan saat ini dari database", job_text)
         self.assertNotIn("Jabatan baru rahasia", job_text)
 
@@ -280,7 +286,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         agenda = SimpleNamespace(people=[person], status="draft")
 
         with self.assertRaisesRegex(ValueError, "Pendamping"):
-            service.save_person_choices(
+            roster.save_person_choices(
                 SimpleNamespace(),
                 agenda,
                 [PelantikanPersonChoice(id=1, selected=True, modality="daring")],
@@ -288,17 +294,17 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
 
     def test_document_token_replacement_preserves_official_tokens_and_literal_values(self):
         xml = f"""<?xml version="1.0"?>
-        <w:document xmlns:w="{service.W_NS}">
+        <w:document xmlns:w="{common.W_NS}">
           <w:body><w:p><w:r><w:t>(nomor_</w:t></w:r>
           <w:r><w:t>nd)</w:t></w:r><w:r><w:t> [@NomorND]</w:t></w:r></w:p></w:body>
         </w:document>""".encode()
 
-        updated = service._replace_document_tokens(
+        updated = documents._replace_document_tokens(
             xml,
             {"(nomor_nd)": "Nomor (tanggal_nd)", "(tanggal_nd)": "Tanggal"},
         )
         root = etree.fromstring(updated)
-        paragraph_text = "".join(root.xpath(".//w:t/text()", namespaces={"w": service.W_NS}))
+        paragraph_text = "".join(root.xpath(".//w:t/text()", namespaces={"w": common.W_NS}))
 
         self.assertIn("Nomor (tanggal_nd)", paragraph_text)
         self.assertIn("[@NomorND]", paragraph_text)
@@ -324,7 +330,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         ]
 
         for modality in ("daring", "luring"):
-            document = service.build_agenda_docx(
+            document = documents.build_agenda_docx(
                 agenda,
                 people,
                 modality,
@@ -333,9 +339,9 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
             with ZipFile(BytesIO(document)) as archive:
                 root = etree.fromstring(archive.read("word/document.xml"))
 
-            text = "".join(root.xpath(".//w:t/text()", namespaces={"w": service.W_NS}))
-            roster = service._find_roster_table(root)
-            rows = roster.findall("./w:tr", service.NS)
+            text = "".join(root.xpath(".//w:t/text()", namespaces={"w": common.W_NS}))
+            roster = documents._find_roster_table(root)
+            rows = roster.findall("./w:tr", common.NS)
             self.assertEqual(len(rows), 11)
             self.assertIn("Nama 9", text)
             self.assertIn(
@@ -384,8 +390,8 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         )
         db = SimpleNamespace(commit=lambda: None)
 
-        with patch.object(service, "build_agenda_docx", return_value=b"docx"):
-            data, group_count = service.generate_agenda_zip(db, agenda)
+        with patch.object(exports, "build_agenda_docx", return_value=b"docx"):
+            data, group_count = exports.generate_agenda_zip(db, agenda)
 
         with ZipFile(BytesIO(data)) as archive:
             filenames = archive.namelist()
@@ -428,9 +434,9 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         )
         db = SimpleNamespace(commit=lambda: None)
 
-        with patch.object(service, "build_agenda_docx", return_value=b"docx") as build:
+        with patch.object(exports, "build_agenda_docx", return_value=b"docx") as build:
             data, filename, media_type, group_count = (
-                service.generate_selected_agenda_documents(db, agenda, [1, 2])
+                exports.generate_selected_agenda_documents(db, agenda, [1, 2])
             )
 
         self.assertEqual(data, b"docx")
@@ -474,9 +480,9 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         )
         db = SimpleNamespace(commit=lambda: None)
 
-        with patch.object(service, "build_agenda_docx", return_value=b"docx"):
+        with patch.object(exports, "build_agenda_docx", return_value=b"docx"):
             data, filename, media_type, group_count = (
-                service.generate_selected_agenda_documents(db, agenda, [1, 2])
+                exports.generate_selected_agenda_documents(db, agenda, [1, 2])
             )
 
         with ZipFile(BytesIO(data)) as archive:
@@ -518,7 +524,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "Pilih seluruh peserta"):
-            service.generate_selected_agenda_documents(
+            exports.generate_selected_agenda_documents(
                 SimpleNamespace(commit=lambda: None),
                 agenda,
                 [1],
@@ -568,13 +574,13 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 ])
                 db.add(agenda)
                 db.commit()
-                loaded = service.get_owned_agenda(db, agenda.id, "alice")
+                loaded = agendas.get_owned_agenda(db, agenda.id, "alice")
                 person_ids = [person.id for person in loaded.people]
 
                 with self.assertRaises(KeyError):
-                    service.get_owned_agenda(db, agenda.id, "bob")
+                    agendas.get_owned_agenda(db, agenda.id, "bob")
 
-                updated = service.save_person_choices(
+                updated = roster.save_person_choices(
                     db,
                     loaded,
                     [
@@ -589,7 +595,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 self.assertFalse(updated.people[1].selected)
 
                 with self.assertRaisesRegex(ValueError, "NIP duplikat"):
-                    service.save_person_choices(
+                    roster.save_person_choices(
                         db,
                         updated,
                         [
@@ -599,7 +605,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                         ],
                     )
 
-                duplicate_selected = service.save_person_choices(
+                duplicate_selected = roster.save_person_choices(
                     db,
                     updated,
                     [
@@ -612,7 +618,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 self.assertFalse(duplicate_selected.people[0].selected)
                 self.assertTrue(duplicate_selected.people[2].selected)
 
-                deselected = service.save_person_choices(
+                deselected = roster.save_person_choices(
                     db,
                     duplicate_selected,
                     [
@@ -651,7 +657,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         agenda = SimpleNamespace(people=people)
 
         with self.assertRaisesRegex(ValueError, "NIP duplikat"):
-            service.generate_agenda_zip(SimpleNamespace(), agenda)
+            exports.generate_agenda_zip(SimpleNamespace(), agenda)
 
     def test_upload_uses_third_row_header_filters_blank_nama_nip_and_keeps_source_columns(self):
         workbook = Workbook()
@@ -705,7 +711,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
         workbook_data = BytesIO()
         workbook.save(workbook_data)
         self.assertEqual(
-            service.list_workbook_sheets(workbook_data.getvalue(), "pegawai.xlsx"),
+            roster.list_workbook_sheets(workbook_data.getvalue(), "pegawai.xlsx"),
             ["Sheet", "Roster"],
         )
 
@@ -728,7 +734,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 db.commit()
                 with (
                     patch.object(
-                        service,
+                        roster,
                         "_lookup_employee_records",
                         return_value={
                             "123456789012345678": {
@@ -741,7 +747,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                         },
                     ),
                 ):
-                    updated = service.upload_and_match(
+                    updated = roster.upload_and_match(
                         db,
                         agenda,
                         workbook_data.getvalue(),
@@ -769,8 +775,8 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                     person_read.source_nama_nip,
                     "Nama Excel, S.E., MBus Process Mgt.\n123456789012345678",
                 )
-                with patch.object(service, "_lookup_employee_records", return_value={}):
-                    selected_sheet_agenda = service.upload_and_match(
+                with patch.object(roster, "_lookup_employee_records", return_value={}):
+                    selected_sheet_agenda = roster.upload_and_match(
                         db,
                         agenda,
                         workbook_data.getvalue(),
@@ -858,7 +864,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                     "eselon": "III",
                 }
                 with patch.object(
-                    service,
+                    roster,
                     "_lookup_employee_records",
                     return_value={
                         first_nip: employee_record,
@@ -866,7 +872,7 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                     },
                 ):
                     updated, processed_sheets, skipped_sheets, duplicate_count = (
-                        service.upload_all_sheets_and_match(
+                        roster.upload_all_sheets_and_match(
                             db,
                             agenda,
                             workbook_data.getvalue(),
@@ -900,21 +906,21 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                     grouped_people.append((unit, [person.source_sheet for person in people]))
                     return b"docx"
 
-                with patch.object(service, "build_agenda_docx", side_effect=capture_group):
-                    _, group_count = service.generate_agenda_zip(db, updated)
+                with patch.object(exports, "build_agenda_docx", side_effect=capture_group):
+                    _, group_count = exports.generate_agenda_zip(db, updated)
 
                 self.assertEqual(group_count, 1)
                 self.assertEqual(grouped_people, [("Unit A", ["Alpha", "Beta"])])
 
                 with patch.object(
-                    service,
+                    roster,
                     "_lookup_employee_records",
                     return_value={
                         first_nip: employee_record,
                         second_nip: employee_record,
                     },
                 ):
-                    selected, selected_sheets, _, _ = service.upload_sheets_and_match(
+                    selected, selected_sheets, _, _ = roster.upload_sheets_and_match(
                         db,
                         agenda,
                         workbook_data.getvalue(),
@@ -928,11 +934,11 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 self.assertEqual([person.source_sheet for person in selected.people], ["Beta", "Beta"])
 
                 with patch.object(
-                    service,
+                    roster,
                     "_lookup_employee_records",
                     return_value={first_nip: employee_record},
                 ):
-                    single_sheet, single_sheets, _, _ = service.upload_sheets_and_match(
+                    single_sheet, single_sheets, _, _ = roster.upload_sheets_and_match(
                         db,
                         agenda,
                         workbook_data.getvalue(),
@@ -947,14 +953,14 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                 self.assertEqual([person.source_sheet for person in single_sheet.people], ["Alpha"])
 
                 with patch.object(
-                    service,
+                    roster,
                     "_lookup_employee_records",
                     return_value={
                         first_nip: employee_record,
                         second_nip: employee_record,
                     },
                 ):
-                    isolated, _, _, _ = service.upload_sheets_and_match(
+                    isolated, _, _, _ = roster.upload_sheets_and_match(
                         db,
                         agenda,
                         workbook_data.getvalue(),
@@ -972,8 +978,8 @@ class PelantikanAgendaServiceTests(unittest.TestCase):
                     isolated_groups.append((unit, [person.source_sheet for person in people]))
                     return b"docx"
 
-                with patch.object(service, "build_agenda_docx", side_effect=capture_isolated_group):
-                    _, isolated_group_count = service.generate_agenda_zip(db, isolated)
+                with patch.object(exports, "build_agenda_docx", side_effect=capture_isolated_group):
+                    _, isolated_group_count = exports.generate_agenda_zip(db, isolated)
 
                 self.assertEqual(isolated_group_count, 2)
                 self.assertEqual(

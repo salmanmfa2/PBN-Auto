@@ -3,13 +3,24 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
+from pwdlib import PasswordHash
+from pwdlib.exceptions import HashVerificationError, UnknownHashError
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.auth import User, UserPreference, UserSession
 
-
 SESSION_HOURS = 1
+password_hash = PasswordHash.recommended()
+DUMMY_HASH = password_hash.hash("dummy-password-for-timing-protection")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _normalize_username(username: str) -> str:
@@ -18,6 +29,10 @@ def _normalize_username(username: str) -> str:
 
 def _find_user(db: Session, username: str) -> User | None:
     return db.scalar(select(User).where(User.user == _normalize_username(username)))
+
+
+def hash_password(password: str) -> str:
+    return password_hash.hash(password)
 
 
 def create_user(
@@ -30,14 +45,14 @@ def create_user(
     normalized_user = _normalize_username(username)
     if not normalized_user:
         raise ValueError("User is required.")
-    if db.get(User, normalized_user) is not None:
+    if _find_user(db, normalized_user) is not None:
         raise ValueError("User is already registered.")
 
     account = User(
         user=normalized_user,
         name=name.strip(),
         auth_level=auth_level,
-        password=password,
+        password=password_hash.hash(password),
         is_active=True,
     )
     db.add(account)
@@ -48,13 +63,34 @@ def create_user(
 
 def authenticate(db: Session, username: str, password: str) -> User:
     account = _find_user(db, username)
-    if not account or not hmac.compare_digest(
-        account.password.encode("utf-8"),
-        password.encode("utf-8"),
-    ):
+    if account is None:
+        password_hash.verify(password, DUMMY_HASH)
+        raise ValueError("Invalid user or password.")
+
+    replacement_hash = None
+    try:
+        verified, replacement_hash = password_hash.verify_and_update(
+            password,
+            account.password,
+        )
+    except UnknownHashError:
+        password_hash.verify(password, DUMMY_HASH)
+        verified = hmac.compare_digest(
+            password.encode("utf-8"),
+            account.password.encode("utf-8"),
+        )
+        if verified:
+            replacement_hash = hash_password(password)
+    except HashVerificationError:
+        verified = False
+
+    if not verified:
         raise ValueError("Invalid user or password.")
     if not account.is_active:
         raise PermissionError("This account is inactive.")
+    if replacement_hash is not None:
+        account.password = replacement_hash
+        db.commit()
     return account
 
 
@@ -62,8 +98,8 @@ def create_session(db: Session, account: User) -> str:
     token = secrets.token_urlsafe(32)
     session = UserSession(
         username=account.user,
-        token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
-        expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=SESSION_HOURS),
+        token_hash=_hash_token(token),
+        expires_at=_utcnow() + timedelta(hours=SESSION_HOURS),
     )
     db.add(session)
     db.commit()
@@ -71,38 +107,37 @@ def create_session(db: Session, account: User) -> str:
 
 
 def get_user_by_token(db: Session, token: str) -> User | None:
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     session = db.scalar(
         select(UserSession)
         .options(joinedload(UserSession.account))
-        .where(UserSession.token_hash == token_hash)
+        .where(UserSession.token_hash == _hash_token(token))
     )
     if not session or session.revoked_at is not None:
         return None
-
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
     effective_expiration = min(
         session.expires_at,
         session.created_at + timedelta(hours=SESSION_HOURS),
     )
-    if effective_expiration <= now or not session.account.is_active:
+    if effective_expiration <= _utcnow() or not session.account.is_active:
         return None
     return session.account
 
 
 def revoke_session(db: Session, token: str) -> None:
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    session = db.scalar(select(UserSession).where(UserSession.token_hash == token_hash))
+    session = db.scalar(
+        select(UserSession).where(UserSession.token_hash == _hash_token(token))
+    )
     if session and session.revoked_at is None:
-        session.revoked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        session.revoked_at = _utcnow()
         db.commit()
 
 
 def revoke_user_sessions(db: Session, username: str) -> None:
+    normalized_user = _normalize_username(username)
     db.execute(
         update(UserSession)
-        .where(UserSession.username == username, UserSession.revoked_at.is_(None))
-        .values(revoked_at=datetime.now(timezone.utc).replace(tzinfo=None))
+        .where(UserSession.username == normalized_user, UserSession.revoked_at.is_(None))
+        .values(revoked_at=_utcnow())
     )
     db.commit()
 

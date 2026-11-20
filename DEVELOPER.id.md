@@ -56,7 +56,7 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `app/repositories/pbn_dashboard_repository.py` — memisahkan pembacaan dari tabel sumber pegawai bersama.
   - `app/services/pbn_dashboard_service.py` — memvalidasi kolom dashboard, menerapkan filter, serta menghitung jumlah pegawai dan distribusi grafik melalui repository.
   - Insight Hub Beta menggunakan ulang perhitungan dan skema respons dashboard yang sama; data dibaca dari `pbncleaner.fetch_pbnopen` melalui engine SQLAlchemy yang dikonfigurasi.
-  - `app/services/kinerja/` — alur kerja kinerja yang dipisah ke perhitungan bersama, unggahan, koreksi, dashboard/cache, data pegawai, query, dan ekspor. `app/services/performance_kinerja_service.py` tetap menjadi facade kompatibilitas untuk pemanggil API/auth yang sudah ada.
+  - `app/services/kinerja/` — alur kerja kinerja yang dipisah ke perhitungan bersama, unggahan, koreksi, dashboard/cache, data pegawai, query, dan ekspor. Pertahankan `__init__.py` tetap ringan; pemanggil API/auth mengimpor modul yang dibutuhkan secara langsung.
   - `app/models/performance_kinerja.py` dan `app/schemas/performance_kinerja.py` — model data kinerja tersimpan dan tipe API.
   - `app/services/pbnopen_import_service.py` menangani penggantian sumber yang diizinkan, pemeliharaan tabel referensi dengan ID stabil, dan sinkronisasi pegawai berdasarkan NIP; perubahan dipratinjau dan diterapkan secara transaksional.
   - `app/services/auth_service.py` — siklus akun/sesi, aturan peran, dan preferensi tampilan tersimpan.
@@ -68,7 +68,7 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
   - `app/models/auth.py` — model akun, sesi, dan preferensi pengguna.
   - `app/models/cleaning_history.py` — model SQLAlchemy untuk tabel riwayat pembersihan.
   - `app/models/plt_plh.py` dan `app/services/plt_plh_service.py` — record monitoring, masa kerja/status, ekspor Excel, dan lookup pejabat pengganti.
-  - `app/models/pelantikan_agenda.py` dan `app/services/pelantikan_agenda_service.py` — snapshot agenda/peserta persisten dan pembuatan DOCX/ZIP.
+  - `app/models/pelantikan_agenda.py` dan `app/services/pelantikan_agenda/` — snapshot agenda/peserta persisten serta alur roster, dokumen, dan ekspor yang modular.
   - `app/utils/employee_formatting.py` — pemformatan jabatan definitif bersama untuk alur berbasis pegawai.
   - `app/schemas/pbn_dashboard.py` — skema permintaan filter dashboard.
   - `app/services/history_service.py` — helper pencatatan dan pengambilan riwayat pembersihan.
@@ -228,7 +228,7 @@ Dokumen ini membantu kontributor baru—terutama pengembang pemula—memahami ba
 - Pratinjau juga dapat membuat satu DOCX lampiran ND Pengantar dari peserta terpilih. Baris diurutkan Luring sebelum Daring, lalu berdasarkan ID unit; template berada di `backend/templates/undangan_pelantikan/template_lampiran_pengantar.docx`.
 - Monitoring Pelantikan menyediakan ekspor Excel dengan empat kolom dan jumlah per unit.
 - Workbook sumber dan dokumen yang dihasilkan tidak disimpan. Agenda dan snapshot peserta tetap tersimpan agar pemilik dapat melanjutkan proses; unggahan ulang mengganti snapshot peserta pada agenda tersebut.
-- Jaga konsistensi penulisan penerima serta aturan jabatan pada `pelantikan_agenda_service.py` dan `employee_formatting.py`.
+- Jaga konsistensi penulisan penerima serta aturan jabatan pada `pelantikan_agenda/common.py` dan `employee_formatting.py`.
 
 ## Arsitektur Frontend untuk Pengembang Pemula
 

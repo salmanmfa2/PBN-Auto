@@ -145,6 +145,31 @@ def load_run_content(db: Session, dataset_id: str) -> tuple[bytes, str]:
     return file_path.read_bytes(), stored_file.stored_filename
 
 
+def load_run_file(
+    db: Session,
+    dataset_id: str,
+    *,
+    file_role: str | None = None,
+) -> tuple[bytes, str]:
+    _get_run(db, dataset_id)
+    query = db.query(DatasetFile).filter(
+        DatasetFile.dataset_id == dataset_id,
+        DatasetFile.is_deleted.is_(False),
+    )
+    if file_role is not None:
+        query = query.filter(DatasetFile.file_role == file_role)
+    stored_file = query.order_by(DatasetFile.version_number.desc()).first()
+    if stored_file is None:
+        role_detail = f" with role '{file_role}'" if file_role else ""
+        raise KeyError(
+            f"Stored file for dataset '{dataset_id}'{role_detail} was not found."
+        )
+    file_path = _resolve_storage_path(stored_file.storage_path)
+    if not file_path.exists():
+        raise KeyError(f"Stored file '{stored_file.stored_filename}' is missing.")
+    return file_path.read_bytes(), stored_file.stored_filename
+
+
 def delete_run(db: Session, dataset_id: str) -> None:
     _get_run(db, dataset_id)
     storage_directory = _resolve_storage_path(dataset_id)
