@@ -225,6 +225,44 @@ html[data-theme="light"] .admin-page [class~="text-rose-200"],
 html[data-theme="light"] .admin-page [class~="text-rose-300"] {
   color: #be123c;
 }
+/* AppToolbar Light Mode Polish */
+html[data-theme="light"] .app-toolbar-capsule {
+  background-color: rgba(255, 255, 255, 0.92);
+  border-color: #cbd5e1;
+  box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.12), 0 2px 6px -1px rgba(15, 23, 42, 0.06);
+}
+
+html[data-theme="light"] .app-toolbar-popover,
+html[data-theme="light"] .app-toolbar-modal {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.16);
+}
+
+html[data-theme="light"] .app-toolbar-subcard {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .app-toolbar-capsule [class~="text-sky-300"],
+html[data-theme="light"] .app-toolbar-modal [class~="text-sky-300"] {
+  color: #0369a1;
+}
+
+html[data-theme="light"] .app-toolbar-capsule [class~="text-amber-300"],
+html[data-theme="light"] .app-toolbar-modal [class~="text-amber-300"] {
+  color: #b45309;
+}
+
+html[data-theme="light"] .app-toolbar-capsule [class~="text-emerald-300"],
+html[data-theme="light"] .app-toolbar-modal [class~="text-emerald-300"] {
+  color: #15803d;
+}
+
+html[data-theme="light"] .app-toolbar-capsule [class~="text-rose-300"],
+html[data-theme="light"] .app-toolbar-modal [class~="text-rose-300"] {
+  color: #be123c;
+}
 html[data-theme="light"] .performance-analysis-page [class~="bg-slate-900/50"] {
   background-color: #fff;
 }
