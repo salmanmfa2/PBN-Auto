@@ -238,6 +238,24 @@ export async function deleteMutationWorkspace(workspaceId: string): Promise<void
   await api.delete(`/mutation-analysis/workspaces/${encodeURIComponent(workspaceId)}`);
 }
 
+export async function splitFragmentPetikanPdf(
+  file: File,
+  pagesPerFragment: 2 | 3,
+): Promise<Blob> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('pages_per_fragment', String(pagesPerFragment));
+  const { data } = await api.post<Blob>(
+    '/fragment-petikan/split',
+    form,
+    {
+      responseType: 'blob',
+      timeout: 300_000,
+    },
+  );
+  return data;
+}
+
 export async function lookupMutationNips(nips: string[]): Promise<MutationLookupResponse> {
   const { data } = await api.post<MutationLookupResponse>(
     '/mutation-analysis/lookup-nips',

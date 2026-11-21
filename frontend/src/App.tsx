@@ -9,6 +9,7 @@ import PelantikanAgendaPage from './pages/PelantikanAgendaPage';
 import PerformanceAnalysisPage from './pages/PerformanceAnalysisPage';
 import MutationAnalysisPage from './pages/MutationAnalysisPage';
 import PltPlhManagementPage from './pages/PltPlhManagementPage';
+import FragmentPetikanPage from './pages/FragmentPetikanPage';
 import { AppToolbar } from './components/AppToolbar';
 import { ChatWidget } from './components/ChatWidget';
 import { FeedbackWidget } from './components/FeedbackWidget';
@@ -113,6 +114,9 @@ function AppRoutes() {
           </Route>
           <Route element={<RequireMenuView menuKey="analisis-mutasi" />}>
             <Route path="/analisis-mutasi" element={<MutationAnalysisPage />} />
+          </Route>
+          <Route element={<RequireMenuView menuKey="fragment-petikan" />}>
+            <Route path="/fragment-petikan" element={<FragmentPetikanPage />} />
           </Route>
           <Route element={<RequireMenuView menuKey="admin" />}>
             <Route path="/admin" element={<AdminPage />} />

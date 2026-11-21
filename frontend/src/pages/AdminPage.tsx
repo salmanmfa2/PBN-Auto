@@ -42,6 +42,7 @@ const menuAccessLabels: Record<MenuAccessKey, string> = {
   'insights-beta': 'Insight Hub Beta',
   'analisis-kinerja': 'Analisis Kinerja DJPb',
   'analisis-mutasi': 'Analisis Mutasi/Promosi',
+  'fragment-petikan': 'Fragment Petikan',
   'plt-plh': 'Manajemen Plt./Plh.',
   'nd-undangan': 'Generate ND Undangan Pelantikan',
   'progress-bahan': 'Bahan Pendukung MPK',
@@ -51,6 +52,7 @@ const menuAccessLabels: Record<MenuAccessKey, string> = {
 
 const minimumEditLevel: Partial<Record<MenuAccessKey, number>> = {
   'analisis-kinerja': 1,
+  'fragment-petikan': 1,
   'plt-plh': 1,
   'nd-undangan': 1,
 };

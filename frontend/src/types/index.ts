@@ -78,6 +78,7 @@ export type MenuAccessKey =
   | 'insights-beta'
   | 'analisis-kinerja'
   | 'analisis-mutasi'
+  | 'fragment-petikan'
   | 'plt-plh'
   | 'nd-undangan'
   | 'progress-bahan'

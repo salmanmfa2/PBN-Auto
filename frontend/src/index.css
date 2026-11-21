@@ -1,12 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* Tailwind layers */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   Base styles
+   ============================================================ */
 @layer base {
-  * { box-sizing: border-box;   }
+  * { box-sizing: border-box; }
 
+  /* Chat markdown: content typography */
   .chat-markdown > :first-child { margin-top: 0; }
   .chat-markdown > :last-child { margin-bottom: 0; }
   .chat-markdown p { margin: 0.45rem 0; }
@@ -47,6 +52,7 @@
 }
 
 @layer components {
+  /* Shared controls and surfaces */
   .btn-primary {
     @apply inline-flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
     background-color: #0ea5e9;
@@ -91,6 +97,9 @@
   }
 }
 
+/* ============================================================
+   Theme selection
+   ============================================================ */
 html[data-theme="light"] {
   color-scheme: light;
 }
@@ -105,6 +114,9 @@ html[data-theme="light"] body {
   color: #0f172a;
 }
 
+/* ============================================================
+   Landing page
+   ============================================================ */
 html[data-theme="light"] .landing-feature-icon {
   background-color: #dceaf2;
   color: #1e3a5f;
@@ -133,7 +145,7 @@ html[data-theme="light"] .landing-status-badge-ready {
   border-color: #86efac;
   color: #166534;
 }
-/* Landing Page Light Mode Polish */
+/* Landing page overrides */
 html[data-theme="light"] .landing-page .landing-hero,
 html[data-theme="light"] .landing-page .landing-card-surface {
   background-color: #ffffff;
@@ -187,7 +199,9 @@ html[data-theme="light"] .landing-page .landing-card-frame-active {
 html[data-theme="light"] .landing-page .landing-card-frame-dev {
   background: #cbd5e1;
 }
-/* Admin Page Light Mode Polish */
+/* ============================================================
+   Admin page
+   ============================================================ */
 html[data-theme="light"] .admin-page .admin-card,
 html[data-theme="light"] .admin-page .admin-header,
 html[data-theme="light"] .admin-page .admin-modal {
@@ -225,13 +239,21 @@ html[data-theme="light"] .admin-page [class~="text-rose-200"],
 html[data-theme="light"] .admin-page [class~="text-rose-300"] {
   color: #be123c;
 }
-/* AppToolbar Light Mode Polish */
+
+/* ============================================================
+   Shared light-theme utility overrides
+   ============================================================ */
+/* ============================================================
+   App toolbar
+   ============================================================ */
 html[data-theme="light"] .app-toolbar-capsule {
   background-color: rgba(255, 255, 255, 0.92);
   border-color: #cbd5e1;
   box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.12), 0 2px 6px -1px rgba(15, 23, 42, 0.06);
 }
-/* Manajemen Plt./Plh. Light Mode Polish */
+/* ============================================================
+   PLT/PLH management
+   ============================================================ */
 html[data-theme="light"] .plt-plh-page .plt-header,
 html[data-theme="light"] .plt-plh-page .plt-card,
 html[data-theme="light"] .plt-plh-page .plt-modal {
@@ -278,7 +300,9 @@ html[data-theme="light"] .plt-plh-page [class~="text-rose-200"],
 html[data-theme="light"] .plt-plh-page [class~="text-rose-300"] {
   color: #be123c;
 }
-/* Analisis Kinerja Light Mode Polish */
+/* ============================================================
+   Performance analysis
+   ============================================================ */
 html[data-theme="light"] .performance-analysis-page .perf-header-card,
 html[data-theme="light"] .performance-analysis-page .perf-panel,
 html[data-theme="light"] .performance-analysis-page .perf-kpi-card,
@@ -328,7 +352,9 @@ html[data-theme="light"] .performance-analysis-page [class~="text-rose-300"],
 html[data-theme="light"] .performance-analysis-page [class~="text-rose-400"] {
   color: #be123c;
 }
-/* Generate ND Undangan Pelantikan Light Mode Polish */
+/* ============================================================
+   Pelantikan agenda
+   ============================================================ */
 html[data-theme="light"] .pelantikan-page .pel-panel,
 html[data-theme="light"] .pelantikan-page .pel-card,
 html[data-theme="light"] .pelantikan-page .pel-modal {
@@ -368,7 +394,9 @@ html[data-theme="light"] .pelantikan-page [class~="text-rose-300"],
 html[data-theme="light"] .pelantikan-page [class~="text-rose-400"] {
   color: #be123c;
 }
-/* Login Page Light Mode Polish */
+/* ============================================================
+   Login page
+   ============================================================ */
 html[data-theme="light"] .login-page .login-shell {
   background-color: #ffffff;
   border-color: #cbd5e1;
@@ -404,7 +432,9 @@ html[data-theme="light"] .login-page [class~="text-rose-200"] {
   color: #be123c;
 }
 
-/* PBN Analytics Workbench Light Mode Polish */
+/* ============================================================
+   PBN analytics workbench
+   ============================================================ */
 html[data-theme="light"] .analytics-page {
   background-color: #f8fafc;
   color: #0f172a;
@@ -707,6 +737,9 @@ html[data-theme="light"] .chat-markdown td {
   border-color: #cbd5e1;
 }
 
+/* ============================================================
+   Scrollbars
+   ============================================================ */
 html[data-theme="light"] ::-webkit-scrollbar-track {
   background: #e2e8f0;
 }
@@ -715,6 +748,9 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb {
   background: #94a3b8;
 }
 
+/* ============================================================
+   Print styles
+   ============================================================ */
 @media print {
   @page {
     margin: 14mm;

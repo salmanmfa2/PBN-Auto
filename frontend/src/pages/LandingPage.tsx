@@ -16,6 +16,7 @@ type FeatureIconName =
   | 'performance'
   | 'folder'
   | 'transfer'
+  | 'fragment'
   | 'admin';
 
 type Feature = {
@@ -77,6 +78,15 @@ const features: Feature[] = [
     status: 'dev',
     icon: 'insight',
     path: '/insights',
+  },
+  {
+    key: 'fragment-petikan',
+    title: 'Fragment Petikan',
+    subtitle: 'Pecah PDF besar menjadi potongan 2 atau 3 halaman dengan nama file dari teks Sdr.',
+    group: 'Operasional',
+    status: 'experimental',
+    icon: 'fragment',
+    path: '/fragment-petikan',
   },
   {
     key: 'nd-undangan',
@@ -225,6 +235,13 @@ function FeatureIcon({ name, className }: { name: FeatureIconName; className?: s
       <>
         <path d="M7 7h13l-3-3M17 17H4l3 3" />
         <path d="M20 7l-3 3M4 17l3-3" />
+      </>
+    ),
+    fragment: (
+      <>
+        <path d="M6 2h9l4 4v16H6zM15 2v5h5" />
+        <path d="M9 11h7M9 15h7M9 19h4" />
+        <path d="M3 7v10" />
       </>
     ),
     admin: (

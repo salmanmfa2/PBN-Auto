@@ -14,6 +14,7 @@ DEFAULT_MENU_ACCESS_POLICIES: tuple[tuple[str, int, int], ...] = (
     ("insights-beta", 0, 0),
     ("analisis-kinerja", 0, 2),
     ("analisis-mutasi", 0, 0),
+    ("fragment-petikan", 0, 2),
     ("plt-plh", 0, 2),
     ("nd-undangan", 1, 1),
     ("progress-bahan", 0, 3),
@@ -23,6 +24,7 @@ DEFAULT_MENU_ACCESS_POLICIES: tuple[tuple[str, int, int], ...] = (
 MENU_KEYS = tuple(item[0] for item in DEFAULT_MENU_ACCESS_POLICIES)
 MINIMUM_EDIT_LEVELS = {
     "analisis-kinerja": 1,
+    "fragment-petikan": 1,
     "plt-plh": 1,
     "nd-undangan": 1,
 }
@@ -113,4 +115,3 @@ def update_menu_access_settings(
         raise
 
     return get_menu_access_settings(db)
-

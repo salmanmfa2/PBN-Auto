@@ -1,4 +1,4 @@
-import {
+﻿import {
   Fragment,
   useCallback,
   useEffect,
@@ -1900,7 +1900,6 @@ export default function PerformanceAnalysisPage() {
     setCorrectionSyncNotice(null);
     setCorrectionSyncPreview(null);
     setCorrectionConflictResolutions({});
-    setCorrectionConflictResolutions({});
     try {
       setCorrectionSyncPreview(
         await apiClient.checkPerformanceCorrections(
@@ -1991,101 +1990,179 @@ export default function PerformanceAnalysisPage() {
   ).length ?? 0;
 
   return (
-    <main className="performance-analysis-page min-h-screen bg-surface-900 px-4 pb-14 pt-24 text-slate-100 sm:px-6">
+    <main className="performance-analysis-page relative isolate min-h-screen bg-surface-950 px-4 pb-14 pt-24 text-slate-100 sm:px-6">
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_80%_40%_at_50%_-5%,rgba(14,165,233,0.12),transparent)]"
+        aria-hidden="true"
+      />
+
       <div className="mx-auto max-w-[105.8rem] space-y-6">
+        {/* Top Executive Header */}
         <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <Link to="/" className="text-sm text-slate-400 hover:text-slate-200">← Menu utama</Link>
-            <h1 className="mt-3 text-2xl font-semibold">Analisis Kinerja DJPb</h1>
-            <p className="mt-1 text-sm text-slate-400">
-              Analisis NPK dan penyesuaian kinerja berdasarkan data pegawai aktif.
-            </p>
-          </div>
-          {analysis?.dataset && (
-            <div className="card min-w-56 px-4 py-3 text-sm">
-              <p className="text-slate-400">Periode terpilih</p>
-              <p className="mt-1 font-semibold">{analysis.dataset.period} · {analysis.dataset.row_count} pegawai</p>
-              <p className="mt-1 text-xs text-slate-400">
-                Unggah oleh {analysis.dataset.uploaded_by_name} ({analysis.dataset.uploaded_by_user})
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                {formatUploadDate(analysis.dataset.uploaded_at)}
+          <div className="flex items-start gap-3.5">
+            <Link
+              to="/"
+              className="mt-1 inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900/90 px-3.5 py-2 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
+            >
+              <span aria-hidden="true">←</span>
+              <span>Menu utama</span>
+            </Link>
+
+            <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-sky-500/30 bg-sky-500/15 text-sky-300">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 19V5m0 14h16" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="m7 15 4-4 3 2 5-6" />
+              </svg>
+            </div>
+
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Analisis Kinerja DJPb</h1>
+              <p className="mt-1 text-sm text-slate-400">
+                Evaluasi distribusi NPK, penyesuaian koreksi triwulanan, dan capaian unit kerja aktif.
               </p>
             </div>
-          )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {(user?.auth_level ?? 0) >= 3 && (
+              <button
+                type="button"
+                onClick={() => setIsDataManagementOpen(true)}
+                aria-label="Kelola dataset dan sinkronkan koreksi"
+                title="Kelola dataset dan sinkronkan koreksi"
+                className="inline-flex items-center gap-2 rounded-2xl border border-sky-500/40 bg-sky-500/15 px-4 py-2.5 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+                  <path d="M5 16v4h14v-4" />
+                </svg>
+                <span>Kelola Dataset</span>
+              </button>
+            )}
+
+            {analysis?.dataset && (
+              <div className="perf-header-card min-w-64 rounded-2xl border border-slate-700/80 bg-slate-900/80 px-4 py-3 text-sm backdrop-blur-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Periode Aktif
+                  </span>
+                  <span className="rounded-full border border-sky-500/30 bg-sky-500/15 px-2.5 py-0.5 font-mono text-xs font-semibold text-sky-300">
+                    {analysis.dataset.period} · {numberFormatter.format(analysis.dataset.row_count)} peg
+                  </span>
+                </div>
+                <p className="mt-1.5 text-xs text-slate-300">
+                  Diunggah oleh <span className="font-medium">{analysis.dataset.uploaded_by_name}</span>{' '}
+                  <span className="text-slate-400">({analysis.dataset.uploaded_by_user})</span>
+                </p>
+                <p className="mt-0.5 font-mono text-[11px] text-slate-400">
+                  {formatUploadDate(analysis.dataset.uploaded_at)}
+                </p>
+              </div>
+            )}
+          </div>
         </header>
 
+        {/* Compact Module Telemetry Bar */}
         <section
-          className="card space-y-3 p-4"
+          className="perf-panel rounded-2xl border border-slate-800 bg-slate-900/65 px-4 py-3"
           aria-busy={moduleLoadDurationMs === null}
           aria-label="Proses pemuatan awal Analisis Kinerja"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span
+                className={`size-2 rounded-full ${
+                  moduleLoadDurationMs === null ? 'animate-pulse bg-sky-400' : 'bg-emerald-400'
+                }`}
+              />
+              <h2 className="text-xs font-semibold text-slate-200">
                 {moduleLoadDurationMs === null
                   ? 'Memuat modul Analisis Kinerja'
                   : 'Modul Analisis Kinerja siap'}
               </h2>
-              <p className="mt-1 text-xs text-slate-400">
+              <span className="font-mono text-xs text-slate-400">
+                ·{' '}
                 {moduleLoadDurationMs === null
-                  ? `Waktu berjalan ${formatLoadTime(moduleLoadElapsedMs)}`
-                  : `Pemuatan awal selesai dalam ${formatLoadTime(moduleLoadDurationMs)}`}
-              </p>
+                  ? `Berjalan ${formatLoadTime(moduleLoadElapsedMs)}`
+                  : `Selesai dalam ${formatLoadTime(moduleLoadDurationMs)}`}
+              </span>
             </div>
-            <span className="text-xs font-medium text-slate-400">
-              {completedModuleLoadTasks}/{MODULE_LOAD_TASK_LABELS.length} proses · {moduleLoadProgress}%
-            </span>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {MODULE_LOAD_TASK_LABELS.map(({ id, label }) => {
+                const task = moduleLoadTasks[id];
+                const badgeClass =
+                  task.status === 'failed'
+                    ? 'border-rose-500/35 bg-rose-500/10 text-rose-300'
+                    : task.status === 'complete'
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                      : 'border-slate-700 bg-slate-800/70 text-slate-400';
+                return (
+                  <span
+                    key={id}
+                    title={task.error ?? undefined}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium ${badgeClass}`}
+                  >
+                    <span>{label}</span>
+                    <span className="font-mono opacity-85">
+                      {task.status === 'loading'
+                        ? '…'
+                        : task.status === 'failed'
+                          ? `Gagal (${formatLoadTime(task.durationMs ?? 0)})`
+                          : formatLoadTime(task.durationMs ?? 0)}
+                    </span>
+                  </span>
+                );
+              })}
+
+              <span className="ml-1 font-mono text-xs font-semibold text-slate-400">
+                {completedModuleLoadTasks}/{MODULE_LOAD_TASK_LABELS.length} · {moduleLoadProgress}%
+              </span>
+            </div>
           </div>
+
           <div
             role="progressbar"
             aria-label="Kemajuan pemuatan awal"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={moduleLoadProgress}
-            className="h-2.5 overflow-hidden rounded-full bg-slate-800"
+            className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-800"
           >
             <div
-              className="h-full rounded-full bg-sky-400 transition-[width] duration-300"
+              className={`h-full rounded-full transition-[width] duration-300 ${
+                moduleLoadDurationMs === null ? 'bg-sky-400' : 'bg-emerald-400'
+              }`}
               style={{ width: `${moduleLoadProgress}%` }}
             />
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {MODULE_LOAD_TASK_LABELS.map(({ id, label }) => {
-              const task = moduleLoadTasks[id];
-              return (
-                <div key={id} className="min-w-0 rounded-lg bg-slate-900/50 px-3 py-2">
-                  <p className="truncate text-xs font-medium text-slate-300">{label}</p>
-                  <p className={`mt-1 text-xs ${
-                    task.status === 'failed' ? 'text-rose-300' : 'text-slate-400'
-                  }`}>
-                    {task.status === 'loading'
-                      ? 'Memuat…'
-                      : task.status === 'failed'
-                        ? `Gagal setelah ${formatLoadTime(task.durationMs ?? 0)}`
-                        : `Selesai setelah ${formatLoadTime(task.durationMs ?? 0)}`}
+
+          {Object.values(moduleLoadTasks).some((task) => task.error) && (
+            <div className="mt-2 space-y-1">
+              {MODULE_LOAD_TASK_LABELS.map(({ id, label }) =>
+                moduleLoadTasks[id].error ? (
+                  <p key={id} className="break-words text-xs text-rose-300">
+                    {label}: {moduleLoadTasks[id].error}
                   </p>
-                  {task.error && (
-                    <p className="mt-1 break-words text-xs text-rose-300">{task.error}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                ) : null,
+              )}
+            </div>
+          )}
         </section>
 
         {error && (
-          <div role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
+          <div role="alert" className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-4 text-sm text-rose-200">
             {error}
           </div>
         )}
 
+        {/* Quarter Period Switcher */}
         {Boolean(analysis?.available_periods.length) && (
-          <section className="card flex flex-wrap items-center justify-between gap-4 p-4">
+          <section className="perf-panel flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/75 p-4">
             <div>
-              <h2 className="font-semibold">Periode dataset</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Pilih triwulan untuk melihat analisis dan data pegawainya.
+              <h2 className="text-sm font-semibold">Periode Dataset</h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Pilih triwulan untuk meninjau analisis agregat dan rincian data pegawai.
               </p>
             </div>
             <div role="group" aria-label="Pilih periode dataset kinerja" className="flex flex-wrap gap-2">
@@ -2094,8 +2171,10 @@ export default function PerformanceAnalysisPage() {
                 return (
                   <div
                     key={item.period}
-                    className={`inline-flex overflow-hidden rounded-lg border ${
-                      active ? 'border-sky-400' : 'border-slate-700'
+                    className={`inline-flex overflow-hidden rounded-xl border transition ${
+                      active
+                        ? 'border-sky-400 bg-sky-500/15 shadow-xs'
+                        : 'border-slate-700 bg-slate-800/60 hover:border-slate-600'
                     }`}
                   >
                     <button
@@ -2112,14 +2191,12 @@ export default function PerformanceAnalysisPage() {
                         setCorrectionSyncNotice(null);
                         setCorrectionSyncPreview(null);
                       }}
-                      className={`px-4 py-2 text-sm font-medium transition disabled:cursor-wait disabled:opacity-60 ${
-                        active
-                          ? 'bg-sky-500/15 text-sky-200'
-                          : 'bg-slate-800/60 text-slate-300 hover:bg-slate-800'
+                      className={`px-3.5 py-2 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-60 sm:text-sm ${
+                        active ? 'text-sky-200' : 'text-slate-300 hover:text-white'
                       }`}
                     >
-                      {item.period}
-                      <span className="ml-2 text-xs text-slate-400">
+                      <span>{item.period}</span>
+                      <span className="ml-2 rounded-md bg-slate-950/35 px-1.5 py-0.5 font-mono text-[11px] font-normal text-slate-400">
                         {numberFormatter.format(item.row_count)}
                       </span>
                     </button>
@@ -2138,7 +2215,7 @@ export default function PerformanceAnalysisPage() {
                             ? 'Menghapus dataset…'
                             : `Hapus dataset ${item.period}`
                         }
-                        className="inline-flex w-9 items-center justify-center border-l border-slate-700/70 text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-wait disabled:opacity-50"
+                        className="inline-flex w-9 items-center justify-center border-l border-slate-700/70 text-slate-400 transition hover:bg-rose-500/15 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-wait disabled:opacity-50"
                       >
                         {datasetDeleteBusyPeriod === item.period ? (
                           <Spinner size="sm" />
@@ -2160,6 +2237,7 @@ export default function PerformanceAnalysisPage() {
             )}
           </section>
         )}
+
         {datasetDeleteError && (
           <p role="alert" className="text-sm text-rose-300">
             {datasetDeleteError}
@@ -2171,349 +2249,338 @@ export default function PerformanceAnalysisPage() {
           </p>
         )}
 
-        {(user?.auth_level ?? 0) >= 3 && (
-          <>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setIsDataManagementOpen(true)}
-                aria-label="Kelola dataset dan sinkronkan koreksi"
-                title="Kelola dataset dan sinkronkan koreksi"
-                className="inline-flex items-center gap-2 rounded-xl border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-sm font-medium text-sky-200 transition hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-5">
-                  <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
-                  <path d="M5 16v4h14v-4" />
-                </svg>
-                <span>Kelola dataset</span>
-              </button>
-            </div>
-            {isDataManagementOpen && (
-              <div
-                className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
-                onMouseDown={(event) => {
-                  if (event.target === event.currentTarget) setIsDataManagementOpen(false);
-                }}
-              >
-                <section
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="performance-data-management-title"
-                  className="my-auto w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
-                >
-                  <header className="mb-5 flex items-center justify-between gap-4">
-                    <div>
-                      <h2 id="performance-data-management-title" className="text-lg font-semibold">Kelola dataset kinerja</h2>
-                      <p className="mt-1 text-sm text-slate-400">Unggah dataset lengkap atau sinkronkan koreksi dari EPRIDE.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsDataManagementOpen(false)}
-                      aria-label="Tutup pengelolaan dataset"
-                      title="Tutup"
-                      className="size-9 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="mx-auto size-5">
-                        <path d="m6 6 12 12M18 6 6 18" />
-                      </svg>
-                    </button>
-                  </header>
-                  <div className="grid max-h-[75vh] gap-5 overflow-y-auto lg:grid-cols-2">
-            <div className="card p-5">
-              <h2 className="font-semibold">Unggah dataset lengkap</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Unggahan mengganti data hanya untuk periode yang dipilih; periode lain tetap tersimpan. Gunakan CSV contoh; NIP boleh 16 atau 18 digit.
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_140px]">
-                <label className="block text-sm text-slate-300">
-                  Periode
-                  <select
-                    value={quarter}
-                    disabled={fullBusy}
-                    onChange={(event) => {
-                      setQuarter(event.target.value);
-                      setFullValidation(null);
-                    }}
-                    className="input mt-1.5"
-                  >
-                    <option value="Q1">Triwulan I</option>
-                    <option value="Q2">Triwulan II</option>
-                    <option value="Q3">Triwulan III</option>
-                    <option value="Q4">Triwulan IV</option>
-                  </select>
-                </label>
-                <label className="block text-sm text-slate-300">
-                  Tahun
-                  <input
-                    type="number"
-                    min={2000}
-                    max={2100}
-                    value={year}
-                    disabled={fullBusy}
-                    onChange={(event) => {
-                      setYear(event.target.value);
-                      setFullValidation(null);
-                    }}
-                    className="input mt-1.5"
-                  />
-                </label>
-              </div>
-              <label className="mt-4 block text-sm text-slate-300">
-                Referensi pegawai untuk pencocokan NIP
-                <select
-                  value={fullEmployeeSource}
-                  disabled={fullBusy}
-                  onChange={(event) => {
-                    const selectedSource = PERFORMANCE_EMPLOYEE_SOURCES.find(
-                      (source) => source.value === event.target.value,
-                    )?.value;
-                    if (!selectedSource) return;
-                    setFullEmployeeSource(selectedSource);
-                    setFullValidation(null);
-                    setFullError(null);
-                    setFullNotice(null);
-                  }}
-                  className="input mt-1.5"
-                >
-                  {PERFORMANCE_EMPLOYEE_SOURCES.map((source) => (
-                    <option key={source.value} value={source.value}>{source.label}</option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs text-slate-400">
-                  Nama, eselon, dan unit dari sumber ini disimpan pada periode yang diunggah dan dipakai di tab analisis.
-                </span>
-              </label>
-              <label className="mt-4 block text-sm text-slate-300">
-                File CSV
-                <input
-                  ref={fullFileInput}
-                  type="file"
-                  accept=".csv,text/csv"
-                  disabled={fullBusy}
-                  onChange={(event) => {
-                    setFullFile(event.target.files?.[0] ?? null);
-                    setFullValidation(null);
-                    setFullError(null);
-                  }}
-                  className="mt-1.5 block w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-surface-700 file:px-3 file:py-2 file:text-sm file:text-slate-100"
-                />
-              </label>
-              {fullError && <p role="alert" className="mt-3 break-words text-sm text-rose-300">{fullError}</p>}
-              {fullNotice && <p role="status" className="mt-3 text-sm text-emerald-300">{fullNotice}</p>}
-              {fullValidation && (
-                <div className="mt-3 space-y-1 text-sm">
-                  <p role="status" className="text-emerald-300">
-                    Valid: {fullValidation.row_count} pegawai · {fullValidation.period} · {getPerformanceEmployeeSourceLabel(fullEmployeeSource)}
+        {/* Data Management Modal */}
+        {(user?.auth_level ?? 0) >= 3 && isDataManagementOpen && (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-xs"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setIsDataManagementOpen(false);
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="performance-data-management-title"
+              className="perf-modal my-auto w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-6"
+            >
+              <header className="mb-5 flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <h2 id="performance-data-management-title" className="text-lg font-bold">
+                    Kelola Dataset Kinerja
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Unggah dataset triwulan baru atau sinkronkan nilai koreksi dari database EPRIDE.
                   </p>
-                  {fullValidation.unidentified_count > 0 && (
-                    <p className="text-amber-300">
-                      {fullValidation.unidentified_count} NIP tidak cocok dengan sumber pegawai dan akan dikelompokkan sebagai Unidentified.
-                    </p>
-                  )}
-                  {fullValidation.normalized_penalty_count > 0 && (
-                    <p className="text-amber-300">
-                      {fullValidation.normalized_penalty_count} nilai Hukdis/Dampak positif akan disimpan sebagai potongan negatif.
-                    </p>
-                  )}
                 </div>
-              )}
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" onClick={() => void validateFullData()} disabled={!fullFile || fullBusy} className="btn-secondary">
-                  {fullBusy ? <Spinner size="sm" label="Memvalidasi…" /> : 'Validasi CSV'}
-                </button>
-                {fullValidation && (
-                  <button type="button" onClick={() => void replaceFullData()} disabled={fullBusy} className="btn-primary">
-                    Simpan Dataset Periode
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="card p-5">
-              <h2 className="font-semibold">Sinkronkan koreksi dari EPRIDE</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Dataset tujuan: {analysisPeriod ?? 'belum ada dataset'}. Pilih tahun dan TW sumber EPRIDE secara terpisah.
-                Daftar pilihan mengikuti form eligible yang sudah terkirim dan dimuat ulang saat panel ini dibuka.
-                Hanya form terkirim dengan `idUnit` 13 digit yang dipakai; nilai NULL menjadi 0. Nilai di luar -20 sampai 20 menghentikan sinkronisasi.
-                Konflik nilai nonzero harus dipilih manual. NIP dataset yang tidak ditemukan akan diberi koreksi 0; tanpa sinkronisasi, nilai CSV tetap digunakan.
-              </p>
-              {correctionSyncError && <p role="alert" className="mt-3 break-words text-sm text-rose-300">{correctionSyncError}</p>}
-              {correctionSyncNotice && <p role="status" className="mt-3 break-words text-sm text-emerald-300">{correctionSyncNotice}</p>}
-              {correctionSourcePeriodsError && (
-                <p role="alert" className="mt-3 break-words text-sm text-rose-300">
-                  Tidak dapat memuat periode sumber EPRIDE: {correctionSourcePeriodsError}
-                </p>
-              )}
-              {correctionSourcePeriodsLoading && (
-                <p role="status" className="mt-3 text-sm text-slate-400">
-                  <Spinner size="sm" label="Memuat periode sumber EPRIDE…" />
-                </p>
-              )}
-              {!correctionSourcePeriodsLoading
-                && !correctionSourcePeriodsError
-                && correctionSourcePeriods.length === 0 && (
-                  <p role="status" className="mt-3 text-sm text-amber-300">
-                    Belum ada form EPRIDE terkirim dengan idUnit 13 digit.
-                  </p>
-              )}
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm">
-                  <span className="text-slate-300">Tahun sumber EPRIDE</span>
-                  <select
-                    value={correctionSourceYear ?? ''}
-                    onChange={(event) => {
-                      const nextYear = Number(event.target.value);
-                      const nextPeriod = correctionSourcePeriods.find(
-                        (sourcePeriod) => sourcePeriod.year === nextYear,
-                      );
-                      setCorrectionSourceYear(nextPeriod?.year ?? null);
-                      setCorrectionSourceTw(
-                        nextPeriod?.available_tw[nextPeriod.available_tw.length - 1] ?? null,
-                      );
-                      setCorrectionSyncPreview(null);
-                      setCorrectionConflictResolutions({});
-                      setCorrectionSyncError(null);
-                      setCorrectionSyncNotice(null);
-                    }}
-                    disabled={correctionSourcePeriodsLoading || correctionSourcePeriods.length === 0}
-                    className="mt-1 block w-full rounded-lg border border-slate-600 bg-surface-800 px-3 py-2 text-slate-100 disabled:opacity-50"
-                  >
-                    <option value="">Pilih tahun</option>
-                    {correctionSourcePeriods.map((sourcePeriod) => (
-                      <option key={sourcePeriod.year} value={sourcePeriod.year}>
-                        {sourcePeriod.year}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-slate-300">TW sumber EPRIDE</span>
-                  <select
-                    value={correctionSourceTw ?? ''}
-                    onChange={(event) => {
-                      setCorrectionSourceTw(event.target.value ? Number(event.target.value) : null);
-                      setCorrectionSyncPreview(null);
-                      setCorrectionConflictResolutions({});
-                      setCorrectionSyncError(null);
-                      setCorrectionSyncNotice(null);
-                    }}
-                    disabled={correctionSourcePeriodsLoading || availableCorrectionSourceTws.length === 0}
-                    className="mt-1 block w-full rounded-lg border border-slate-600 bg-surface-800 px-3 py-2 text-slate-100 disabled:opacity-50"
-                  >
-                    <option value="">Pilih TW</option>
-                    {availableCorrectionSourceTws.map((tw) => (
-                      <option key={tw} value={tw}>TW{tw}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {correctionSyncPreview && (
-                <div role="status" className="mt-4 space-y-1 text-sm text-slate-300">
-                  <p className="font-medium text-emerald-300">
-                    Sumber EPRIDE {correctionSyncPreview.source_year} TW{correctionSyncPreview.source_tw} untuk dataset {correctionSyncPreview.period}: {numberFormatter.format(correctionSyncPreview.source_row_count)} baris eligible, {numberFormatter.format(correctionSyncPreview.source_nip_count)} NIP unik.
-                  </p>
-                  <p>
-                    Akan diperbarui: {numberFormatter.format(correctionSyncPreview.row_count)} pegawai; cocok {numberFormatter.format(correctionSyncPreview.matched_count)}; tidak ditemukan dan akan diberi koreksi 0: {numberFormatter.format(correctionSyncPreview.unmatched_count)}.
-                  </p>
-                  {correctionSyncPreview.duplicate_nip_group_count > 0 && (
-                    <p>{numberFormatter.format(correctionSyncPreview.duplicate_nip_group_count)} kelompok NIP duplikat akan diproses sesuai aturan koreksi.</p>
-                  )}
-                  {correctionSyncPreview.ignored_unit_row_count > 0 && (
-                    <p>{numberFormatter.format(correctionSyncPreview.ignored_unit_row_count)} baris dengan idUnit bukan 13 digit akan diabaikan.</p>
-                  )}
-                  {correctionSyncPreview.source_only_nip_count > 0 && (
-                    <p>{numberFormatter.format(correctionSyncPreview.source_only_nip_count)} NIP sumber tidak ada dalam dataset.</p>
-                  )}
-                  {correctionSyncPreview.conflicts.length > 0 && (
-                    <div className="mt-3 space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
-                      <p className="font-medium text-amber-200">
-                        Pilih satu nilai koreksi untuk setiap NIP yang memiliki konflik:
-                      </p>
-                      {correctionSyncPreview.conflicts.map((conflict) => (
-                        <fieldset key={conflict.nip} className="space-y-2">
-                          <legend className="text-slate-100">NIP {conflict.nip}</legend>
-                          {conflict.candidates.map((candidate) => (
-                            <label
-                              key={`${conflict.nip}-${candidate.value}`}
-                              className="flex cursor-pointer gap-2 rounded-md border border-slate-700 p-2"
-                            >
-                              <input
-                                type="radio"
-                                name={`epride-conflict-${conflict.nip}`}
-                                value={candidate.value}
-                                checked={correctionConflictResolutions[conflict.nip] === candidate.value}
-                                onChange={() => setCorrectionConflictResolutions((current) => ({
-                                  ...current,
-                                  [conflict.nip]: candidate.value,
-                                }))}
-                                aria-label={`Pilih koreksi ${candidate.value} untuk NIP ${conflict.nip}`}
-                                className="mt-1 accent-sky-400"
-                              />
-                              <span className="min-w-0">
-                                <span className="block font-medium text-slate-100">
-                                  Nilai koreksi {candidate.value}
-                                </span>
-                                {candidate.sources.map((source, sourceIndex) => (
-                                  <span
-                                    key={`${source.form_id}-${source.id_unit}-${sourceIndex}`}
-                                    className="block break-words text-xs text-slate-400"
-                                  >
-                                    Form {source.form_id || '—'} · idUnit {source.id_unit}
-                                    {source.submitted_at ? ` · ${source.submitted_at}` : ''}
-                                  </span>
-                                ))}
-                              </span>
-                            </label>
-                          ))}
-                        </fieldset>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => void checkPerformanceCorrections()}
-                  disabled={
-                    !analysisPeriod
-                    || correctionSourceYear === null
-                    || correctionSourceTw === null
-                    || correctionSyncAction !== null
-                    || correctionSourcePeriodsLoading
-                  }
-                  className="btn-secondary"
+                  onClick={() => setIsDataManagementOpen(false)}
+                  aria-label="Tutup pengelolaan dataset"
+                  title="Tutup"
+                  className="flex size-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                 >
-                  {correctionSyncAction === 'checking'
-                    ? <Spinner size="sm" label="Memeriksa…" />
-                    : analysisPeriod && correctionSourceYear !== null && correctionSourceTw !== null
-                      ? `Periksa EPRIDE ${correctionSourceYear} TW${correctionSourceTw}`
-                      : 'Periksa EPRIDE'}
+                  ×
                 </button>
-                {correctionPreviewMatchesSelection && (
-                  <button
-                    type="button"
-                    onClick={() => void syncPerformanceCorrections()}
-                    disabled={correctionSyncAction !== null || unresolvedCorrectionConflicts > 0}
-                    className="btn-primary"
-                  >
-                    {correctionSyncAction === 'syncing'
-                      ? <Spinner size="sm" label="Menyinkronkan…" />
-                      : unresolvedCorrectionConflicts > 0
-                        ? `Pilih ${unresolvedCorrectionConflicts} konflik`
-                        : `Sinkronkan ${analysisPeriod}`}
-                  </button>
-                )}
-              </div>
-            </div>
+              </header>
+
+              <div className="grid max-h-[75vh] gap-5 overflow-y-auto pr-1 lg:grid-cols-2">
+                <div className="perf-subcard rounded-2xl border border-slate-700/80 bg-slate-950/40 p-5">
+                  <h3 className="text-base font-semibold">Unggah Dataset Lengkap</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                    Unggahan mengganti data hanya untuk periode yang dipilih; periode lain tetap tersimpan. Gunakan CSV contoh; NIP boleh 16 atau 18 digit.
+                  </p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_140px]">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Periode
+                      <select
+                        value={quarter}
+                        disabled={fullBusy}
+                        onChange={(event) => {
+                          setQuarter(event.target.value);
+                          setFullValidation(null);
+                        }}
+                        className="input mt-1.5 normal-case"
+                      >
+                        <option value="Q1">Triwulan I</option>
+                        <option value="Q2">Triwulan II</option>
+                        <option value="Q3">Triwulan III</option>
+                        <option value="Q4">Triwulan IV</option>
+                      </select>
+                    </label>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Tahun
+                      <input
+                        type="number"
+                        min={2000}
+                        max={2100}
+                        value={year}
+                        disabled={fullBusy}
+                        onChange={(event) => {
+                          setYear(event.target.value);
+                          setFullValidation(null);
+                        }}
+                        className="input mt-1.5 normal-case"
+                      />
+                    </label>
                   </div>
-                </section>
+                  <label className="mt-4 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Referensi Pegawai untuk Pencocokan NIP
+                    <select
+                      value={fullEmployeeSource}
+                      disabled={fullBusy}
+                      onChange={(event) => {
+                        const selectedSource = PERFORMANCE_EMPLOYEE_SOURCES.find(
+                          (source) => source.value === event.target.value,
+                        )?.value;
+                        if (!selectedSource) return;
+                        setFullEmployeeSource(selectedSource);
+                        setFullValidation(null);
+                        setFullError(null);
+                        setFullNotice(null);
+                      }}
+                      className="input mt-1.5 normal-case"
+                    >
+                      {PERFORMANCE_EMPLOYEE_SOURCES.map((source) => (
+                        <option key={source.value} value={source.value}>{source.label}</option>
+                      ))}
+                    </select>
+                    <span className="mt-1 block text-[11px] font-normal normal-case text-slate-400">
+                      Nama, eselon, dan unit dari sumber ini disimpan pada periode yang diunggah dan dipakai di tab analisis.
+                    </span>
+                  </label>
+                  <label className="mt-4 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    File CSV
+                    <input
+                      ref={fullFileInput}
+                      type="file"
+                      accept=".csv,text/csv"
+                      disabled={fullBusy}
+                      onChange={(event) => {
+                        setFullFile(event.target.files?.[0] ?? null);
+                        setFullValidation(null);
+                        setFullError(null);
+                      }}
+                      className="mt-1.5 block w-full text-sm normal-case text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-xs file:font-medium file:text-slate-100 hover:file:bg-slate-700"
+                    />
+                  </label>
+                  {fullError && <p role="alert" className="mt-3 break-words text-sm text-rose-300">{fullError}</p>}
+                  {fullNotice && <p role="status" className="mt-3 text-sm text-emerald-300">{fullNotice}</p>}
+                  {fullValidation && (
+                    <div className="mt-3 space-y-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
+                      <p role="status" className="font-semibold text-emerald-300">
+                        Valid: {fullValidation.row_count} pegawai · {fullValidation.period} · {getPerformanceEmployeeSourceLabel(fullEmployeeSource)}
+                      </p>
+                      {fullValidation.unidentified_count > 0 && (
+                        <p className="text-amber-300">
+                          {fullValidation.unidentified_count} NIP tidak cocok dengan sumber pegawai dan akan dikelompokkan sebagai Unidentified.
+                        </p>
+                      )}
+                      {fullValidation.normalized_penalty_count > 0 && (
+                        <p className="text-amber-300">
+                          {fullValidation.normalized_penalty_count} nilai Hukdis/Dampak positif akan disimpan sebagai potongan negatif.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => void validateFullData()} disabled={!fullFile || fullBusy} className="btn-secondary">
+                      {fullBusy ? <Spinner size="sm" label="Memvalidasi…" /> : 'Validasi CSV'}
+                    </button>
+                    {fullValidation && (
+                      <button type="button" onClick={() => void replaceFullData()} disabled={fullBusy} className="btn-primary">
+                        Simpan Dataset Periode
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="perf-subcard rounded-2xl border border-slate-700/80 bg-slate-950/40 p-5">
+                  <h3 className="text-base font-semibold">Sinkronkan Koreksi dari EPRIDE</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                    Dataset tujuan: <span className="font-semibold text-slate-200">{analysisPeriod ?? 'belum ada dataset'}</span>. Pilih tahun dan TW sumber EPRIDE secara terpisah.
+                    Hanya form terkirim dengan <code className="font-mono text-sky-300">idUnit</code> 13 digit yang dipakai; nilai NULL menjadi 0. Nilai di luar -20 sampai 20 menghentikan sinkronisasi.
+                    Konflik nilai nonzero harus dipilih manual. NIP dataset yang tidak ditemukan akan diberi koreksi 0; tanpa sinkronisasi, nilai CSV tetap digunakan.
+                  </p>
+                  {correctionSyncError && <p role="alert" className="mt-3 break-words text-sm text-rose-300">{correctionSyncError}</p>}
+                  {correctionSyncNotice && <p role="status" className="mt-3 break-words text-sm text-emerald-300">{correctionSyncNotice}</p>}
+                  {correctionSourcePeriodsError && (
+                    <p role="alert" className="mt-3 break-words text-sm text-rose-300">
+                      Tidak dapat memuat periode sumber EPRIDE: {correctionSourcePeriodsError}
+                    </p>
+                  )}
+                  {correctionSourcePeriodsLoading && (
+                    <p role="status" className="mt-3 text-sm text-slate-400">
+                      <Spinner size="sm" label="Memuat periode sumber EPRIDE…" />
+                    </p>
+                  )}
+                  {!correctionSourcePeriodsLoading
+                    && !correctionSourcePeriodsError
+                    && correctionSourcePeriods.length === 0 && (
+                      <p role="status" className="mt-3 text-sm text-amber-300">
+                        Belum ada form EPRIDE terkirim dengan idUnit 13 digit.
+                      </p>
+                  )}
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Tahun Sumber EPRIDE
+                      <select
+                        value={correctionSourceYear ?? ''}
+                        onChange={(event) => {
+                          const nextYear = Number(event.target.value);
+                          const nextPeriod = correctionSourcePeriods.find(
+                            (sourcePeriod) => sourcePeriod.year === nextYear,
+                          );
+                          setCorrectionSourceYear(nextPeriod?.year ?? null);
+                          setCorrectionSourceTw(
+                            nextPeriod?.available_tw[nextPeriod.available_tw.length - 1] ?? null,
+                          );
+                          setCorrectionSyncPreview(null);
+                          setCorrectionConflictResolutions({});
+                          setCorrectionSyncError(null);
+                          setCorrectionSyncNotice(null);
+                        }}
+                        disabled={correctionSourcePeriodsLoading || correctionSourcePeriods.length === 0}
+                        className="input mt-1.5 normal-case disabled:opacity-50"
+                      >
+                        <option value="">Pilih tahun</option>
+                        {correctionSourcePeriods.map((sourcePeriod) => (
+                          <option key={sourcePeriod.year} value={sourcePeriod.year}>
+                            {sourcePeriod.year}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      TW Sumber EPRIDE
+                      <select
+                        value={correctionSourceTw ?? ''}
+                        onChange={(event) => {
+                          setCorrectionSourceTw(event.target.value ? Number(event.target.value) : null);
+                          setCorrectionSyncPreview(null);
+                          setCorrectionConflictResolutions({});
+                          setCorrectionSyncError(null);
+                          setCorrectionSyncNotice(null);
+                        }}
+                        disabled={correctionSourcePeriodsLoading || availableCorrectionSourceTws.length === 0}
+                        className="input mt-1.5 normal-case disabled:opacity-50"
+                      >
+                        <option value="">Pilih TW</option>
+                        {availableCorrectionSourceTws.map((tw) => (
+                          <option key={tw} value={tw}>TW{tw}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  {correctionSyncPreview && (
+                    <div role="status" className="mt-4 space-y-1.5 rounded-xl border border-slate-700 bg-slate-900/60 p-3.5 text-xs text-slate-300">
+                      <p className="font-semibold text-emerald-300">
+                        Sumber EPRIDE {correctionSyncPreview.source_year} TW{correctionSyncPreview.source_tw} untuk dataset {correctionSyncPreview.period}: {numberFormatter.format(correctionSyncPreview.source_row_count)} baris eligible, {numberFormatter.format(correctionSyncPreview.source_nip_count)} NIP unik.
+                      </p>
+                      <p>
+                        Akan diperbarui: {numberFormatter.format(correctionSyncPreview.row_count)} pegawai; cocok {numberFormatter.format(correctionSyncPreview.matched_count)}; tidak ditemukan dan akan diberi koreksi 0: {numberFormatter.format(correctionSyncPreview.unmatched_count)}.
+                      </p>
+                      {correctionSyncPreview.duplicate_nip_group_count > 0 && (
+                        <p>{numberFormatter.format(correctionSyncPreview.duplicate_nip_group_count)} kelompok NIP duplikat akan diproses sesuai aturan koreksi.</p>
+                      )}
+                      {correctionSyncPreview.ignored_unit_row_count > 0 && (
+                        <p>{numberFormatter.format(correctionSyncPreview.ignored_unit_row_count)} baris dengan idUnit bukan 13 digit akan diabaikan.</p>
+                      )}
+                      {correctionSyncPreview.source_only_nip_count > 0 && (
+                        <p>{numberFormatter.format(correctionSyncPreview.source_only_nip_count)} NIP sumber tidak ada dalam dataset.</p>
+                      )}
+                      {correctionSyncPreview.conflicts.length > 0 && (
+                        <div className="mt-3 space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+                          <p className="font-semibold text-amber-200">
+                            Pilih satu nilai koreksi untuk setiap NIP yang memiliki konflik:
+                          </p>
+                          {correctionSyncPreview.conflicts.map((conflict) => (
+                            <fieldset key={conflict.nip} className="space-y-2">
+                              <legend className="font-mono font-semibold text-slate-100">NIP {conflict.nip}</legend>
+                              {conflict.candidates.map((candidate) => (
+                                <label
+                                  key={`${conflict.nip}-${candidate.value}`}
+                                  className="flex cursor-pointer gap-2 rounded-lg border border-slate-700 bg-slate-950/40 p-2"
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`epride-conflict-${conflict.nip}`}
+                                    value={candidate.value}
+                                    checked={correctionConflictResolutions[conflict.nip] === candidate.value}
+                                    onChange={() => setCorrectionConflictResolutions((current) => ({
+                                      ...current,
+                                      [conflict.nip]: candidate.value,
+                                    }))}
+                                    aria-label={`Pilih koreksi ${candidate.value} untuk NIP ${conflict.nip}`}
+                                    className="mt-1 accent-sky-400"
+                                  />
+                                  <span className="min-w-0">
+                                    <span className="block font-medium text-slate-100">
+                                      Nilai koreksi {candidate.value}
+                                    </span>
+                                    {candidate.sources.map((source, sourceIndex) => (
+                                      <span
+                                        key={`${source.form_id}-${source.id_unit}-${sourceIndex}`}
+                                        className="block break-words text-[11px] text-slate-400"
+                                      >
+                                        Form {source.form_id || '—'} · idUnit {source.id_unit}
+                                        {source.submitted_at ? ` · ${source.submitted_at}` : ''}
+                                      </span>
+                                    ))}
+                                  </span>
+                                </label>
+                              ))}
+                            </fieldset>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void checkPerformanceCorrections()}
+                      disabled={
+                        !analysisPeriod
+                        || correctionSourceYear === null
+                        || correctionSourceTw === null
+                        || correctionSyncAction !== null
+                        || correctionSourcePeriodsLoading
+                      }
+                      className="btn-secondary"
+                    >
+                      {correctionSyncAction === 'checking'
+                        ? <Spinner size="sm" label="Memeriksa…" />
+                        : analysisPeriod && correctionSourceYear !== null && correctionSourceTw !== null
+                          ? `Periksa EPRIDE ${correctionSourceYear} TW${correctionSourceTw}`
+                          : 'Periksa EPRIDE'}
+                    </button>
+                    {correctionPreviewMatchesSelection && (
+                      <button
+                        type="button"
+                        onClick={() => void syncPerformanceCorrections()}
+                        disabled={correctionSyncAction !== null || unresolvedCorrectionConflicts > 0}
+                        className="btn-primary"
+                      >
+                        {correctionSyncAction === 'syncing'
+                          ? <Spinner size="sm" label="Menyinkronkan…" />
+                          : unresolvedCorrectionConflicts > 0
+                            ? `Pilih ${unresolvedCorrectionConflicts} konflik`
+                            : `Sinkronkan ${analysisPeriod}`}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-            )}
-          </>
+            </section>
+          </div>
         )}
 
-        <div role="tablist" aria-label="Analisis kinerja" className="flex flex-wrap gap-2 border-b border-slate-700">
+        {/* Navigation Tabs */}
+        <div
+          role="tablist"
+          aria-label="Analisis kinerja"
+          className="perf-panel inline-flex flex-wrap gap-1.5 rounded-2xl border border-slate-800 bg-slate-900/75 p-1.5"
+        >
           {PERFORMANCE_TABS.map((tab) => (
             <button
               key={tab.id}
@@ -2523,10 +2590,10 @@ export default function PerformanceAnalysisPage() {
               aria-selected={activeTab === tab.id}
               aria-controls={`performance-panel-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
-              className={`inline-flex items-center gap-2 rounded-t-lg border-b-2 px-4 py-3 text-sm font-medium transition ${
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 activeTab === tab.id
-                  ? 'border-sky-400 bg-sky-500/10 text-sky-200'
-                  : 'border-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                  ? 'bg-sky-500 text-white shadow-sm'
+                  : 'text-slate-400 hover:bg-slate-800/75 hover:text-slate-100'
               }`}
             >
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
@@ -2552,28 +2619,29 @@ export default function PerformanceAnalysisPage() {
           ))}
         </div>
 
+        {/* OVERVIEW TAB */}
         {activeTab === 'overview' && (
           <section
             id="performance-panel-overview"
             role="tabpanel"
             aria-labelledby="performance-tab-overview"
-            className="card p-5"
+            className="perf-panel rounded-2xl border border-slate-800 bg-slate-900/75 p-5 sm:p-6"
             aria-busy={isLoading}
           >
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-5">
               <div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="font-semibold">Overview Analisis Kinerja</h2>
+                  <h2 className="text-lg font-bold">Overview Analisis Kinerja</h2>
                   <button
                     type="button"
                     aria-pressed={isOverviewCompareMode}
                     aria-label="Bandingkan periode terpilih dengan periode sebelumnya"
                     onClick={() => setIsOverviewCompareMode((current) => !current)}
                     disabled={!analysis?.dataset}
-                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                       isOverviewCompareMode
-                        ? 'border-sky-400 bg-sky-500/15 text-sky-200'
-                        : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        ? 'border-sky-400 bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/40'
+                        : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
                     }`}
                   >
                     <svg
@@ -2589,23 +2657,24 @@ export default function PerformanceAnalysisPage() {
                       <path d="M12 3v18m-8 0h16M4 7h16M5 7l-3 8h6L5 7Zm14 0-3 8h6l-3-8Z" />
                       <path d="M4 15c.8 1 1.8 1.5 3 1.5S9.2 16 10 15m4 0c.8 1 1.8 1.5 3 1.5s2.2-.5 3-1.5" />
                     </svg>
-                    Compare
+                    <span>Compare QoQ</span>
                   </button>
                 </div>
-                <p className="mt-1 text-sm text-slate-400">
+                <p className="mt-1 text-xs text-slate-400">
                   {analysis?.dataset
-                    ? `Periode ${analysis.dataset.period} · ${numberFormatter.format(analysis.total_employees)} pegawai`
+                    ? `Periode ${analysis.dataset.period} · ${numberFormatter.format(analysis.total_employees)} pegawai aktif`
                     : 'Belum ada dataset kinerja yang diunggah.'}
                 </p>
               </div>
+
               {analysis?.dataset && (
                 <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                  <label className="block min-w-64 text-sm text-slate-300">
+                  <label className="block min-w-60 text-xs font-semibold uppercase tracking-wider text-slate-400">
                     Unit Eselon II
                     <select
                       value={selectedUnit}
                       onChange={(event) => setSelectedUnit(event.target.value)}
-                      className="input mt-1.5"
+                      className="input mt-1.5 normal-case"
                     >
                       <option value="">Semua Unit Eselon II</option>
                       {analysis.unit_eselon_ii_options.map((unit) => (
@@ -2613,12 +2682,12 @@ export default function PerformanceAnalysisPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="block min-w-64 text-sm text-slate-300">
+                  <label className="block min-w-60 text-xs font-semibold uppercase tracking-wider text-slate-400">
                     Unit Eselon III
                     <select
                       value={selectedEselonIII}
                       onChange={(event) => setSelectedEselonIII(event.target.value)}
-                      className="input mt-1.5"
+                      className="input mt-1.5 normal-case"
                     >
                       <option value="">Semua Unit Eselon III</option>
                       {analysis.unit_eselon_iii_options.map((unit) => (
@@ -2626,12 +2695,12 @@ export default function PerformanceAnalysisPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="block min-w-64 text-sm text-slate-300">
+                  <label className="block min-w-60 text-xs font-semibold uppercase tracking-wider text-slate-400">
                     Unit Eselon IV
                     <select
                       value={selectedEselonIV}
                       onChange={(event) => setSelectedEselonIV(event.target.value)}
-                      className="input mt-1.5"
+                      className="input mt-1.5 normal-case"
                     >
                       <option value="">Semua Unit Eselon IV</option>
                       {analysis.unit_eselon_iv_options.map((unit) => (
@@ -2639,12 +2708,12 @@ export default function PerformanceAnalysisPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="block min-w-64 text-sm text-slate-300">
+                  <label className="block min-w-52 text-xs font-semibold uppercase tracking-wider text-slate-400">
                     Eselon
                     <select
                       value={selectedEselon}
                       onChange={(event) => setSelectedEselon(event.target.value)}
-                      className="input mt-1.5"
+                      className="input mt-1.5 normal-case"
                       aria-label="Filter Eselon"
                     >
                       <option value="">Semua Eselon</option>
@@ -2661,22 +2730,26 @@ export default function PerformanceAnalysisPage() {
               <p role="alert" className="mt-4 break-words text-sm text-rose-300">{error}</p>
             )}
             {isOverviewCompareMode && analysis?.dataset && !analysis.previous_period && (
-              <p role="status" className="mt-4 rounded-lg border border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
+              <p role="status" className="perf-subpanel mt-4 rounded-xl border border-slate-700 bg-slate-950/50 p-3 text-xs text-slate-400">
                 Data untuk triwulan sebelumnya tidak tersedia. Nilai periode terpilih tetap ditampilkan.
               </p>
             )}
+
             {isLoading && !analysis ? (
-              <div className="flex justify-center p-10"><Spinner label="Memuat analisis…" /></div>
+              <div className="flex justify-center p-12"><Spinner label="Memuat analisis…" /></div>
             ) : !analysis?.dataset ? (
-              <p className="mt-6 rounded-lg border border-slate-700 bg-slate-900/50 p-5 text-sm text-slate-400">
+              <p className="perf-subpanel mt-6 rounded-xl border border-slate-700 bg-slate-950/50 p-6 text-center text-sm text-slate-400">
                 Super Admin perlu mengunggah dataset lengkap untuk memulai analisis.
               </p>
             ) : (
               <>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-                    <p className="text-sm text-slate-400">Jumlah Pegawai</p>
-                    <p className="mt-2 text-2xl font-semibold">{numberFormatter.format(analysis.overview.employee_count)}</p>
+                {/* 4 Executive KPI Cards */}
+                <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="perf-kpi-card rounded-2xl border border-slate-700/80 bg-slate-950/45 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Jumlah Pegawai</p>
+                    <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-slate-100">
+                      {numberFormatter.format(analysis.overview.employee_count)}
+                    </p>
                     {isOverviewCompareMode && analysis.previous_period && (
                       <OverviewComparisonDetail
                         comparison={analysis.overview_comparison.employee_count}
@@ -2685,14 +2758,24 @@ export default function PerformanceAnalysisPage() {
                       />
                     )}
                   </div>
-                  <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-                    <p className="text-sm text-slate-400">Jumlah Koreksi (bukan nol)</p>
-                    <p className="mt-2 text-2xl font-semibold">{numberFormatter.format(analysis.overview.correction.count)}</p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {numberFormatter.format(analysis.overview.correction.positive_count)} penambahan · {numberFormatter.format(analysis.overview.correction.negative_count)} pengurangan
+
+                  <div className="perf-kpi-card rounded-2xl border border-slate-700/80 bg-slate-950/45 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Jumlah Koreksi (≠ 0)</p>
+                    <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-sky-300">
+                      {numberFormatter.format(analysis.overview.correction.count)}
+                    </p>
+                    <p className="mt-1.5 text-xs text-slate-400">
+                      <span className="font-mono font-semibold text-emerald-400">
+                        +{numberFormatter.format(analysis.overview.correction.positive_count)}
+                      </span>{' '}
+                      penambahan ·{' '}
+                      <span className="font-mono font-semibold text-rose-400">
+                        −{numberFormatter.format(analysis.overview.correction.negative_count)}
+                      </span>{' '}
+                      pengurangan
                     </p>
                     {isOverviewCompareMode && analysis.previous_period && (
-                      <>
+                      <div className="mt-1 border-t border-slate-800/80 pt-1">
                         <OverviewComparisonDetail
                           comparison={analysis.overview_comparison['correction.count']}
                           previousPeriod={analysis.previous_period}
@@ -2711,12 +2794,15 @@ export default function PerformanceAnalysisPage() {
                           label="Pengurangan"
                           formatValue={formatCount}
                         />
-                      </>
+                      </div>
                     )}
                   </div>
-                  <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-                    <p className="text-sm text-slate-400">Rata-rata Nilai Koreksi</p>
-                    <p className="mt-2 text-2xl font-semibold">{formatNumber(analysis.overview.correction.average)}</p>
+
+                  <div className="perf-kpi-card rounded-2xl border border-slate-700/80 bg-slate-950/45 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Rata-rata Nilai Koreksi</p>
+                    <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-slate-100">
+                      {formatNumber(analysis.overview.correction.average)}
+                    </p>
                     {isOverviewCompareMode && analysis.previous_period && (
                       <OverviewComparisonDetail
                         comparison={analysis.overview_comparison['correction.average']}
@@ -2724,9 +2810,12 @@ export default function PerformanceAnalysisPage() {
                       />
                     )}
                   </div>
-                  <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-                    <p className="text-sm text-slate-400">Jumlah Penambahan</p>
-                    <p className="mt-2 text-2xl font-semibold">{numberFormatter.format(analysis.overview.correction.positive_count)}</p>
+
+                  <div className="perf-kpi-card rounded-2xl border border-slate-700/80 bg-slate-950/45 p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Jumlah Penambahan</p>
+                    <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-emerald-300">
+                      {numberFormatter.format(analysis.overview.correction.positive_count)}
+                    </p>
                     {isOverviewCompareMode && analysis.previous_period && (
                       <OverviewComparisonDetail
                         comparison={analysis.overview_comparison['correction.positive_count']}
@@ -2737,9 +2826,15 @@ export default function PerformanceAnalysisPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-5 xl:grid-cols-2">
-                  <div className="min-w-0 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-                    <h3 className="mb-3 text-sm font-semibold">Distribusi NPK</h3>
+                {/* Visualizations Grid */}
+                <div className="mt-6 grid gap-5 xl:grid-cols-2">
+                  <div className="perf-subcard min-w-0 rounded-2xl border border-slate-700/80 bg-slate-950/45 p-5">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold">Distribusi NPK</h3>
+                      <span className="rounded-md border border-slate-700 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-400">
+                        Histogram 80–120
+                      </span>
+                    </div>
                     <Histogram
                       bins={analysis.overview.histogram}
                       previousBins={
@@ -2751,8 +2846,14 @@ export default function PerformanceAnalysisPage() {
                       previousPeriod={analysis.previous_period}
                     />
                   </div>
-                  <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-                    <h3 className="mb-4 text-sm font-semibold">Distribusi Status NKP Akhir</h3>
+
+                  <div className="perf-subcard rounded-2xl border border-slate-700/80 bg-slate-950/45 p-5">
+                    <div className="mb-4 flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold">Distribusi Status NKP Akhir</h3>
+                      <span className="rounded-md border border-slate-700 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-400">
+                        Predikat Kinerja
+                      </span>
+                    </div>
                     <StatusDistribution
                       counts={analysis.overview.status_counts}
                       total={analysis.overview.employee_count}
@@ -2772,12 +2873,15 @@ export default function PerformanceAnalysisPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-                  <h3 className="text-sm font-semibold">Hukdis dan Dampak</h3>
-                  <dl className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
-                    <div>
-                      <dt className="text-slate-400">Hukuman Disiplin</dt>
-                      <dd className="mt-1 text-lg font-semibold">{numberFormatter.format(analysis.overview.hukdis_count)}</dd>
+                {/* Hukdis & Dampak Strip */}
+                <div className="perf-subcard mt-6 rounded-2xl border border-slate-700/80 bg-slate-950/45 p-5">
+                  <h3 className="text-sm font-bold">Hukdis dan Dampak Pengurangan</h3>
+                  <dl className="mt-3.5 grid gap-4 text-sm sm:grid-cols-3">
+                    <div className="perf-subpanel rounded-xl border border-slate-800 bg-slate-900/60 p-3.5">
+                      <dt className="text-xs font-medium text-slate-400">Hukuman Disiplin</dt>
+                      <dd className="mt-1 font-mono text-xl font-bold tabular-nums text-rose-300">
+                        {numberFormatter.format(analysis.overview.hukdis_count)}
+                      </dd>
                       {isOverviewCompareMode && analysis.previous_period && (
                         <OverviewComparisonDetail
                           comparison={analysis.overview_comparison.hukdis_count}
@@ -2786,9 +2890,11 @@ export default function PerformanceAnalysisPage() {
                         />
                       )}
                     </div>
-                    <div>
-                      <dt className="text-slate-400">Dampak Pelanggaran Disiplin</dt>
-                      <dd className="mt-1 text-lg font-semibold">{numberFormatter.format(analysis.overview.dampak_pelanggaran_count)}</dd>
+                    <div className="perf-subpanel rounded-xl border border-slate-800 bg-slate-900/60 p-3.5">
+                      <dt className="text-xs font-medium text-slate-400">Dampak Pelanggaran Disiplin</dt>
+                      <dd className="mt-1 font-mono text-xl font-bold tabular-nums text-amber-300">
+                        {numberFormatter.format(analysis.overview.dampak_pelanggaran_count)}
+                      </dd>
                       {isOverviewCompareMode && analysis.previous_period && (
                         <OverviewComparisonDetail
                           comparison={analysis.overview_comparison.dampak_pelanggaran_count}
@@ -2797,9 +2903,11 @@ export default function PerformanceAnalysisPage() {
                         />
                       )}
                     </div>
-                    <div>
-                      <dt className="text-slate-400">Dampak Perilaku</dt>
-                      <dd className="mt-1 text-lg font-semibold">{numberFormatter.format(analysis.overview.dampak_perilaku_count)}</dd>
+                    <div className="perf-subpanel rounded-xl border border-slate-800 bg-slate-900/60 p-3.5">
+                      <dt className="text-xs font-medium text-slate-400">Dampak Perilaku</dt>
+                      <dd className="mt-1 font-mono text-xl font-bold tabular-nums text-amber-300">
+                        {numberFormatter.format(analysis.overview.dampak_perilaku_count)}
+                      </dd>
                       {isOverviewCompareMode && analysis.previous_period && (
                         <OverviewComparisonDetail
                           comparison={analysis.overview_comparison.dampak_perilaku_count}
@@ -2811,12 +2919,13 @@ export default function PerformanceAnalysisPage() {
                   </dl>
                 </div>
 
-                <section className="mt-5 rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+                {/* Insight Text Section */}
+                <section className="perf-subcard mt-6 rounded-2xl border border-slate-700/80 bg-slate-950/45 p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-semibold">Insight Text</h3>
+                      <h3 className="text-sm font-bold">Catatan & Insight Pimpinan</h3>
                       {insight?.updated_at && (
-                        <p className="mt-1 text-xs text-slate-400">
+                        <p className="mt-0.5 text-xs text-slate-400">
                           Terakhir diperbarui {formatUploadDate(insight.updated_at)}
                           {insight.updated_by_name ? ` oleh ${insight.updated_by_name}` : ''}
                         </p>
@@ -2849,11 +2958,11 @@ export default function PerformanceAnalysisPage() {
                       disabled={insightLoading || insightBusy}
                       maxLength={10000}
                       rows={5}
-                      className="input mt-3 min-h-32 resize-y"
-                      placeholder="Tulis insight untuk seluruh pengguna…"
+                      className="input mt-3 min-h-32 resize-y leading-relaxed"
+                      placeholder="Tulis insight atau catatan evaluasi untuk seluruh pengguna…"
                     />
                   ) : (
-                    <p className="mt-3 min-h-16 whitespace-pre-wrap text-sm text-slate-300">
+                    <p className="perf-subpanel mt-3 min-h-16 whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-900/50 p-4 text-sm leading-relaxed text-slate-200">
                       {insightLoading ? 'Memuat insight…' : insight?.content || 'Belum ada insight.'}
                     </p>
                   )}
@@ -2863,23 +2972,24 @@ export default function PerformanceAnalysisPage() {
           </section>
         )}
 
+        {/* UNIT ESELON II TAB */}
         {activeTab === 'units' && (
           <section
             id="performance-panel-units"
             role="tabpanel"
             aria-labelledby="performance-tab-units"
-            className="card p-5"
+            className="perf-panel rounded-2xl border border-slate-800 bg-slate-900/75 p-5 sm:p-6"
             aria-busy={isLoading}
           >
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="font-semibold">Analisis berdasarkan Unit Eselon II</h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Buka Unit Eselon II dan III untuk melihat rincian hingga Unit Eselon IV. Statistik mengikuti periode terpilih.
+                <h2 className="text-lg font-bold">Analisis berdasarkan Unit Eselon II</h2>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Buka hierarki Unit Eselon II dan III untuk meninjau rincian hingga Unit Eselon IV.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="relative block w-56">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <label className="relative block w-60">
                   <span className="sr-only">Cari unit Eselon II, III, atau IV</span>
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400">
                     <circle cx="10.8" cy="10.8" r="6.8" />
@@ -2894,19 +3004,19 @@ export default function PerformanceAnalysisPage() {
                     }}
                     maxLength={100}
                     aria-label="Cari unit Eselon II, III, atau IV"
-                    placeholder="Cari nama unit"
+                    placeholder="Cari nama unit..."
                     className="input h-9 pl-9"
                   />
                 </label>
-                <div role="group" aria-label="Aksi analisis unit" className="performance-action-toolbar inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
+                <div role="group" aria-label="Aksi analisis unit" className="performance-action-toolbar inline-flex items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-950/60 p-1">
                   <button
                     type="button"
                     aria-pressed={isUnitLiteView}
                     onClick={() => setIsUnitLiteView((current) => !current)}
                     title={isUnitLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
-                    className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
                       isUnitLiteView
-                        ? 'bg-brand-500/20 text-brand-200'
+                        ? 'bg-sky-500/20 text-sky-200'
                         : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                     }`}
                   >
@@ -2927,9 +3037,9 @@ export default function PerformanceAnalysisPage() {
                     }}
                     aria-label="Atur ulang lebar kolom"
                     title="Atur ulang lebar kolom"
-                    className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                    className="size-8 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                   >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
                       <path d="M4 7v5h5M20 17v-5h-5" />
                       <path d="M5.5 12a7 7 0 0 1 12-4.9L20 9m-1.5 3a7 7 0 0 1-12 4.9L4 15" />
                     </svg>
@@ -2953,9 +3063,9 @@ export default function PerformanceAnalysisPage() {
                         ? 'Bandingkan seluruh dataset dengan periode sebelumnya'
                         : 'Periode sebelumnya tidak tersedia'
                     }
-                    className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="size-8 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
                       <path d="M4 19V5m0 14h16" />
                       <path d="M8 15v-3m4 3V7m4 8v-5" />
                     </svg>
@@ -2966,12 +3076,12 @@ export default function PerformanceAnalysisPage() {
                     disabled={!analysis?.dataset || unitExportBusy}
                     aria-label={unitExportBusy ? 'Mengekspor analisis unit' : 'Unduh analisis unit sebagai Excel'}
                     title={unitExportBusy ? 'Mengekspor analisis unit' : 'Unduh analisis unit sebagai Excel'}
-                    className="size-9 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="size-8 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {unitExportBusy ? (
                       <Spinner size="sm" />
                     ) : (
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
                         <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
                       </svg>
                     )}
@@ -2986,9 +3096,9 @@ export default function PerformanceAnalysisPage() {
               <p role="alert" className="mt-3 break-words text-sm text-rose-300">{unitColumnWidthError}</p>
             )}
             {isLoading && !analysis ? (
-              <div className="flex justify-center p-10"><Spinner label="Memuat analisis unit…" /></div>
+              <div className="flex justify-center p-12"><Spinner label="Memuat analisis unit…" /></div>
             ) : !analysis?.dataset ? (
-              <p className="mt-5 rounded-lg border border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-400">
+              <p className="perf-subpanel mt-5 rounded-xl border border-slate-700 bg-slate-950/50 p-5 text-sm text-slate-400">
                 Belum ada dataset kinerja yang diunggah.
               </p>
             ) : (
@@ -3011,7 +3121,7 @@ export default function PerformanceAnalysisPage() {
                       />
                     ))}
                   </colgroup>
-                  <thead className="sticky top-0 z-20 bg-slate-900 text-slate-300">
+                  <thead className="perf-table-head sticky top-0 z-20 bg-slate-900/95 text-[11px] uppercase tracking-wider text-slate-300 backdrop-blur-xs">
                     <tr>
                       {visibleUnitColumns.map((column) => (
                         <th
@@ -3023,7 +3133,7 @@ export default function PerformanceAnalysisPage() {
                                 : 'descending'
                               : 'none'
                           }
-                          className={`relative px-3 py-3 ${column.key === 'unit' ? 'sticky left-0 z-10 bg-slate-900' : ''}`}
+                          className={`relative px-3 py-3.5 ${column.key === 'unit' ? 'perf-table-head sticky left-0 z-10 bg-slate-900' : ''}`}
                         >
                           {isSortableUnitColumn(column) ? (
                             <button
@@ -3037,7 +3147,7 @@ export default function PerformanceAnalysisPage() {
                                     : 'asc',
                                 }));
                               }}
-                              className="inline-flex items-center gap-1 text-left hover:text-white"
+                              className="inline-flex items-center gap-1 text-left font-semibold hover:text-white"
                               aria-label={`Urutkan berdasarkan ${column.label}`}
                             >
                               {column.label}
@@ -3067,14 +3177,14 @@ export default function PerformanceAnalysisPage() {
                       const expanded = isUnitExpanded(unitKey);
                       return (
                         <Fragment key={unitKey}>
-                          <tr className="bg-slate-800/40 hover:bg-slate-800/70">
-                            <td className="sticky left-0 bg-surface-800 px-3 py-3 font-medium">
+                          <tr className="bg-slate-800/45 transition-colors hover:bg-slate-800/75">
+                            <td className="perf-sticky-cell-parent sticky left-0 bg-surface-800 px-3 py-3 font-semibold text-slate-100">
                               <button
                                 type="button"
                                 onClick={() => toggleUnitExpanded(unitKey)}
                                 aria-expanded={expanded}
                                 disabled={unit.children.length === 0}
-                                className="mr-2 text-sky-300 disabled:text-slate-600"
+                                className="mr-2 inline-flex size-5 items-center justify-center rounded border border-slate-700 bg-slate-900/70 font-mono text-xs text-sky-300 transition hover:border-sky-400 disabled:border-transparent disabled:bg-transparent disabled:text-slate-600"
                                 aria-label={`${expanded ? 'Tutup' : 'Buka'} rincian ${unit.label}`}
                               >
                                 {expanded ? '−' : '+'}
@@ -3098,14 +3208,14 @@ export default function PerformanceAnalysisPage() {
                             const childExpanded = isUnitExpanded(childKey);
                             return (
                               <Fragment key={childKey}>
-                                <tr className="hover:bg-slate-800/40">
-                                  <td className="sticky left-0 bg-surface-900 px-3 py-3 pl-10 text-slate-300">
+                                <tr className="transition-colors hover:bg-slate-800/45">
+                                  <td className="perf-sticky-cell sticky left-0 bg-surface-900 px-3 py-3 pl-9 text-slate-200">
                                     <button
                                       type="button"
                                       onClick={() => toggleUnitExpanded(childKey)}
                                       aria-expanded={childExpanded}
                                       disabled={child.children.length === 0}
-                                      className="mr-2 text-sky-300 disabled:text-slate-600"
+                                      className="mr-2 inline-flex size-5 items-center justify-center rounded border border-slate-700 bg-slate-900/70 font-mono text-xs text-sky-300 transition hover:border-sky-400 disabled:border-transparent disabled:bg-transparent disabled:text-slate-600"
                                       aria-label={`${childExpanded ? 'Tutup' : 'Buka'} rincian ${child.label}`}
                                     >
                                       {childExpanded ? '−' : '+'}
@@ -3127,9 +3237,10 @@ export default function PerformanceAnalysisPage() {
                                 {childExpanded && child.children.map((grandchild) => (
                                   <tr
                                     key={JSON.stringify([unit.label, child.label, grandchild.label])}
-                                    className="hover:bg-slate-800/40"
+                                    className="transition-colors hover:bg-slate-800/45"
                                   >
-                                    <td className="sticky left-0 bg-surface-900 px-3 py-3 pl-16 text-slate-400">
+                                    <td className="perf-sticky-cell sticky left-0 bg-surface-900 px-3 py-3 pl-16 text-slate-400">
+                                      <span className="mr-1.5 text-slate-600" aria-hidden="true">└</span>
                                       {grandchild.label}
                                     </td>
                                     <UnitMetricCells
@@ -3161,387 +3272,401 @@ export default function PerformanceAnalysisPage() {
           </section>
         )}
 
+        {/* DAFTAR PEGAWAI TAB */}
         {activeTab === 'employees' && (
-        <section
-          id="performance-panel-employees"
-          role="tabpanel"
-          aria-labelledby="performance-tab-employees"
-          className="card p-5"
-          aria-busy={isLoadingRecords}
-        >
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h2 className="font-semibold">Data hasil ekstraksi</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Menampilkan seluruh kolom sumber, hasil perhitungan, unit, eselon, dan status.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="block min-w-64 text-sm text-slate-300">
-                Cari nama atau NIP
-                <input
-                  type="search"
-                  value={recordSearch}
-                  onChange={(event) => {
-                    setRecordSearch(event.target.value);
-                    setRecordPage(1);
-                  }}
-                  maxLength={100}
-                  className="input mt-1.5"
-                  placeholder="Masukkan nama atau NIP"
-                />
-              </label>
-              <div role="group" aria-label="Aksi daftar pegawai" className="performance-action-toolbar inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1">
-                <button
-                  type="button"
-                  aria-pressed={isRecordsLiteView}
-                  onClick={toggleRecordsLiteView}
-                  title={isRecordsLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
-                  className={`inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
-                    isRecordsLiteView
-                      ? 'bg-brand-500/20 text-brand-200'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                  }`}
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                    <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                  <span>Lite View</span>
-                  <span className="sr-only">{isRecordsLiteView ? 'aktif' : 'nonaktif'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const defaults = { ...DEFAULT_RECORD_COLUMN_WIDTHS };
-                    recordColumnWidthsRef.current = defaults;
-                    setRecordColumnWidths(defaults);
-                    persistRecordColumnWidths(defaults);
-                  }}
-                  aria-label="Atur ulang lebar kolom daftar pegawai"
-                  title="Atur ulang lebar kolom daftar pegawai"
-                  className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                    <path d="M4 7v5h5M20 17v-5h-5" />
-                    <path d="M5.5 12a7 7 0 0 1 12-4.9L20 9m-1.5 3a7 7 0 0 1-12 4.9L4 15" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  onClick={clearRecordFilters}
-                  disabled={
-                    !recordSearch
-                    && !Object.values(recordFilterDrafts).some((value) => value?.trim())
-                  }
-                  aria-label="Bersihkan pencarian dan filter"
-                  title="Bersihkan pencarian dan filter"
-                  className="size-9 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                    <path d="M4 6h16M7 6l1 14h8l1-14M9 6V4h6v2" />
-                    <path d="m10 10 4 4m0-4-4 4" />
-                  </svg>
-                </button>
-                {canEditPerformance && (
-                  <button
-                    type="button"
-                    onClick={openBatchCorrection}
-                    disabled={!recordData?.period || batchCorrectionBusy}
-                    aria-label="Batch input koreksi"
-                    title="Batch input koreksi dari file Excel"
-                    className="inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-emerald-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                      <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
-                      <path d="M5 16v4h14v-4" />
-                    </svg>
-                    <span>Batch input koreksi</span>
-                  </button>
-                )}
-                {canEditPerformance && (
-                  <button
-                    type="button"
-                    aria-pressed={isCorrectionLogOpen}
-                    onClick={openCorrectionLog}
-                    aria-label="Buka Koreksi Edit Log"
-                    title="Buka Koreksi Edit Log"
-                    className="inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-sky-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
-                      <circle cx="12" cy="12" r="9" />
-                      <path d="M12 7v5l3 2M4 5l2-2" />
-                    </svg>
-                    <span>Koreksi Edit Log</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void exportRecords()}
-                  disabled={!recordData?.period || recordsExportBusy}
-                  aria-label={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
-                  title={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
-                  className="size-9 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {recordsExportBusy ? (
-                    <Spinner size="sm" />
-                  ) : (
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-5">
-                      <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-          {recordsExportError && (
-            <p role="alert" className="mt-3 break-words text-sm text-rose-300">{recordsExportError}</p>
-          )}
-          {recordColumnWidthError && (
-            <p role="alert" className="mt-3 break-words text-sm text-amber-300">
-              {recordColumnWidthError}
-            </p>
-          )}
-          {performanceCacheWarning && (
-            <p role="alert" className="mt-3 break-words text-sm text-amber-300">
-              Cache browser: {performanceCacheWarning}
-            </p>
-          )}
-          {recordsFromCache && (
-            <p role="status" className="mt-3 text-xs text-slate-400">
-              Menampilkan data tersimpan di browser sambil memeriksa pembaruan dari server.
-            </p>
-          )}
-          {correctionEditNotice && (
-            <p role="status" className="mt-3 break-words text-sm text-emerald-300">
-              {correctionEditNotice}
-            </p>
-          )}
-          {batchCorrectionNotice && (
-            <p role="status" className="mt-3 break-words text-sm text-emerald-300">
-              {batchCorrectionNotice}
-            </p>
-          )}
-          {recordError && (
-            <p role="alert" className="mt-4 break-words text-sm text-rose-300">{recordError}</p>
-          )}
-          {isLoadingRecords && !recordData ? (
-            <div className="flex justify-center p-8"><Spinner label="Memuat tabel data…" /></div>
-          ) : !recordData?.period ? (
-            <p className="mt-5 rounded-lg border border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-400">
-              Belum ada data yang cocok untuk ditampilkan.
-            </p>
-          ) : (
-            <>
-              <div
-                ref={setRecordTableElement}
-                role="region"
-                aria-label="Tabel daftar pegawai"
-                tabIndex={0}
-                className="mt-4 max-h-[70vh] overflow-auto overscroll-contain rounded-xl border border-slate-700"
-              >
-                <table
-                  style={{
-                    width: visibleRecordTableWidth,
-                    minWidth: visibleRecordTableWidth,
-                    tableLayout: 'fixed',
-                  }}
-                  className="text-left text-xs"
-                >
-                  <colgroup>
-                    {visibleRecordColumns.map((column) => (
-                      <col
-                        key={column.key}
-                        style={{ width: recordColumnWidths[column.key] }}
-                      />
-                    ))}
-                  </colgroup>
-                  <thead className="sticky top-0 z-20 bg-slate-900 text-slate-300">
-                    <tr>
-                      {visibleRecordColumns.map((column) => {
-                        const active = recordSort.key === column.key;
-                        const numeric = NUMERIC_RECORD_COLUMNS.has(column.key);
-                        const directionLabel = numeric
-                          ? recordSort.direction === 'asc' ? 'kecil ke besar' : 'besar ke kecil'
-                          : recordSort.direction === 'asc' ? 'A ke Z' : 'Z ke A';
-                        return (
-                        <th
-                          key={column.key}
-                          aria-sort={active
-                            ? recordSort.direction === 'asc' ? 'ascending' : 'descending'
-                            : 'none'}
-                          className="relative whitespace-nowrap px-3 py-3 font-semibold"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => sortRecordsBy(column.key)}
-                            title={`${column.label}: ${active ? directionLabel : numeric ? 'kecil ke besar' : 'A ke Z'}`}
-                            className="text-left hover:text-sky-300"
-                          >
-                            {column.label}
-                            <span className="ml-1 text-sky-300">
-                              {active ? recordSort.direction === 'asc' ? '↑' : '↓' : '↕'}
-                            </span>
-                          </button>
-                          {recordColumnResizeHandle(column)}
-                        </th>
-                        );
-                      })}
-                    </tr>
-                    <tr className="border-t border-slate-700">
-                      {visibleRecordColumns.map((column) => {
-                        const options = recordData.filter_options[column.key];
-                        const range = recordData.numeric_ranges[column.key];
-                        if (options) {
-                          return (
-                            <th key={column.key} className="px-2 py-2">
-                              <select
-                                value={recordFilterDrafts[column.key] ?? ''}
-                                onChange={(event) => updateRecordFilter(column.key, event.target.value)}
-                                className="input w-40 px-2 py-1 text-xs"
-                                aria-label={`Filter ${column.label}`}
-                              >
-                                <option value="">Semua</option>
-                                {options.map((option) => (
-                                  <option key={option} value={option}>{option}</option>
-                                ))}
-                              </select>
-                            </th>
-                          );
-                        }
-                        if (
-                          range
-                          && range[0] !== null
-                          && range[1] !== null
-                          && range[0] < range[1]
-                        ) {
-                          const [minimum, maximum] = range;
-                          const minKey = `${column.key}__min`;
-                          const maxKey = `${column.key}__max`;
-                          const selectedMinimum = Number(recordFilterDrafts[minKey] ?? minimum);
-                          const selectedMaximum = Number(recordFilterDrafts[maxKey] ?? maximum);
-                          return (
-                            <th key={column.key} className="min-w-40 px-2 py-2">
-                              <div className="space-y-1">
-                                <label className="flex items-center gap-1 text-[10px] text-slate-400">
-                                  Min
-                                  <input
-                                    type="range"
-                                    min={minimum}
-                                    max={maximum}
-                                    step="0.01"
-                                    value={selectedMinimum}
-                                    aria-label={`Nilai minimum ${column.label}`}
-                                    onChange={(event) => updateNumericRangeFilter(
-                                      column.key,
-                                      'min',
-                                      event.target.value,
-                                      range,
-                                    )}
-                                    className="w-20 accent-sky-400"
-                                  />
-                                  <span>{formatNumber(selectedMinimum)}</span>
-                                </label>
-                                <label className="flex items-center gap-1 text-[10px] text-slate-400">
-                                  Maks
-                                  <input
-                                    type="range"
-                                    min={minimum}
-                                    max={maximum}
-                                    step="0.01"
-                                    value={selectedMaximum}
-                                    aria-label={`Nilai maksimum ${column.label}`}
-                                    onChange={(event) => updateNumericRangeFilter(
-                                      column.key,
-                                      'max',
-                                      event.target.value,
-                                      range,
-                                    )}
-                                    className="w-20 accent-sky-400"
-                                  />
-                                  <span>{formatNumber(selectedMaximum)}</span>
-                                </label>
-                              </div>
-                            </th>
-                          );
-                        }
-                        return <th key={column.key} className="px-2 py-2" />;
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {recordData.records.length ? (
-                      recordData.records.map((record) => (
-                        <tr key={record.nip} className="hover:bg-slate-800/50">
-                          {visibleRecordColumns.map((column) => (
-                            <td key={column.key} className="overflow-hidden px-3 py-2.5 text-slate-300">
-                              {column.key === 'nilai_koreksi' && canEditPerformance ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (recordData.period) {
-                                      openCorrectionEditor(record, recordData.period);
-                                    }
-                                  }}
-                                  aria-label={`Edit Nilai Koreksi ${record.nama}, NIP ${record.nip}`}
-                                  title="Klik untuk mengedit Nilai Koreksi"
-                                  className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-left text-sky-200 transition hover:bg-sky-500/10 hover:text-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                                >
-                                  <span>{formatRecordValue(record[column.key])}</span>
-                                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
-                                    <path d="m14 5 5 5M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" />
-                                  </svg>
-                                </button>
-                              ) : formatRecordValue(record[column.key])}
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={visibleRecordColumns.length} className="px-4 py-8 text-center text-slate-400">
-                          Tidak ada pegawai yang cocok dengan filter.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
-                <p>
-                  {recordData.total
-                    ? `Menampilkan ${(recordData.page - 1) * recordData.page_size + 1}–${Math.min(recordData.page * recordData.page_size, recordData.total)} dari ${recordData.total}`
-                    : '0 pegawai cocok'}
-                  {recordData.total ? ' pegawai' : ''}
-                  {recordData.period ? ` · ${recordData.period}` : ''}
+          <section
+            id="performance-panel-employees"
+            role="tabpanel"
+            aria-labelledby="performance-tab-employees"
+            className="perf-panel rounded-2xl border border-slate-800 bg-slate-900/75 p-5 sm:p-6"
+            aria-busy={isLoadingRecords}
+          >
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">Data Hasil Ekstraksi Pegawai</h2>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Menampilkan seluruh kolom sumber, hasil perhitungan NPK, koreksi, unit, eselon, dan status.
                 </p>
-                <div className="flex gap-2">
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="block min-w-64 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Cari Nama atau NIP
+                  <input
+                    type="search"
+                    value={recordSearch}
+                    onChange={(event) => {
+                      setRecordSearch(event.target.value);
+                      setRecordPage(1);
+                    }}
+                    maxLength={100}
+                    className="input mt-1.5 normal-case"
+                    placeholder="Masukkan nama atau NIP..."
+                  />
+                </label>
+                <div role="group" aria-label="Aksi daftar pegawai" className="performance-action-toolbar inline-flex items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-950/60 p-1">
                   <button
                     type="button"
-                    onClick={() => setRecordPage((page) => Math.max(1, page - 1))}
-                    disabled={recordData.page <= 1 || isLoadingRecords}
-                    className="btn-secondary px-3 py-1.5 disabled:opacity-50"
+                    aria-pressed={isRecordsLiteView}
+                    onClick={toggleRecordsLiteView}
+                    title={isRecordsLiteView ? 'Matikan Lite View' : 'Aktifkan Lite View'}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                      isRecordsLiteView
+                        ? 'bg-sky-500/20 text-sky-200'
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    }`}
                   >
-                    Sebelumnya
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                      <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    <span>Lite View</span>
+                    <span className="sr-only">{isRecordsLiteView ? 'aktif' : 'nonaktif'}</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRecordPage((page) => page + 1)}
-                    disabled={recordData.page * recordData.page_size >= recordData.total || isLoadingRecords}
-                    className="btn-secondary px-3 py-1.5 disabled:opacity-50"
+                    onClick={() => {
+                      const defaults = { ...DEFAULT_RECORD_COLUMN_WIDTHS };
+                      recordColumnWidthsRef.current = defaults;
+                      setRecordColumnWidths(defaults);
+                      persistRecordColumnWidths(defaults);
+                    }}
+                    aria-label="Atur ulang lebar kolom daftar pegawai"
+                    title="Atur ulang lebar kolom daftar pegawai"
+                    className="size-8 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                   >
-                    Berikutnya
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
+                      <path d="M4 7v5h5M20 17v-5h-5" />
+                      <path d="M5.5 12a7 7 0 0 1 12-4.9L20 9m-1.5 3a7 7 0 0 1-12 4.9L4 15" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearRecordFilters}
+                    disabled={
+                      !recordSearch
+                      && !Object.values(recordFilterDrafts).some((value) => value?.trim())
+                    }
+                    aria-label="Bersihkan pencarian dan filter"
+                    title="Bersihkan pencarian dan filter"
+                    className="size-8 rounded-lg text-slate-400 transition hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
+                      <path d="M4 6h16M7 6l1 14h8l1-14M9 6V4h6v2" />
+                      <path d="m10 10 4 4m0-4-4 4" />
+                    </svg>
+                  </button>
+                  {canEditPerformance && (
+                    <button
+                      type="button"
+                      onClick={openBatchCorrection}
+                      disabled={!recordData?.period || batchCorrectionBusy}
+                      aria-label="Batch input koreksi"
+                      title="Batch input koreksi dari file Excel"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-emerald-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                        <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+                        <path d="M5 16v4h14v-4" />
+                      </svg>
+                      <span>Batch input koreksi</span>
+                    </button>
+                  )}
+                  {canEditPerformance && (
+                    <button
+                      type="button"
+                      aria-pressed={isCorrectionLogOpen}
+                      onClick={openCorrectionLog}
+                      aria-label="Buka Koreksi Edit Log"
+                      title="Buka Koreksi Edit Log"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-sky-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M12 7v5l3 2M4 5l2-2" />
+                      </svg>
+                      <span>Koreksi Edit Log</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void exportRecords()}
+                    disabled={!recordData?.period || recordsExportBusy}
+                    aria-label={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
+                    title={recordsExportBusy ? 'Mengekspor daftar pegawai' : 'Unduh daftar pegawai sebagai Excel'}
+                    className="size-8 rounded-lg text-emerald-300 transition hover:bg-slate-800 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {recordsExportBusy ? (
+                      <Spinner size="sm" />
+                    ) : (
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mx-auto size-4">
+                        <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13l4 4m0-4-4 4" />
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>
-            </>
-          )}
-        </section>
+            </div>
+
+            {recordsExportError && (
+              <p role="alert" className="mt-3 break-words text-sm text-rose-300">{recordsExportError}</p>
+            )}
+            {recordColumnWidthError && (
+              <p role="alert" className="mt-3 break-words text-sm text-amber-300">
+                {recordColumnWidthError}
+              </p>
+            )}
+            {performanceCacheWarning && (
+              <p role="alert" className="mt-3 break-words text-sm text-amber-300">
+                Cache browser: {performanceCacheWarning}
+              </p>
+            )}
+            {recordsFromCache && (
+              <p role="status" className="mt-3 text-xs text-slate-400">
+                Menampilkan data tersimpan di browser sambil memeriksa pembaruan dari server.
+              </p>
+            )}
+            {correctionEditNotice && (
+              <p role="status" className="mt-3 break-words text-sm text-emerald-300">
+                {correctionEditNotice}
+              </p>
+            )}
+            {batchCorrectionNotice && (
+              <p role="status" className="mt-3 break-words text-sm text-emerald-300">
+                {batchCorrectionNotice}
+              </p>
+            )}
+            {recordError && (
+              <p role="alert" className="mt-4 break-words text-sm text-rose-300">{recordError}</p>
+            )}
+
+            {isLoadingRecords && !recordData ? (
+              <div className="flex justify-center p-10"><Spinner label="Memuat tabel data…" /></div>
+            ) : !recordData?.period ? (
+              <p className="perf-subpanel mt-5 rounded-xl border border-slate-700 bg-slate-950/50 p-5 text-sm text-slate-400">
+                Belum ada data yang cocok untuk ditampilkan.
+              </p>
+            ) : (
+              <>
+                <div
+                  ref={setRecordTableElement}
+                  role="region"
+                  aria-label="Tabel daftar pegawai"
+                  tabIndex={0}
+                  className="mt-4 max-h-[70vh] overflow-auto overscroll-contain rounded-xl border border-slate-700"
+                >
+                  <table
+                    style={{
+                      width: visibleRecordTableWidth,
+                      minWidth: visibleRecordTableWidth,
+                      tableLayout: 'fixed',
+                    }}
+                    className="text-left text-xs"
+                  >
+                    <colgroup>
+                      {visibleRecordColumns.map((column) => (
+                        <col
+                          key={column.key}
+                          style={{ width: recordColumnWidths[column.key] }}
+                        />
+                      ))}
+                    </colgroup>
+                    <thead className="perf-table-head sticky top-0 z-20 bg-slate-900/95 text-[11px] uppercase tracking-wider text-slate-300 backdrop-blur-xs">
+                      <tr>
+                        {visibleRecordColumns.map((column) => {
+                          const active = recordSort.key === column.key;
+                          const numeric = NUMERIC_RECORD_COLUMNS.has(column.key);
+                          const directionLabel = numeric
+                            ? recordSort.direction === 'asc' ? 'kecil ke besar' : 'besar ke kecil'
+                            : recordSort.direction === 'asc' ? 'A ke Z' : 'Z ke A';
+                          return (
+                            <th
+                              key={column.key}
+                              aria-sort={active
+                                ? recordSort.direction === 'asc' ? 'ascending' : 'descending'
+                                : 'none'}
+                              className="relative whitespace-nowrap px-3 py-3.5 font-semibold"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => sortRecordsBy(column.key)}
+                                title={`${column.label}: ${active ? directionLabel : numeric ? 'kecil ke besar' : 'A ke Z'}`}
+                                className="text-left hover:text-sky-300"
+                              >
+                                {column.label}
+                                <span className="ml-1 text-sky-300">
+                                  {active ? recordSort.direction === 'asc' ? '↑' : '↓' : '↕'}
+                                </span>
+                              </button>
+                              {recordColumnResizeHandle(column)}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                      <tr className="border-t border-slate-700/80">
+                        {visibleRecordColumns.map((column) => {
+                          const options = recordData.filter_options[column.key];
+                          const range = recordData.numeric_ranges[column.key];
+                          if (options) {
+                            return (
+                              <th key={column.key} className="px-2 py-2">
+                                <select
+                                  value={recordFilterDrafts[column.key] ?? ''}
+                                  onChange={(event) => updateRecordFilter(column.key, event.target.value)}
+                                  className="input w-40 px-2 py-1 text-xs font-normal normal-case"
+                                  aria-label={`Filter ${column.label}`}
+                                >
+                                  <option value="">Semua</option>
+                                  {options.map((option) => (
+                                    <option key={option} value={option}>{option}</option>
+                                  ))}
+                                </select>
+                              </th>
+                            );
+                          }
+                          if (
+                            range
+                            && range[0] !== null
+                            && range[1] !== null
+                            && range[0] < range[1]
+                          ) {
+                            const [minimum, maximum] = range;
+                            const minKey = `${column.key}__min`;
+                            const maxKey = `${column.key}__max`;
+                            const selectedMinimum = Number(recordFilterDrafts[minKey] ?? minimum);
+                            const selectedMaximum = Number(recordFilterDrafts[maxKey] ?? maximum);
+                            return (
+                              <th key={column.key} className="min-w-40 px-2 py-2 font-normal normal-case">
+                                <div className="space-y-1">
+                                  <label className="flex items-center gap-1 text-[10px] text-slate-400">
+                                    Min
+                                    <input
+                                      type="range"
+                                      min={minimum}
+                                      max={maximum}
+                                      step="0.01"
+                                      value={selectedMinimum}
+                                      aria-label={`Nilai minimum ${column.label}`}
+                                      onChange={(event) => updateNumericRangeFilter(
+                                        column.key,
+                                        'min',
+                                        event.target.value,
+                                        range,
+                                      )}
+                                      className="w-20 accent-sky-400"
+                                    />
+                                    <span className="font-mono">{formatNumber(selectedMinimum)}</span>
+                                  </label>
+                                  <label className="flex items-center gap-1 text-[10px] text-slate-400">
+                                    Maks
+                                    <input
+                                      type="range"
+                                      min={minimum}
+                                      max={maximum}
+                                      step="0.01"
+                                      value={selectedMaximum}
+                                      aria-label={`Nilai maksimum ${column.label}`}
+                                      onChange={(event) => updateNumericRangeFilter(
+                                        column.key,
+                                        'max',
+                                        event.target.value,
+                                        range,
+                                      )}
+                                      className="w-20 accent-sky-400"
+                                    />
+                                    <span className="font-mono">{formatNumber(selectedMaximum)}</span>
+                                  </label>
+                                </div>
+                              </th>
+                            );
+                          }
+                          return <th key={column.key} className="px-2 py-2" />;
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {recordData.records.length ? (
+                        recordData.records.map((record) => (
+                          <tr key={record.nip} className="transition-colors hover:bg-slate-800/45">
+                            {visibleRecordColumns.map((column) => {
+                              const isNumeric = NUMERIC_RECORD_COLUMNS.has(column.key);
+                              return (
+                                <td
+                                  key={column.key}
+                                  className={`overflow-hidden px-3 py-2.5 text-slate-300 ${
+                                    isNumeric || column.key === 'nip' ? 'font-mono tabular-nums' : ''
+                                  } ${column.key === 'nama' ? 'font-medium text-slate-100' : ''}`}
+                                >
+                                  {column.key === 'nilai_koreksi' && canEditPerformance ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (recordData.period) {
+                                          openCorrectionEditor(record, recordData.period);
+                                        }
+                                      }}
+                                      aria-label={`Edit Nilai Koreksi ${record.nama}, NIP ${record.nip}`}
+                                      title="Klik untuk mengedit Nilai Koreksi"
+                                      className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/25 bg-sky-500/10 px-2 py-0.5 text-left font-mono font-semibold text-sky-200 transition hover:bg-sky-500/20 hover:text-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                                    >
+                                      <span>{formatRecordValue(record[column.key])}</span>
+                                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-3">
+                                        <path d="m14 5 5 5M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" />
+                                      </svg>
+                                    </button>
+                                  ) : formatRecordValue(record[column.key])}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={visibleRecordColumns.length} className="px-4 py-8 text-center text-slate-400">
+                            Tidak ada pegawai yang cocok dengan filter.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400 sm:text-sm">
+                  <p>
+                    {recordData.total
+                      ? `Menampilkan ${(recordData.page - 1) * recordData.page_size + 1}–${Math.min(recordData.page * recordData.page_size, recordData.total)} dari ${recordData.total}`
+                      : '0 pegawai cocok'}
+                    {recordData.total ? ' pegawai' : ''}
+                    {recordData.period ? ` · ${recordData.period}` : ''}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRecordPage((page) => Math.max(1, page - 1))}
+                      disabled={recordData.page <= 1 || isLoadingRecords}
+                      className="btn-secondary px-3 py-1.5 disabled:opacity-50"
+                    >
+                      Sebelumnya
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRecordPage((page) => page + 1)}
+                      disabled={recordData.page * recordData.page_size >= recordData.total || isLoadingRecords}
+                      className="btn-secondary px-3 py-1.5 disabled:opacity-50"
+                    >
+                      Berikutnya
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </section>
         )}
       </div>
+
+      {/* EDIT NILAI KOREKSI PORTAL */}
       {correctionEditTarget && createPortal(
         <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
           onMouseDown={(event) => {
             if (event.currentTarget === event.target && !correctionEditBusy) {
               setCorrectionEditTarget(null);
@@ -3556,15 +3681,15 @@ export default function PerformanceAnalysisPage() {
               event.preventDefault();
               void submitCorrectionEdit();
             }}
-            className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+            className="perf-modal w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
           >
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
-                <h2 id="correction-edit-title" className="text-lg font-semibold text-slate-100">
+                <h2 id="correction-edit-title" className="text-lg font-bold text-slate-100">
                   Edit Nilai Koreksi
                 </h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  {correctionEditTarget.record.nama} · NIP {correctionEditTarget.record.nip}
+                <p className="mt-1 text-xs text-slate-400">
+                  {correctionEditTarget.record.nama} · <span className="font-mono">NIP {correctionEditTarget.record.nip}</span>
                   {' · '}{correctionEditTarget.period}
                 </p>
               </div>
@@ -3573,12 +3698,12 @@ export default function PerformanceAnalysisPage() {
                 onClick={() => setCorrectionEditTarget(null)}
                 disabled={correctionEditBusy}
                 aria-label="Tutup editor Nilai Koreksi"
-                className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+                className="flex size-8 items-center justify-center rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
               >
                 ×
               </button>
             </div>
-            <label className="mt-5 block text-sm font-medium text-slate-200">
+            <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
               Nilai Koreksi
               <input
                 type="number"
@@ -3589,7 +3714,7 @@ export default function PerformanceAnalysisPage() {
                 autoFocus
                 value={correctionEditValue}
                 onChange={(event) => setCorrectionEditValue(event.target.value)}
-                className="input mt-2 w-full"
+                className="input mt-2 w-full font-mono normal-case"
                 aria-describedby="correction-edit-range"
               />
             </label>
@@ -3601,7 +3726,7 @@ export default function PerformanceAnalysisPage() {
                 {correctionEditError}
               </p>
             )}
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex justify-end gap-3 border-t border-slate-800 pt-4">
               <button
                 type="button"
                 onClick={() => setCorrectionEditTarget(null)}
@@ -3624,9 +3749,11 @@ export default function PerformanceAnalysisPage() {
         </div>,
         document.body,
       )}
+
+      {/* BATCH CORRECTION PORTAL */}
       {isBatchCorrectionOpen && createPortal(
         <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
           onMouseDown={(event) => {
             if (
               event.currentTarget === event.target
@@ -3641,15 +3768,15 @@ export default function PerformanceAnalysisPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="batch-correction-title"
-            className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+            className="perf-modal w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
           >
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
-                <h2 id="batch-correction-title" className="text-lg font-semibold text-slate-100">
-                  Batch input koreksi
+                <h2 id="batch-correction-title" className="text-lg font-bold text-slate-100">
+                  Batch Input Koreksi
                 </h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Dataset tujuan: {recordData?.period ?? '—'}
+                <p className="mt-1 text-xs text-slate-400">
+                  Dataset tujuan: <span className="font-mono font-semibold text-sky-300">{recordData?.period ?? '—'}</span>
                 </p>
               </div>
               <button
@@ -3657,30 +3784,30 @@ export default function PerformanceAnalysisPage() {
                 onClick={() => setIsBatchCorrectionOpen(false)}
                 disabled={batchCorrectionBusy || batchCorrectionTemplateBusy}
                 aria-label="Tutup batch input koreksi"
-                className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+                className="flex size-8 items-center justify-center rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
               >
                 ×
               </button>
             </div>
             <div className="mt-5 space-y-4">
-              <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-300">
+              <div className="perf-subpanel rounded-xl border border-slate-700 bg-slate-950/50 p-4 text-xs leading-relaxed text-slate-300">
                 <p>
-                  Unduh template Excel dengan dua kolom: <code>nip</code> dan <code>nilai_koreksi</code>.
+                  Unduh template Excel dengan dua kolom: <code className="font-mono text-sky-300">nip</code> dan <code className="font-mono text-sky-300">nilai_koreksi</code>.
                   Isi NIP sebagai teks agar digitnya tetap akurat. NIP dengan awalan apostrof atau backtick juga diterima.
                 </p>
-                <p className="mt-2 text-xs text-slate-400">
+                <p className="mt-2 text-slate-400">
                   Semua baris divalidasi sebelum disimpan. Jika ada NIP tidak dikenal, NIP duplikat, atau nilai di luar rentang -5 sampai 5 (eksklusif), tidak ada perubahan yang diterapkan. Setiap koreksi yang berubah masuk ke Koreksi Edit Log.
                 </p>
                 <button
                   type="button"
                   onClick={() => void downloadBatchCorrectionTemplate()}
                   disabled={batchCorrectionTemplateBusy || batchCorrectionBusy}
-                  className="mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:cursor-wait disabled:opacity-50"
+                  className="mt-3 rounded-xl border border-sky-500/35 bg-sky-500/15 px-3.5 py-2 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/25 disabled:cursor-wait disabled:opacity-50"
                 >
-                  {batchCorrectionTemplateBusy ? 'Mengunduh template…' : 'Unduh template Excel'}
+                  {batchCorrectionTemplateBusy ? 'Mengunduh template…' : 'Unduh Template Excel'}
                 </button>
               </div>
-              <label className="block text-sm font-medium text-slate-200">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
                 File Excel (.xlsx)
                 <input
                   ref={batchCorrectionFileInput}
@@ -3691,11 +3818,11 @@ export default function PerformanceAnalysisPage() {
                     setBatchCorrectionError(null);
                   }}
                   disabled={batchCorrectionBusy}
-                  className="input mt-2 w-full file:mr-3 file:rounded-md file:border-0 file:bg-slate-700 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-200"
+                  className="input mt-2 w-full normal-case file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-200"
                 />
               </label>
               {batchCorrectionFile && (
-                <p className="text-xs text-slate-400">
+                <p className="font-mono text-xs text-slate-400">
                   Dipilih: {batchCorrectionFile.name} ({Math.max(1, Math.round(batchCorrectionFile.size / 1024))} KB)
                 </p>
               )}
@@ -3705,7 +3832,7 @@ export default function PerformanceAnalysisPage() {
                 </p>
               )}
             </div>
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex justify-end gap-3 border-t border-slate-800 pt-4">
               <button
                 type="button"
                 onClick={() => setIsBatchCorrectionOpen(false)}
@@ -3720,16 +3847,18 @@ export default function PerformanceAnalysisPage() {
                 disabled={!batchCorrectionFile || batchCorrectionBusy || batchCorrectionTemplateBusy}
                 className="btn-primary px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {batchCorrectionBusy ? 'Memproses batch…' : 'Validasi dan terapkan'}
+                {batchCorrectionBusy ? 'Memproses batch…' : 'Validasi dan Terapkan'}
               </button>
             </div>
           </section>
         </div>,
         document.body,
       )}
+
+      {/* CORRECTION EDIT LOG PORTAL */}
       {isCorrectionLogOpen && createPortal(
         <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
           onMouseDown={(event) => {
             if (event.currentTarget === event.target && correctionLogActionId === null) {
               setIsCorrectionLogOpen(false);
@@ -3740,14 +3869,14 @@ export default function PerformanceAnalysisPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="correction-log-title"
-            className="flex max-h-[90vh] w-full max-w-6xl flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
+            className="perf-modal flex max-h-[90vh] w-full max-w-6xl flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
           >
             <header className="flex items-start justify-between gap-4 border-b border-slate-800 p-5">
               <div>
-                <h2 id="correction-log-title" className="text-lg font-semibold text-slate-100">
+                <h2 id="correction-log-title" className="text-lg font-bold text-slate-100">
                   Koreksi Edit Log
                 </h2>
-                <p className="mt-1 text-sm text-slate-400">
+                <p className="mt-1 text-xs text-slate-400">
                   Undo memulihkan nilai sebelum edit yang dipilih dan menghapus edit sesudahnya untuk NIP dan periode yang sama.
                 </p>
               </div>
@@ -3756,7 +3885,7 @@ export default function PerformanceAnalysisPage() {
                 onClick={() => setIsCorrectionLogOpen(false)}
                 disabled={correctionLogActionId !== null}
                 aria-label="Tutup Koreksi Edit Log"
-                className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+                className="flex size-8 items-center justify-center rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
               >
                 ×
               </button>
@@ -3784,7 +3913,7 @@ export default function PerformanceAnalysisPage() {
               ) : correctionLogData?.records.length ? (
                 <div className="overflow-auto rounded-xl border border-slate-700">
                   <table className="w-full min-w-[1050px] text-left text-xs">
-                    <thead className="sticky top-0 bg-slate-800 text-slate-300">
+                    <thead className="perf-table-head sticky top-0 bg-slate-800 text-[11px] uppercase tracking-wider text-slate-300">
                       <tr>
                         <th className="px-3 py-3 font-semibold">Waktu</th>
                         <th className="px-3 py-3 font-semibold">Periode</th>
@@ -3798,17 +3927,17 @@ export default function PerformanceAnalysisPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-800">
                       {correctionLogData.records.map((log) => (
-                        <tr key={log.id} className="text-slate-300">
-                          <td className="whitespace-nowrap px-3 py-3">
+                        <tr key={log.id} className="text-slate-300 transition-colors hover:bg-slate-800/45">
+                          <td className="whitespace-nowrap px-3 py-3 font-mono text-[11px]">
                             {new Date(log.edited_at).toLocaleString('id-ID')}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-3">{log.period}</td>
-                          <td className="max-w-56 truncate px-3 py-3" title={log.employee_name}>
+                          <td className="whitespace-nowrap px-3 py-3 font-mono">{log.period}</td>
+                          <td className="max-w-56 truncate px-3 py-3 font-medium text-slate-100" title={log.employee_name}>
                             {log.employee_name}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-3">{log.nip}</td>
-                          <td className="whitespace-nowrap px-3 py-3">{formatNumber(log.old_value)}</td>
-                          <td className="whitespace-nowrap px-3 py-3">{formatNumber(log.new_value)}</td>
+                          <td className="whitespace-nowrap px-3 py-3 font-mono">{log.nip}</td>
+                          <td className="whitespace-nowrap px-3 py-3 font-mono tabular-nums">{formatNumber(log.old_value)}</td>
+                          <td className="whitespace-nowrap px-3 py-3 font-mono tabular-nums font-semibold text-sky-300">{formatNumber(log.new_value)}</td>
                           <td className="whitespace-nowrap px-3 py-3">
                             {log.edited_by_name} <span className="text-slate-500">({log.edited_by_user})</span>
                           </td>
@@ -3822,7 +3951,7 @@ export default function PerformanceAnalysisPage() {
                                 || correctionLogActionId !== null
                               }
                               title="Undo edit ini dan seluruh edit berikutnya untuk pegawai dan periode yang sama"
-                              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 font-medium text-amber-200 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               {correctionLogActionId === log.id ? 'Memproses…' : 'Undo dari sini'}
                             </button>
@@ -3837,11 +3966,11 @@ export default function PerformanceAnalysisPage() {
                   <Spinner label="Memverifikasi riwayat edit koreksi…" />
                 </div>
               ) : correctionLogError ? (
-                <p className="rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-400">
+                <p className="perf-subpanel rounded-xl border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-400">
                   Riwayat tidak dapat ditampilkan sampai server berhasil dihubungi.
                 </p>
               ) : (
-                <p className="rounded-lg border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-400">
+                <p className="perf-subpanel rounded-xl border border-slate-700 bg-slate-950/50 p-4 text-sm text-slate-400">
                   Belum ada riwayat edit Nilai Koreksi.
                 </p>
               )}
@@ -3878,6 +4007,8 @@ export default function PerformanceAnalysisPage() {
         </div>,
         document.body,
       )}
+
+      {/* UNIT COMPARISON PORTAL */}
       {comparisonTarget && analysis?.dataset && analysis?.previous_period && (
         <UnitComparisonDialog
           label={comparisonTarget.label}
