@@ -332,6 +332,10 @@ export default function AdminPage() {
     event.preventDefault();
     setError(null);
     setNotice(null);
+    if (!editingUser && /\s/.test(form.user)) {
+      setError('Username tidak boleh mengandung spasi.');
+      return;
+    }
     setIsSaving(true);
     try {
       if (editingUser) {
@@ -652,6 +656,8 @@ export default function AdminPage() {
                         required
                         minLength={3}
                         maxLength={80}
+                        pattern="[^\\s]+"
+                        title="Username tidak boleh mengandung spasi"
                         placeholder="contoh: budi.santoso"
                         value={form.user}
                         onChange={(event) => setForm((value) => ({ ...value, user: event.target.value }))}

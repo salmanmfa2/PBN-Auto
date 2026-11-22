@@ -52,6 +52,10 @@ export default function LoginPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    if (isRegistering && /\s/.test(username)) {
+      setError('Username tidak boleh mengandung spasi.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       if (isRegistering) await register(username, name, password);
@@ -236,6 +240,8 @@ export default function LoginPage() {
                   required
                   minLength={3}
                   maxLength={80}
+                  pattern={isRegistering ? '[^\\s]+' : undefined}
+                  title={isRegistering ? 'Username tidak boleh mengandung spasi' : undefined}
                   autoComplete="username"
                   placeholder="Masukkan username"
                   value={username}

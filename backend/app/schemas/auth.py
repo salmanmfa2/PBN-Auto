@@ -32,6 +32,13 @@ class RegisterRequest(BaseModel):
             raise ValueError("This field must not be blank.")
         return normalized
 
+    @field_validator("user")
+    @classmethod
+    def reject_username_whitespace(cls, value: str) -> str:
+        if any(character.isspace() for character in value):
+            raise ValueError("Username must not contain spaces.")
+        return value
+
 
 class LoginRequest(BaseModel):
     user: str = Field(min_length=1, max_length=80)

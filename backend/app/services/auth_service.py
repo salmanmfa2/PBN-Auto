@@ -45,6 +45,8 @@ def create_user(
     normalized_user = _normalize_username(username)
     if not normalized_user:
         raise ValueError("User is required.")
+    if any(character.isspace() for character in normalized_user):
+        raise ValueError("Username must not contain spaces.")
     if _find_user(db, normalized_user) is not None:
         raise ValueError("User is already registered.")
 

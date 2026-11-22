@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.auth import create_managed_user, get_god_user, get_super_admin, update_managed_user
 from app.history_db import Base
 from app.models.auth import User, UserPreference, UserSession
-from app.schemas.auth import AdminUserCreate, AdminUserUpdate, ThemePreferenceUpdate
+from app.schemas.auth import AdminUserCreate, AdminUserUpdate, RegisterRequest, ThemePreferenceUpdate
 from app.services import auth_service
 
 
@@ -40,6 +40,38 @@ class AuthServiceTests(unittest.TestCase):
         self.assertNotEqual(user.password, "plain-password")
         self.assertTrue(user.password.startswith("$argon2id$"))
         self.assertTrue(user.is_active)
+
+    def test_create_user_rejects_username_containing_whitespace(self):
+        with self.assertRaisesRegex(ValueError, "Username must not contain spaces"):
+            auth_service.create_user(
+                self.db,
+                "Alice Smith",
+                "Alice Example",
+                "plain-password",
+            )
+
+        with self.assertRaisesRegex(ValueError, "Username must not contain spaces"):
+            auth_service.create_user(
+                self.db,
+                "Alice\tSmith",
+                "Alice Example",
+                "plain-password",
+            )
+
+    def test_registration_schema_rejects_username_whitespace(self):
+        with self.assertRaises(ValidationError):
+            RegisterRequest(
+                user="Alice Smith",
+                name="Alice Example",
+                password="plain-password",
+            )
+
+        request = RegisterRequest(
+            user="  alice.smith  ",
+            name="Alice Example",
+            password="plain-password",
+        )
+        self.assertEqual(request.user, "alice.smith")
 
     def test_authenticate_requires_exact_password_and_active_account(self):
         account = auth_service.create_user(self.db, "alice", "Alice", "plain-password")
