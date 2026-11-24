@@ -2,7 +2,7 @@
 
 A full-stack modular web application for PBN data cleaning and analytics. The web application is named MPK Workspace; PBN Cleaner remains the project and repository name.
 
-Current web update: **1.4.1** — [Web update notes](./Update%20Notes/Update%20Notes%201.4.1%20Web.md). The planned **1.4.2** update focuses on refactoring and measured performance improvements; see the [planned Web 1.4.2 notes](./Update%20Notes/Update%20Notes%201.4.2%20Web.md). Desktop requirements and release status are documented separately; this note does not claim a desktop build.
+Current web update: **1.4.1** — [Web update notes](./Update%20Notes/Update%20Notes%201.4.1%20Web.md). The planned **1.4.2** update focuses on refactoring and measured performance improvements; see the [planned Web 1.4.2 notes](./Update%20Notes/Update%20Notes%201.4.2%20Web.md). Work tracked for Web 1.5.0 is summarized in the [Web 1.5.0 notes](./Update%20Notes/Update%20Notes%201.5.0%20Web.md); the current application version label remains 1.4.1. Desktop requirements and release status are documented separately; this note does not claim a desktop build.
 
 ## Features
 
@@ -16,6 +16,7 @@ Current web update: **1.4.1** — [Web update notes](./Update%20Notes/Update%20N
 | **Analisis Kinerja DJPb (web)** | ✅ Live | Quarter-specific performance dashboards, comparisons, records, and exports |
 | **Generate ND Undangan Pelantikan (web)** | ✅ Live | Multi-sheet agenda workflow, employee matching, previews, selective document downloads, and appendix generation |
 | **Analisis Mutasi/Promosi (Experimental)** | ✅ Live | Administrator and Pengawas workspaces, persisted dataset uploads, NIP lookup, category enrichment, and Talent Finder |
+| **Fragment Petikan (Experimental)** | ✅ Live | Split large text-based PDFs into named page fragments and download them as a ZIP |
 
 ## Tech Stack
 
@@ -181,6 +182,7 @@ The app uses **React Router v7** for URL-based navigation:
 | `/undangan-pelantikan` | PelantikanAgendaPage | Pelantikan agenda and document generation |
 | `/manajemen-plt-plh` | PltPlhManagementPage | Alternate-management monitoring and document workflows |
 | `/analisis-mutasi` | MutationAnalysisPage | Experimental Administrator/Pengawas mutation analysis and Talent Finder |
+| `/fragment-petikan` | FragmentPetikanPage | Experimental PDF splitting and ZIP download |
 
 Users can bookmark routes or share URLs directly to jump into any feature.
 
@@ -210,6 +212,7 @@ VITE_API_URL=http://localhost:8000
 | `GET` | `/mutation-analysis/talent-finder/filter-options` | Load Eselon and rumpun filter options |
 | `POST` | `/mutation-analysis/talent-finder/count` | Count employees matching Talent Finder filters |
 | `POST` | `/mutation-analysis/talent-finder/search` | Fetch paginated and sortable Talent Finder results |
+| `POST` | `/fragment-petikan/split` | Split a PDF by page count, mine fragment names, and return a ZIP |
 
 ## Analisis Mutasi/Promosi
 
@@ -256,6 +259,12 @@ The result table is paginated and sortable. It includes:
 - Homebase
 
 The interface counts matching IDs before explicitly loading result rows, and each header can toggle ascending or descending sorting.
+
+## Fragment Petikan
+
+The experimental `/fragment-petikan` module accepts PDF files up to 100 MB. Choose any positive number of pages per fragment, optionally skip page numbers/ranges such as `1,3-5`, and set the start/end text markers used to mine the output name. Defaults are `Sdr.` and `(NIP`.
+
+The first matching name in each fragment is sanitized and used in a numbered filename such as `1_Nama_Petikan.pdf`. Duplicate names receive a sequence suffix; fragments without a match use `Tanpa Nama`. The resulting PDFs download together as a ZIP. Text extraction requires selectable PDF text; scanned image-only PDFs are not OCR-processed.
 
 ## MySQL Setup (Cleaning History)
 

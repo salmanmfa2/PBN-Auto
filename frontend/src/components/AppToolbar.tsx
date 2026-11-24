@@ -49,6 +49,22 @@ const themeOptions: Array<{
 
 const PATCH_NOTES = [
   {
+    version: '1.5.0',
+    label: '1.5.0',
+    items: [
+      'Analisis Mutasi/Promosi menyediakan workspace Administrator/Pengawas, alur unggah dan pembersihan data, klasifikasi yang dapat dikoreksi, serta penyimpanan dan pemulihan dataset.',
+      'Talent Finder mencari pegawai berdasarkan Eselon, Rumpun, atau nama; hasil dimuat bertahap dengan pengurutan di server.',
+      'Fragment Petikan mendukung jumlah halaman per fragmen yang ditentukan pengguna, pengabaian halaman, penanda nama yang dapat diatur, dan peringatan untuk sisa halaman.',
+      'Toolbar menyediakan pilihan Legacy UI. Preferensi tersimpan untuk pengguna masuk; pilihan guest berlaku untuk sesi browser saat ini.',
+      'Akun baru dan akun yang dikelola Admin menolak username yang mengandung whitespace. Toolbar menampilkan hitung mundur sesi dan menyediakan refresh token tanpa memasukkan ulang password.',
+      'UI seluruh modul disempurnakan untuk memberikan pengalaman yang lebih konsisten.',
+      'Menu Insight Hub lama dihapus; Insight Hub Beta tetap tersedia.',
+      'Perbandingan Unit Eselon II menampilkan Pemberian Koreksi (%). Sinkronisasi pegawai juga mengenali nama Kanwil panjang dan memakai ID referensi kanonis yang sudah ada.',
+      'Prototipe tab Jabatan tetap direncanakan dan tidak diaktifkan sampai pemetaan pegawai, unit, dan aturan periode dikonfirmasi.',
+      'Layanan backend Kinerja dan Pelantikan dirapikan menjadi modul berdasarkan alur kerja.',
+    ],
+  },
+  {
     version: '1.4.1',
     label: '1.4.1',
     items: [
@@ -209,7 +225,7 @@ export function AppToolbar() {
   const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number | null>(null);
   const [sessionRefreshing, setSessionRefreshing] = useState(false);
   const [activeDialog, setActiveDialog] = useState<ToolbarDialog>(null);
-  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.4.1');
+  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.5.0');
   const [apiTestState, setApiTestState] = useState<ApiTestState>('idle');
   const [apiDiagnostics, setApiDiagnostics] = useState<apiClient.ApiDiagnostic[]>([]);
   const [apiElapsedMs, setApiElapsedMs] = useState<number | null>(null);
@@ -759,10 +775,10 @@ export function AppToolbar() {
               </ToolbarActionButton>
 
               <ToolbarActionButton
-                tooltip="Patch Notes (v1.4.1)"
+                tooltip="Patch Notes (v1.5.0)"
                 ariaLabel="Buka Patch Notes"
                 onClick={() => {
-                  setSelectedPatchVersion('1.4.1');
+                  setSelectedPatchVersion('1.5.0');
                   setActiveDialog('patch');
                 }}
               >
