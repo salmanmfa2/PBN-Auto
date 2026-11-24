@@ -151,8 +151,8 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertEqual(auth_service.get_user_by_token(self.db, token).user, "alice")
         session = self.db.query(UserSession).filter_by(username="alice").one()
-        self.assertGreaterEqual(session.expires_at, before_creation + timedelta(hours=1))
-        self.assertLessEqual(session.expires_at, after_creation + timedelta(hours=1))
+        self.assertGreaterEqual(session.expires_at, before_creation + timedelta(hours=2))
+        self.assertLessEqual(session.expires_at, after_creation + timedelta(hours=2))
         auth_service.revoke_session(self.db, token)
         self.assertIsNone(auth_service.get_user_by_token(self.db, token))
 
@@ -165,11 +165,11 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertIsNone(auth_service.get_user_by_token(self.db, token))
 
-    def test_existing_long_session_is_capped_at_one_hour_from_creation(self):
+    def test_existing_long_session_is_capped_at_two_hours_from_creation(self):
         account = auth_service.create_user(self.db, "alice", "Alice", "plain-password")
         token = auth_service.create_session(self.db, account)
         session = self.db.query(UserSession).filter_by(username="alice").one()
-        session.created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+        session.created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=3)
         session.expires_at = session.created_at + timedelta(days=7)
         self.db.commit()
 

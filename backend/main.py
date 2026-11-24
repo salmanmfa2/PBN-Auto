@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from app.api import (
     auth,
+    candidate_preparation,
     chat,
     cleaning,
     dataset,
@@ -97,6 +98,7 @@ app.include_router(menu_access.router)
 app.include_router(chat.router)
 app.include_router(feedback.router)
 app.include_router(fragment_petikan.router)
+app.include_router(candidate_preparation.router)
 app.include_router(mutation_analysis.router)
 app.include_router(upload.router, tags=["upload"])
 app.include_router(cleaning.router)

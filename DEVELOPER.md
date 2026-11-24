@@ -23,7 +23,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - Health: `GET http://localhost:8000/health`.
 - Frontend:
   - From `frontend/`: `npm install` then `npm run dev` for development or `npm run build` for production build.
-  - Routes include `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/analisis-kinerja`, `/manajemen-plt-plh`, and `/undangan-pelantikan`. The old `/undangan-pelantikan-experimental` paths redirect to the primary workflow.
+  - Routes include `http://localhost:5173/`, `/pbn-analytics`, `/insights`, `/insights-beta`, `/analisis-kinerja`, `/analisis-mutasi`, `/penyusunan-kandidat`, `/manajemen-plt-plh`, and `/undangan-pelantikan`. The old `/undangan-pelantikan-experimental` paths redirect to the primary workflow.
 - One-click local launch:
   - Double-click `run-app-testing.bat` from the repo root to start local backend and Vite frontend servers on separate ports.
   - The development backend uses the same database and dataset storage configured for the LAN app. Development writes and startup schema migrations are shared with the live app; use care when testing changes.
@@ -44,6 +44,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/api/plt_plh.py` — Plt./Plh. monitoring API, including the Admin-only PBN Open employee search.
   - `app/api/pelantikan_agenda.py` — owner-scoped agenda, roster upload/matching, participant choices, and ZIP generation API.
   - `app/api/performance_kinerja.py` — public performance dashboard/records/exports, Admin manual-correction and edit-log/undo endpoints, and Super Admin dataset upload/EPRIDE correction-check and sync endpoints.
+  - `app/api/candidate_preparation.py` — owner-scoped candidate workspaces, eligible-employee selection, saved considerations, and Single/Batch PPTX export.
   - `app/api/auth.py` — login, public registration, session, user-preference, and admin-account endpoints.
   - `app/api/feedback.py` — authenticated feedback submission and Admin-only feedback management.
   - The `auth.py` Admin router exposes Level 4-only, allowlisted database preview/apply/sync endpoints; only Level 4 administrators can assign Level 4 through account management.
@@ -66,6 +67,7 @@ This file helps new contributors (especially juniors) understand where to make c
   - `app/models/cleaning_history.py` — SQLAlchemy model for cleaning history table.
   - `app/models/plt_plh.py` and `app/services/plt_plh_service.py` — monitoring records, derived tenure/status, Excel export, and replacement-employee lookup.
   - `app/models/pelantikan_agenda.py` and `app/services/pelantikan_agenda/` — persistent agenda/participant snapshots and modular roster, document, and export workflows.
+  - `app/models/candidate_preparation.py` and `app/services/candidate_preparation_service.py` — persistent candidate workspace/selection data, staged employee-profile snapshots and edits, and profile-template PPTX generation.
   - `app/models/user_feedback.py` and `app/services/feedback_service.py` — persisted user feedback and Admin inbox operations.
   - `app/utils/employee_formatting.py` — shared definitive job-title formatting for employee-backed workflows.
   - `app/schemas/pbn_dashboard.py` — dashboard filter request schema.
@@ -84,6 +86,7 @@ This file helps new contributors (especially juniors) understand where to make c
     - `LoginPage.tsx` / `AdminPage.tsx` — web authentication entry, feedback inbox, Super Admin account workspace, and the God User database-maintenance dialog.
     - `PltPlhManagementPage.tsx` — web-only monitoring UI.
     - `PelantikanAgendaPage.tsx` — web-only agenda, participant preview, and document-generation UI.
+    - `CandidatePreparationPage.tsx` — owner-scoped candidate workspace and profile-generation UI.
   - `src/App.tsx` — React Router routes, session gate, role gate, and shared toolbar/chat/feedback widget mounting.
   - `frontend/index.html` — browser document title (`MPK Workspace`).
   - `src/contexts/AuthContext.tsx` — authentication, Guest mode, and session state.

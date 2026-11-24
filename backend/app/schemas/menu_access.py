@@ -8,6 +8,7 @@ MenuKey = Literal[
     "insights-beta",
     "analisis-kinerja",
     "analisis-mutasi",
+    "penyusunan-kandidat",
     "fragment-petikan",
     "plt-plh",
     "nd-undangan",

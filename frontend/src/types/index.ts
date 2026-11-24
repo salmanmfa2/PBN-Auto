@@ -77,6 +77,7 @@ export type MenuAccessKey =
   | 'insights-beta'
   | 'analisis-kinerja'
   | 'analisis-mutasi'
+  | 'penyusunan-kandidat'
   | 'fragment-petikan'
   | 'plt-plh'
   | 'nd-undangan'
@@ -202,6 +203,68 @@ export interface MutationTalentFinderSearchResponse {
   employees: MutationTalentFinderEmployee[];
 }
 
+export type CandidatePreparationPriority = 'high' | 'med' | 'low';
+export type CandidatePreparationOutputStyle = 'Single' | 'Batch';
+
+export interface CandidatePreparationWorkspace {
+  id: string;
+  workspace_name: string;
+  target_jabatan: string;
+  date: string;
+  priority: CandidatePreparationPriority;
+  output_style: CandidatePreparationOutputStyle;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CandidatePreparationWorkspacePayload {
+  workspace_name: string;
+  target_jabatan: string;
+  date: string;
+  priority: CandidatePreparationPriority;
+  output_style: CandidatePreparationOutputStyle;
+}
+
+export interface CandidatePreparationCandidate {
+  employee_id: number;
+  sort_order: number;
+  consideration: string;
+  nip: string;
+  nama: string;
+  eselon_id: number | null;
+  eselon: string;
+  jabatan: string;
+  unit_eselon_ii: string;
+  unit_eselon_iii: string;
+  gol: string;
+  pangkat: string;
+  pendidikan: string;
+  jurusan: string;
+  universitas: string;
+  tmt_jabatan: string;
+  tanggal_lahir: string;
+  riwayat_jabatan: string;
+}
+
+export interface CandidatePreparationCandidateUpdatePayload {
+  consideration: string;
+  nip: string;
+  nama: string;
+  eselon_id: number | null;
+  eselon: string;
+  jabatan: string;
+  unit_eselon_ii: string;
+  unit_eselon_iii: string;
+  gol: string;
+  pangkat: string;
+  pendidikan: string;
+  jurusan: string;
+  universitas: string;
+  tmt_jabatan: string;
+  tanggal_lahir: string;
+  riwayat_jabatan: string;
+}
+
 export interface AuthSessionResponse {
   token: string;
   user: AuthUser;
@@ -226,6 +289,7 @@ export const FEEDBACK_MENU_OPTIONS = [
   'Insight Hub Beta',
   'Analisis Kinerja DJPb',
   'Analisis Mutasi/Promosi',
+  'Penyusunan Kandidat',
   'Manajemen Plt./Plh.',
   'Generate ND Undangan Pelantikan',
   'Bahan Pendukung MPK',
@@ -498,6 +562,7 @@ export interface PerformanceDashboardResponse {
   unit_eselon_iii_options: string[];
   unit_eselon_iv_options: string[];
   eselon_options: string[];
+  unit_eselon_options: string[];
   overview: PerformanceAnalysisGroup;
   overview_previous: PerformanceAnalysisGroup | null;
   overview_comparison: Record<string, PerformanceMetricComparison>;

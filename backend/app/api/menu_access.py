@@ -22,6 +22,7 @@ _READ_ONLY_POST_PREFIXES = (
     "/insights-beta/pbn/dashboard",
     "/performance/adjustments/check",
     "/performance/full-data/validate",
+    "/candidate-preparation/talent-finder/",
 )
 _EDIT_ONLY_GET_PATHS = {
     "/plt-plh/employees",
@@ -36,6 +37,12 @@ def _request_action(request: Request) -> menu_access_service.MenuAction:
             return "edit"
         return "view"
     if request.method == "POST" and request.url.path.startswith(_READ_ONLY_POST_PREFIXES):
+        return "view"
+    if (
+        request.method == "POST"
+        and request.url.path.startswith("/candidate-preparation/workspaces/")
+        and request.url.path.endswith("/export")
+    ):
         return "view"
     if (
         request.method == "POST"

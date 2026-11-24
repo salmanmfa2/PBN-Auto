@@ -31,6 +31,10 @@ import type {
   MutationTalentFinderCountResponse,
   MutationTalentFinderSearchRequest,
   MutationTalentFinderSearchResponse,
+  CandidatePreparationCandidate,
+  CandidatePreparationCandidateUpdatePayload,
+  CandidatePreparationWorkspace,
+  CandidatePreparationWorkspacePayload,
   PbnOpenCsvValidation,
   PbnOpenDataSourceSyncStatus,
   DatabaseMaintenanceTarget,
@@ -319,6 +323,142 @@ export async function countMutationTalentFinderEmployees(
   return data;
 }
 
+export async function listCandidatePreparationWorkspaces(): Promise<CandidatePreparationWorkspace[]> {
+  const { data } = await api.get<CandidatePreparationWorkspace[]>(
+    '/candidate-preparation/workspaces',
+  );
+  return data;
+}
+
+export async function createCandidatePreparationWorkspace(
+  payload: CandidatePreparationWorkspacePayload,
+): Promise<CandidatePreparationWorkspace> {
+  const { data } = await api.post<CandidatePreparationWorkspace>(
+    '/candidate-preparation/workspaces',
+    payload,
+  );
+  return data;
+}
+
+export async function updateCandidatePreparationWorkspace(
+  workspaceId: string,
+  payload: CandidatePreparationWorkspacePayload,
+): Promise<CandidatePreparationWorkspace> {
+  const { data } = await api.put<CandidatePreparationWorkspace>(
+    `/candidate-preparation/workspaces/${encodeURIComponent(workspaceId)}`,
+    payload,
+  );
+  return data;
+}
+
+export async function deleteCandidatePreparationWorkspace(workspaceId: string): Promise<void> {
+  await api.delete(
+    `/candidate-preparation/workspaces/${encodeURIComponent(workspaceId)}`,
+  );
+}
+
+export async function listCandidatePreparationCandidates(
+  workspaceId: string,
+): Promise<CandidatePreparationCandidate[]> {
+  const { data } = await api.get<CandidatePreparationCandidate[]>(
+    `/candidate-preparation/workspaces/${encodeURIComponent(workspaceId)}/candidates`,
+  );
+  return data;
+}
+
+export async function addCandidatePreparationCandidate(
+  workspaceId: string,
+  employeeId: number,
+): Promise<CandidatePreparationCandidate> {
+  const { data } = await api.post<CandidatePreparationCandidate>(
+    `/candidate-preparation/workspaces/${encodeURIComponent(workspaceId)}/candidates`,
+    { employee_id: employeeId, consideration: '' },
+  );
+  return data;
+}
+
+export async function updateCandidatePreparationCandidate(
+  workspaceId: string,
+  employeeId: number,
+  payload: CandidatePreparationCandidateUpdatePayload,
+): Promise<CandidatePreparationCandidate> {
+  const { data } = await api.put<CandidatePreparationCandidate>(
+    `/candidate-preparation/workspaces/${encodeURIComponent(workspaceId)}`
+      + `/candidates/${encodeURIComponent(String(employeeId))}`,
+    payload,
+  );
+  return data;
+}
+
+export async function removeCandidatePreparationCandidate(
+  workspaceId: string,
+  employeeId: number,
+): Promise<void> {
+  await api.delete(
+    `/candidate-preparation/workspaces/${encodeURIComponent(workspaceId)}`
+      + `/candidates/${encodeURIComponent(String(employeeId))}`,
+  );
+}
+
+async function candidatePreparationExportError(error: unknown): Promise<Error> {
+  if (!axios.isAxiosError(error) || !error.response) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+
+  let detail: unknown = error.response.data;
+  if (detail instanceof Blob) {
+    const body = await detail.text();
+    try {
+      detail = JSON.parse(body) as unknown;
+    } catch {
+      detail = body;
+    }
+  }
+  if (typeof detail === 'object' && detail !== null && 'detail' in detail) {
+    const message = (detail as { detail?: unknown }).detail;
+    if (typeof message === 'string') return new Error(message);
+  }
+  return new Error(error.message);
+}
+
+export async function exportCandidatePreparationWorkspace(
+  workspaceId: string,
+): Promise<Blob> {
+  try {
+    const { data } = await api.post<Blob>(
+      `/candidate-preparation/workspaces/${encodeURIComponent(workspaceId)}/export`,
+      null,
+      { responseType: 'blob' },
+    );
+    return data;
+  } catch (error) {
+    throw await candidatePreparationExportError(error);
+  }
+}
+
+export const candidatePreparationTalentFinderApi = {
+  getFilterOptions: async () => {
+    const { data } = await api.get<MutationTalentFinderFilterOptions>(
+      '/candidate-preparation/talent-finder/filter-options',
+    );
+    return data;
+  },
+  countEmployees: async (request: MutationTalentFinderSearchRequest) => {
+    const { data } = await api.post<MutationTalentFinderCountResponse>(
+      '/candidate-preparation/talent-finder/count',
+      request,
+    );
+    return data;
+  },
+  searchEmployees: async (request: MutationTalentFinderSearchRequest) => {
+    const { data } = await api.post<MutationTalentFinderSearchResponse>(
+      '/candidate-preparation/talent-finder/search',
+      request,
+    );
+    return data;
+  },
+};
+
 export async function updateMenuAccessSettings(
   policies: MenuAccessPolicy[],
 ): Promise<MenuAccessPolicy[]> {
@@ -562,6 +702,7 @@ export async function getPerformanceDashboard(
   period?: string,
   unitEselonIII?: string,
   unitEselonIV?: string,
+  unitAnalysisEselon?: string,
 ): Promise<PerformanceDashboardResponse> {
   try {
     const { data } = await api.get<PerformanceDashboardResponse>(
@@ -571,6 +712,7 @@ export async function getPerformanceDashboard(
           unit_eselon_ii: unitEselonII || undefined,
           unit_eselon_iii: unitEselonIII || undefined,
           unit_eselon_iv: unitEselonIV || undefined,
+          unit_eselon: unitAnalysisEselon || undefined,
           eselon: eselons,
           period,
         },
@@ -609,11 +751,20 @@ export async function updatePerformanceInsight(content: string): Promise<Perform
   }
 }
 
-export async function downloadPerformanceUnitAnalysis(period?: string): Promise<Blob> {
+export async function downloadPerformanceUnitAnalysis(
+  period?: string,
+  unitAnalysisEselon?: string,
+): Promise<Blob> {
   try {
     const { data } = await api.get<Blob>(
       '/performance/exports/unit-eselon-ii',
-      { params: { period }, responseType: 'blob' },
+      {
+        params: {
+          period,
+          unit_eselon: unitAnalysisEselon || undefined,
+        },
+        responseType: 'blob',
+      },
     );
     return data;
   } catch (error) {

@@ -1417,7 +1417,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(correction["count"], 6)
         self.assertEqual(correction["negative_count"], 2)
         self.assertEqual(correction["positive_count"], 4)
-        self.assertEqual(correction["average"], 0.4)
+        self.assertEqual(correction["average"], 0.54)
         self.assertEqual(correction["minimum"], -2)
         self.assertEqual(correction["maximum"], 3)
 
@@ -1567,6 +1567,158 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(unit_b["status_gap_count"], 1)
         unit_c = next(unit for unit in result["units"] if unit["label"] == "Unit C")
         self.assertEqual(unit_c["status_gap_count"], -1)
+
+    def test_dashboard_correction_average_excludes_zero_values(self) -> None:
+        second_nip = "123456789012345679"
+        third_nip = "123456789012345680"
+        fourth_nip = "123456789012345681"
+        employees = {
+            nip: {
+                **EMPLOYEE[NIP],
+                "unit_eselon_ii": "Unit A",
+                "unit_eselon_iii": "Subunit A",
+                "unit_eselon_iv": "Section A",
+            }
+            for nip in (NIP, second_nip, third_nip, fourth_nip)
+        }
+        content = full_csv(koreksi="0")
+        for nip, correction in (
+            (second_nip, "2"),
+            (third_nip, "-1"),
+            (fourth_nip, "0"),
+        ):
+            content += full_csv(nip=nip, koreksi=correction).split(b"\n", 1)[1]
+
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=employees):
+            kinerja_uploads.replace_full_upload(
+                self.session,
+                content,
+                "Q3-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+            )
+            dashboard = kinerja_dashboard.get_dashboard(
+                self.session,
+                None,
+                [],
+                "Q3-2026",
+            )
+            kinerja_uploads.replace_full_upload(
+                self.session,
+                full_csv(koreksi="0"),
+                "Q4-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+            )
+            all_zero_dashboard = kinerja_dashboard.get_dashboard(
+                self.session,
+                None,
+                [],
+                "Q4-2026",
+            )
+
+        self.assertEqual(dashboard["overview"]["correction"]["count"], 2)
+        self.assertEqual(dashboard["overview"]["correction"]["average"], 0.5)
+        self.assertIsNone(all_zero_dashboard["overview"]["correction"]["average"])
+
+    def test_unit_eselon_filter_is_independent_and_filters_comparisons_and_export(self) -> None:
+        second_nip = "123456789012345679"
+        employees = {
+            NIP: {
+                **EMPLOYEE[NIP],
+                "unit_eselon_ii": "Unit A",
+                "unit_eselon_iii": "Subunit A",
+                "unit_eselon_iv": "Section A",
+                "eselon": "III",
+            },
+            second_nip: {
+                **EMPLOYEE[NIP],
+                "unit_eselon_ii": "Unit A",
+                "unit_eselon_iii": "Subunit B",
+                "unit_eselon_iv": "Section B",
+                "eselon": "IV",
+            },
+        }
+
+        def period_csv(
+            first_npk: str,
+            second_npk: str,
+            first_correction: str,
+            second_correction: str,
+        ) -> bytes:
+            return full_csv(
+                npk=first_npk,
+                koreksi=first_correction,
+            ) + full_csv(
+                nip=second_nip,
+                npk=second_npk,
+                koreksi=second_correction,
+            ).split(b"\n", 1)[1]
+
+        with patch.object(kinerja_uploads, "_lookup_employee_records", return_value=employees):
+            kinerja_uploads.replace_full_upload(
+                self.session,
+                period_csv("70", "90", "1", "4"),
+                "Q2-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+            )
+            kinerja_uploads.replace_full_upload(
+                self.session,
+                period_csv("100", "80", "2", "3"),
+                "Q3-2026",
+                uploaded_by_user="admin",
+                uploaded_by_name="Admin",
+            )
+            dashboard = kinerja_dashboard.get_dashboard(
+                self.session,
+                None,
+                ["III"],
+                "Q3-2026",
+                unit_eselon="IV",
+            )
+            workbook = load_workbook(
+                BytesIO(
+                    kinerja_exports.create_unit_analysis_workbook(
+                        self.session,
+                        "Q3-2026",
+                        "IV",
+                    )
+                ),
+                data_only=True,
+            )
+
+        self.assertEqual(dashboard["overview"]["employee_count"], 1)
+        self.assertEqual(dashboard["eselon_options"], ["III", "IV"])
+        self.assertEqual(dashboard["unit_eselon_options"], ["III", "IV"])
+        self.assertEqual(len(dashboard["units"]), 1)
+        unit = dashboard["units"][0]
+        self.assertEqual(unit["employee_count"], 1)
+        self.assertEqual(unit["average_npk"], 80)
+        self.assertEqual(unit["comparison"]["average_npk"]["current"], 80)
+        self.assertEqual(unit["comparison"]["average_npk"]["previous"], 90)
+        self.assertEqual(unit["children"][0]["employee_count"], 1)
+        self.assertEqual(
+            unit["children"][0]["comparison"]["average_npk"]["current"],
+            80,
+        )
+        self.assertEqual(
+            unit["children"][0]["comparison"]["average_npk"]["previous"],
+            90,
+        )
+        self.assertEqual(unit["children"][0]["children"][0]["employee_count"], 1)
+        self.assertEqual(
+            unit["children"][0]["children"][0]["comparison"]["average_npk"]["current"],
+            80,
+        )
+        self.assertEqual(
+            unit["children"][0]["children"][0]["comparison"]["average_npk"]["previous"],
+            90,
+        )
+        worksheet = workbook["Unit Eselon II"]
+        self.assertEqual(worksheet.max_row, 4)
+        self.assertEqual([worksheet.cell(row, 4).value for row in range(2, 5)], [1, 1, 1])
+        workbook.close()
 
     def test_unit_comparison_uses_nkp_perhitungan_status_distribution(self) -> None:
         current = kinerja_dashboard._make_unit_metrics(

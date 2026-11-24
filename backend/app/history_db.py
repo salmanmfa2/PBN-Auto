@@ -394,6 +394,11 @@ def _migrate_mutation_analysis_schema(database_engine: Engine | None = None) -> 
 
 def init_history_db() -> None:
     from app.models.auth import User, UserPreference, UserSession  # noqa: F401
+    from app.models.candidate_preparation import (  # noqa: F401
+        CandidatePreparationCandidate,
+        CandidatePreparationCandidateSnapshot,
+        CandidatePreparationWorkspace,
+    )
     from app.models.cleaning_history import CleaningHistory  # noqa: F401
     from app.models.dataset_file import DatasetFile  # noqa: F401
     from app.models.dataset_run import DatasetRun  # noqa: F401

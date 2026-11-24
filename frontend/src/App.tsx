@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import AdminPage from './pages/AdminPage';
 import LandingPage from './pages/LandingPage';
 const AlternativeLandingPage = lazy(() => import('./pages/LandingPage_Alternative'));
+const CandidatePreparationPage = lazy(() => import('./pages/CandidatePreparationPage'));
 import AnalyticsPage from './pages/AnalyticsPage';
 import InsightHubPage from './pages/InsightHubPage';
 import LoginPage from './pages/LoginPage';
@@ -162,6 +163,22 @@ function AppRoutes() {
           </Route>
           <Route element={<RequireMenuView menuKey="analisis-mutasi" />}>
             <Route path="/analisis-mutasi" element={<MutationAnalysisPage />} />
+          </Route>
+          <Route element={<RequireMenuView menuKey="penyusunan-kandidat" />}>
+            <Route
+              path="/penyusunan-kandidat"
+              element={(
+                <Suspense
+                  fallback={
+                    <main className="flex min-h-screen items-center justify-center bg-surface-950 text-sm text-slate-400">
+                      Memuat Penyusunan Kandidat…
+                    </main>
+                  }
+                >
+                  <CandidatePreparationPage />
+                </Suspense>
+              )}
+            />
           </Route>
           <Route element={<RequireMenuView menuKey="fragment-petikan" />}>
             <Route path="/fragment-petikan" element={<FragmentPetikanPage />} />

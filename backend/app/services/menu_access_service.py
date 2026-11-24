@@ -13,6 +13,7 @@ DEFAULT_MENU_ACCESS_POLICIES: tuple[tuple[str, int, int], ...] = (
     ("insights-beta", 0, 0),
     ("analisis-kinerja", 0, 2),
     ("analisis-mutasi", 0, 0),
+    ("penyusunan-kandidat", 1, 1),
     ("fragment-petikan", 0, 2),
     ("plt-plh", 0, 2),
     ("nd-undangan", 1, 1),
@@ -23,6 +24,7 @@ DEFAULT_MENU_ACCESS_POLICIES: tuple[tuple[str, int, int], ...] = (
 MENU_KEYS = tuple(item[0] for item in DEFAULT_MENU_ACCESS_POLICIES)
 MINIMUM_EDIT_LEVELS = {
     "analisis-kinerja": 1,
+    "penyusunan-kandidat": 1,
     "fragment-petikan": 1,
     "plt-plh": 1,
     "nd-undangan": 1,

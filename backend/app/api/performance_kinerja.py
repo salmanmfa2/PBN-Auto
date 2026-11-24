@@ -109,6 +109,7 @@ def get_performance_dashboard(
     unit_eselon_ii: str | None = None,
     unit_eselon_iii: str | None = None,
     unit_eselon_iv: str | None = None,
+    unit_eselon: str | None = None,
     eselon: list[str] = Query(default=[]),
     period: str | None = Query(default=None, max_length=7),
     db: Session = Depends(get_history_db),
@@ -121,6 +122,7 @@ def get_performance_dashboard(
             period,
             unit_eselon_iii=unit_eselon_iii,
             unit_eselon_iv=unit_eselon_iv,
+            unit_eselon=unit_eselon,
         )
     except ValueError as exc:
         raise _validation_error(exc) from exc
@@ -310,10 +312,15 @@ def undo_performance_correction_edit(
 @router.get("/exports/unit-eselon-ii")
 def download_unit_analysis(
     period: str | None = Query(default=None, max_length=7),
+    unit_eselon: str | None = None,
     db: Session = Depends(get_history_db),
 ):
     try:
-        content = kinerja_exports.create_unit_analysis_workbook(db, period)
+        content = kinerja_exports.create_unit_analysis_workbook(
+            db,
+            period,
+            unit_eselon,
+        )
     except ValueError as exc:
         raise _validation_error(exc) from exc
     except (RuntimeError, SQLAlchemyError) as exc:

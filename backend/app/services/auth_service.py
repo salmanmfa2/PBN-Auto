@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.auth import User, UserPreference, UserSession
 
-SESSION_HOURS = 1
+SESSION_HOURS = 2
 password_hash = PasswordHash.recommended()
 DUMMY_HASH = password_hash.hash("dummy-password-for-timing-protection")
 

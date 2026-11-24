@@ -41,6 +41,7 @@ const menuAccessLabels: Record<MenuAccessKey, string> = {
   'insights-beta': 'Insight Hub Beta',
   'analisis-kinerja': 'Analisis Kinerja DJPb',
   'analisis-mutasi': 'Analisis Mutasi/Promosi',
+  'penyusunan-kandidat': 'Penyusunan Kandidat',
   'fragment-petikan': 'Fragment Petikan',
   'plt-plh': 'Manajemen Plt./Plh.',
   'nd-undangan': 'Generate ND Undangan Pelantikan',
@@ -51,6 +52,7 @@ const menuAccessLabels: Record<MenuAccessKey, string> = {
 
 const minimumEditLevel: Partial<Record<MenuAccessKey, number>> = {
   'analisis-kinerja': 1,
+  'penyusunan-kandidat': 1,
   'fragment-petikan': 1,
   'plt-plh': 1,
   'nd-undangan': 1,
@@ -1077,7 +1079,10 @@ export default function AdminPage() {
               </button>
               <button
                 className="btn-primary disabled:opacity-50"
-                disabled={isSavingMenuAccess || menuAccessDraft.length !== 9}
+                disabled={
+                  isSavingMenuAccess
+                  || menuAccessDraft.length !== Object.keys(menuAccessLabels).length
+                }
                 onClick={() => void saveMenuAccess()}
                 type="button"
               >

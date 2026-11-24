@@ -12,7 +12,7 @@ from .common import (
     _performance_datasets,
     _select_dataset,
 )
-from .dashboard import _get_dashboard_cache
+from .dashboard import _get_dashboard_cache, _units_for_eselon
 from .records import _query_performance_records, _validate_record_query
 
 def _excel_safe_value(value: Any) -> Any:
@@ -34,6 +34,7 @@ def _style_export_header(worksheet) -> None:
 def create_unit_analysis_workbook(
     db: Session,
     period: str | None = None,
+    unit_eselon: str | None = None,
 ) -> bytes:
     workbook = Workbook()
     worksheet = workbook.active
@@ -43,7 +44,7 @@ def create_unit_analysis_workbook(
     dataset = _select_dataset(_performance_datasets(db), period)
     if dataset is not None:
         cache = _get_dashboard_cache(db, dataset)
-        for unit in cache.units:
+        for unit in _units_for_eselon(cache, unit_eselon):
             worksheet.append(
                 [_excel_safe_value(value) for value in _unit_export_values(unit)]
             )

@@ -6,12 +6,14 @@ import {
 } from '../services/api';
 import type {
   MutationTalentFinderFilterOptions,
+  MutationTalentFinderEmployee,
   MutationTalentFinderOption,
   MutationTalentFinderSortField,
   MutationTalentFinderSearchResponse,
 } from '../types';
 
 const PAGE_SIZE = 50;
+const EMPTY_SELECTED_IDS: ReadonlySet<number> = new Set();
 const TALENT_FINDER_COLUMNS: { id: MutationTalentFinderSortField; label: string }[] = [
   { id: 'nama', label: 'Nama' },
   { id: 'eselon', label: 'Eselon' },
@@ -24,6 +26,26 @@ const TALENT_FINDER_COLUMNS: { id: MutationTalentFinderSortField; label: string 
   { id: 'lama_jabatan', label: 'Lama Jabatan' },
   { id: 'homebase', label: 'Homebase' },
 ];
+
+export type MutationTalentFinderSearchApi = {
+  getFilterOptions: typeof getMutationTalentFinderFilterOptions;
+  countEmployees: typeof countMutationTalentFinderEmployees;
+  searchEmployees: typeof searchMutationTalentFinderEmployees;
+};
+
+const DEFAULT_SEARCH_API: MutationTalentFinderSearchApi = {
+  getFilterOptions: getMutationTalentFinderFilterOptions,
+  countEmployees: countMutationTalentFinderEmployees,
+  searchEmployees: searchMutationTalentFinderEmployees,
+};
+
+type MutationTalentFinderProps = {
+  onSelectEmployee?: (employee: MutationTalentFinderEmployee) => void;
+  selectedEmployeeIds?: ReadonlySet<number>;
+  selectionDisabled?: boolean;
+  allowedEselonIds?: number[];
+  searchApi?: MutationTalentFinderSearchApi;
+};
 
 function CheckboxFilter({
   title,
@@ -82,12 +104,18 @@ function CheckboxFilter({
   );
 }
 
-export default function MutationTalentFinder() {
+export default function MutationTalentFinder({
+  onSelectEmployee,
+  selectedEmployeeIds = EMPTY_SELECTED_IDS,
+  selectionDisabled = false,
+  allowedEselonIds,
+  searchApi = DEFAULT_SEARCH_API,
+}: MutationTalentFinderProps) {
   const [filterOptions, setFilterOptions] = useState<MutationTalentFinderFilterOptions | null>(null);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [eselonIds, setEselonIds] = useState<number[]>([]);
+  const [eselonIds, setEselonIds] = useState<number[]>(allowedEselonIds ?? []);
   const [rumpunIds, setRumpunIds] = useState<number[]>([]);
   const [matchedCount, setMatchedCount] = useState<number | null>(null);
   const [results, setResults] = useState<MutationTalentFinderSearchResponse | null>(null);
@@ -98,12 +126,21 @@ export default function MutationTalentFinder() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const countRequestId = useRef(0);
   const searchRequestId = useRef(0);
+  const { getFilterOptions, countEmployees, searchEmployees } = searchApi;
+  const effectiveEselonIds = allowedEselonIds
+    ? eselonIds.length === 0
+      ? allowedEselonIds
+      : eselonIds.filter((id) => allowedEselonIds.includes(id))
+    : eselonIds;
+  const visibleEselonOptions = allowedEselonIds
+    ? (filterOptions?.eselon ?? []).filter((option) => allowedEselonIds.includes(option.id))
+    : filterOptions?.eselon ?? [];
 
   useEffect(() => {
     let active = true;
     setOptionsLoading(true);
     setOptionsError(null);
-    void getMutationTalentFinderFilterOptions()
+    void getFilterOptions()
       .then((options) => {
         if (active) setFilterOptions(options);
       })
@@ -118,7 +155,7 @@ export default function MutationTalentFinder() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [getFilterOptions]);
 
   const resetQuery = useCallback(() => {
     countRequestId.current += 1;
@@ -138,8 +175,8 @@ export default function MutationTalentFinder() {
     setResults(null);
     setSearchError(null);
     try {
-      const response = await countMutationTalentFinderEmployees({
-        eselon_ids: eselonIds,
+      const response = await countEmployees({
+        eselon_ids: effectiveEselonIds,
         name: name.trim(),
         rumpun_ids: rumpunIds,
         page: 1,
@@ -155,7 +192,7 @@ export default function MutationTalentFinder() {
     } finally {
       if (requestId === countRequestId.current) setCountLoading(false);
     }
-  }, [eselonIds, name, rumpunIds, sortBy, sortOrder]);
+  }, [countEmployees, effectiveEselonIds, name, rumpunIds, sortBy, sortOrder]);
 
   const loadResults = useCallback(async (
     page: number,
@@ -166,8 +203,8 @@ export default function MutationTalentFinder() {
     setLoading(true);
     setSearchError(null);
     try {
-      const response = await searchMutationTalentFinderEmployees({
-        eselon_ids: eselonIds,
+      const response = await searchEmployees({
+        eselon_ids: effectiveEselonIds,
         name: name.trim(),
         rumpun_ids: rumpunIds,
         page,
@@ -187,7 +224,7 @@ export default function MutationTalentFinder() {
     } finally {
       if (requestId === searchRequestId.current) setLoading(false);
     }
-  }, [eselonIds, name, rumpunIds, sortBy, sortOrder]);
+  }, [effectiveEselonIds, name, rumpunIds, searchEmployees, sortBy, sortOrder]);
 
   const changeSort = (field: MutationTalentFinderSortField) => {
     const nextOrder = field === sortBy
@@ -245,7 +282,7 @@ export default function MutationTalentFinder() {
         </label>
         <CheckboxFilter
           title="Eselon"
-          options={filterOptions?.eselon ?? []}
+          options={visibleEselonOptions}
           selectedIds={eselonIds}
           loading={optionsLoading}
           onChange={(ids) => {
@@ -308,6 +345,11 @@ export default function MutationTalentFinder() {
             <table className="min-w-full border-collapse text-xs">
               <thead className="sticky top-0 z-10 bg-surface-800">
                 <tr>
+                  {onSelectEmployee && (
+                    <th className="whitespace-nowrap border-b border-r border-surface-700 px-3 py-2 text-left font-semibold text-slate-300">
+                      Pilih
+                    </th>
+                  )}
                   {TALENT_FINDER_COLUMNS.map((column) => (
                     <th
                       key={column.id}
@@ -333,6 +375,23 @@ export default function MutationTalentFinder() {
               <tbody>
                 {results.employees.map((employee) => (
                   <tr key={employee.employee_id} className="odd:bg-surface-900 even:bg-surface-950/40">
+                    {onSelectEmployee && (
+                      <td className="whitespace-nowrap border-b border-r border-surface-700 px-3 py-2">
+                        <button
+                          type="button"
+                          disabled={
+                            selectionDisabled
+                            || selectedEmployeeIds.has(employee.employee_id)
+                          }
+                          onClick={() => onSelectEmployee(employee)}
+                          className="rounded-md border border-brand-500/40 px-2 py-1 text-xs text-brand-200 hover:bg-brand-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {selectedEmployeeIds.has(employee.employee_id)
+                            ? 'Dipilih'
+                            : 'Tambah'}
+                        </button>
+                      </td>
+                    )}
                     <td className="min-w-56 border-b border-r border-surface-700 px-3 py-2 text-slate-200">
                       {employee.nama || '—'}
                     </td>

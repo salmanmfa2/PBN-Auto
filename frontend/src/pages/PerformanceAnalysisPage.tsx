@@ -633,6 +633,7 @@ export default function PerformanceAnalysisPage() {
   const [selectedEselonIII, setSelectedEselonIII] = useState('');
   const [selectedEselonIV, setSelectedEselonIV] = useState('');
   const [selectedEselon, setSelectedEselon] = useState('');
+  const [selectedUnitEselon, setSelectedUnitEselon] = useState('');
   const [recordData, setRecordData] = useState<PerformanceRecordsResponse | null>(null);
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
   const [recordError, setRecordError] = useState<string | null>(null);
@@ -1149,6 +1150,7 @@ export default function PerformanceAnalysisPage() {
         requestedPeriod === null ? undefined : requestedPeriod ?? selectedPeriod,
         selectedEselonIII,
         selectedEselonIV,
+        selectedUnitEselon,
       );
       if (requestId !== analysisRequestId.current) return;
       setAnalysis(result);
@@ -1172,6 +1174,7 @@ export default function PerformanceAnalysisPage() {
     selectedEselon,
     selectedEselonIII,
     selectedEselonIV,
+    selectedUnitEselon,
     selectedPeriod,
     selectedUnit,
   ]);
@@ -1760,7 +1763,10 @@ export default function PerformanceAnalysisPage() {
     setUnitExportBusy(true);
     setUnitExportError(null);
     try {
-      const blob = await apiClient.downloadPerformanceUnitAnalysis(analysisPeriod);
+      const blob = await apiClient.downloadPerformanceUnitAnalysis(
+        analysisPeriod,
+        selectedUnitEselon,
+      );
       saveExcelFile(blob, `analisis-unit-eselon-ii-${analysis?.dataset?.period ?? 'data'}.xlsx`);
     } catch (exportError) {
       setUnitExportError(errorMessage(exportError));
@@ -2991,6 +2997,20 @@ export default function PerformanceAnalysisPage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
+                <label className="block w-40 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Eselon
+                  <select
+                    value={selectedUnitEselon}
+                    onChange={(event) => setSelectedUnitEselon(event.target.value)}
+                    className="input mt-1.5 normal-case"
+                    aria-label="Filter Eselon untuk analisis unit"
+                  >
+                    <option value="">Semua Eselon</option>
+                    {(analysis?.unit_eselon_options ?? []).map((eselon) => (
+                      <option key={eselon} value={eselon}>{eselon}</option>
+                    ))}
+                  </select>
+                </label>
                 <label className="relative block w-60">
                   <span className="sr-only">Cari unit Eselon II, III, atau IV</span>
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400">

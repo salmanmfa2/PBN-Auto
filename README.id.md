@@ -23,7 +23,7 @@ Navigasi utama aplikasi desktop hanya berisi **PBN Analytics** dan **Insight Hub
 | **Analisis Kinerja DJPb (web)** | ✅ Aktif | Riwayat beberapa triwulan, perbandingan Unit Eselon II dengan triwulan sebelumnya, filter dan ekspor per periode; Super Admin dan God User dapat mengunggah atau menyesuaikan data |
 | **Manajemen Plt./Plh.** | ✅ Aktif | Memantau penugasan, menghitung masa kerja/status, menampilkan notifikasi, memilih pejabat pengganti dari PBN Open, dan mengekspor data |
 | **Generate ND Undangan Pelantikan (web)** | ✅ Aktif | Alur utama semua sheet, Lite View dan lebar kolom tersimpan, toggle Daring/Luring, pilihan unduhan dokumen per Unit/moda, serta lampiran ND Pengantar |
-| **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, Super Admin, serta God User Level 4 berbasis peran; sesi pengguna berlaku satu jam |
+| **Akun dan peran web** | ✅ Aktif | Guest, User, Admin, Super Admin, serta God User Level 4 berbasis peran; sesi pengguna berlaku dua jam |
 | **Workspace Admin** | ✅ Aktif | Pengelolaan akun oleh Super Admin; pemeliharaan tabel database hanya oleh God User |
 | **Feedback pengguna (web)** | ✅ Aktif | Mengirim masukan untuk menu tertentu atau keseluruhan aplikasi; Admin dan Super Admin dapat melihat, menghapus satu masukan, atau menghapus semuanya |
 | **Menu web lainnya** | 🛠️ Placeholder | Bahan Pendukung MPK dan Simulasi Mutasi belum diimplementasikan; menu ini tidak tersedia di desktop |

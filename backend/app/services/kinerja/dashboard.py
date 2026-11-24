@@ -68,7 +68,11 @@ def _make_correction_stats(records: list[PerformanceKinerjaRecord]) -> dict[str,
         "count": len(nonzero_corrections),
         "positive_count": sum(1 for correction in nonzero_corrections if correction > ZERO),
         "negative_count": sum(1 for correction in nonzero_corrections if correction < ZERO),
-        "average": _format_decimal(sum(corrections, ZERO) / len(corrections)) if corrections else None,
+        "average": (
+            _format_decimal(sum(nonzero_corrections, ZERO) / len(nonzero_corrections))
+            if nonzero_corrections
+            else None
+        ),
         "minimum": _format_decimal(min(corrections)) if corrections else None,
         "maximum": _format_decimal(max(corrections)) if corrections else None,
     }
@@ -320,6 +324,63 @@ def _unit_order_key(
         label.casefold(),
     )
 
+def _units_for_eselon(
+    cache: _PerformanceDashboardCache,
+    eselon: str | None,
+) -> list[dict[str, Any]]:
+    if eselon is None:
+        return cache.units
+
+    grouped_units: dict[str, list[PerformanceKinerjaRecord]] = defaultdict(list)
+    grouped_unit_iii: dict[str, dict[str, list[PerformanceKinerjaRecord]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    grouped_unit_iv: dict[
+        str,
+        dict[str, dict[str, list[PerformanceKinerjaRecord]]],
+    ] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for record, unit, record_eselon, unit_iii, unit_iv in cache.resolved_records:
+        if record_eselon != eselon:
+            continue
+        grouped_units[unit].append(record)
+        grouped_unit_iii[unit][unit_iii].append(record)
+        grouped_unit_iv[unit][unit_iii][unit_iv].append(record)
+
+    return [
+        {
+            **_make_unit_metrics(unit, grouped_units[unit]),
+            "children": [
+                {
+                    **_make_unit_metrics(child, grouped_unit_iii[unit][child]),
+                    "children": [
+                        _make_unit_metrics(
+                            grandchild,
+                            grouped_unit_iv[unit][child][grandchild],
+                        )
+                        for grandchild in sorted(
+                            grouped_unit_iv[unit][child],
+                            key=lambda label: _unit_order_key(
+                                label,
+                                grouped_unit_iv[unit][child][label],
+                            ),
+                        )
+                    ],
+                }
+                for child in sorted(
+                    grouped_unit_iii[unit],
+                    key=lambda label: _unit_order_key(
+                        label,
+                        grouped_unit_iii[unit][label],
+                    ),
+                )
+            ],
+        }
+        for unit in sorted(
+            grouped_units,
+            key=lambda label: _unit_order_key(label, grouped_units[label]),
+        )
+    ]
+
 def _build_dashboard_cache(
     db: Session,
     dataset: PerformanceKinerjaDataset,
@@ -514,6 +575,7 @@ def get_dashboard(
     period: str | None = None,
     unit_eselon_iii: str | None = None,
     unit_eselon_iv: str | None = None,
+    unit_eselon: str | None = None,
 ) -> dict[str, Any]:
     datasets = sorted(
         _performance_datasets(db),
@@ -534,6 +596,7 @@ def get_dashboard(
             "unit_eselon_iii_options": [],
             "unit_eselon_iv_options": [],
             "eselon_options": [],
+            "unit_eselon_options": [],
             "overview": _make_group("Semua Pegawai", []),
             "overview_previous": None,
             "overview_comparison": {},
@@ -604,15 +667,20 @@ def get_dashboard(
         "unit_eselon_iii_options": filter_options["unit_eselon_iii"],
         "unit_eselon_iv_options": filter_options["unit_eselon_iv"],
         "eselon_options": filter_options["eselon"],
+        "unit_eselon_options": cache.eselon_options,
         "overview": overview,
         "overview_previous": overview_previous,
         "overview_comparison": overview_comparison,
         "units": (
             _units_with_comparisons(
-                cache.units,
-                previous_cache.units if previous_cache is not None else None,
+                _units_for_eselon(cache, unit_eselon),
+                (
+                    _units_for_eselon(previous_cache, unit_eselon)
+                    if previous_cache is not None
+                    else None
+                ),
             )
             if previous_cache is not None
-            else cache.units
+            else _units_for_eselon(cache, unit_eselon)
         ),
     }

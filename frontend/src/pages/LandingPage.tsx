@@ -12,6 +12,7 @@ type FeatureIconName =
   | 'insight'
   | 'dashboard'
   | 'people'
+  | 'candidates'
   | 'document'
   | 'performance'
   | 'folder'
@@ -29,6 +30,7 @@ type Feature = {
   path?: string;
   placeholder?: boolean;
   featured?: boolean;
+  isNew?: boolean;
 };
 
 const features: Feature[] = [
@@ -88,6 +90,17 @@ const features: Feature[] = [
     icon: 'document',
     path: '/undangan-pelantikan',
     featured: true,
+  },
+  {
+    key: 'penyusunan-kandidat',
+    title: 'Penyusunan Kandidat',
+    subtitle: 'Pilih kandidat pegawai, simpan pertimbangan, dan hasilkan profil PPTX Single atau Batch',
+    group: 'Operasional',
+    status: 'ready',
+    icon: 'candidates',
+    path: '/penyusunan-kandidat',
+    featured: true,
+    isNew: true,
   },
   {
     key: 'plt-plh',
@@ -205,6 +218,13 @@ function FeatureIcon({ name, className }: { name: FeatureIconName; className?: s
         <path d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
         <circle cx="10" cy="7" r="4" />
         <path d="M20 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+      </>
+    ),
+    candidates: (
+      <>
+        <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M16 11l2 2 4-4" />
       </>
     ),
     document: (
@@ -442,6 +462,11 @@ function FeatureCard({
         <div className="mt-4 flex items-center justify-between gap-2 border-t border-surface-800/80 pt-3">
           <div className="flex flex-wrap items-center gap-1.5">
             <StatusBadge feature={feature} />
+            {feature.isNew && (
+              <span className="landing-status-badge landing-status-badge-new badge shrink-0 border border-sky-400/40 bg-sky-500/15 text-sky-200">
+                New
+              </span>
+            )}
             {feature.key === 'plt-plh' && notificationCount > 0 && (
               <span
                 className="badge border border-amber-500/30 bg-amber-500/15 text-amber-300"
@@ -626,7 +651,7 @@ export default function LandingPage() {
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 px-3 py-1 text-xs font-medium text-sky-300">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                <span>MPK Workspace · v1.4.1</span>
+                <span>MPK Workspace · v1.5.</span>
                 <span className="text-slate-500">|</span>
                 <span className="text-slate-300">{getWibDateLabel()}</span>
               </div>

@@ -10,6 +10,7 @@ FeedbackMenu = Literal[
     "Insight Hub Beta",
     "Analisis Kinerja DJPb",
     "Analisis Mutasi/Promosi",
+    "Penyusunan Kandidat",
     "Manajemen Plt./Plh.",
     "Generate ND Undangan Pelantikan",
     "Bahan Pendukung MPK",
