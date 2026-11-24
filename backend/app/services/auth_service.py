@@ -134,6 +134,50 @@ def revoke_session(db: Session, token: str) -> None:
         db.commit()
 
 
+def get_session_expiration(db: Session, token: str) -> datetime | None:
+    session = db.scalar(
+        select(UserSession)
+        .options(joinedload(UserSession.account))
+        .where(UserSession.token_hash == _hash_token(token))
+    )
+    if not session or session.revoked_at is not None:
+        return None
+    effective_expiration = min(
+        session.expires_at,
+        session.created_at + timedelta(hours=SESSION_HOURS),
+    )
+    if effective_expiration <= _utcnow() or not session.account.is_active:
+        return None
+    return effective_expiration
+
+
+def refresh_session(db: Session, token: str) -> tuple[str, datetime, User] | None:
+    session = db.scalar(
+        select(UserSession)
+        .options(joinedload(UserSession.account))
+        .where(UserSession.token_hash == _hash_token(token))
+    )
+    if not session or session.revoked_at is not None:
+        return None
+    effective_expiration = min(
+        session.expires_at,
+        session.created_at + timedelta(hours=SESSION_HOURS),
+    )
+    if effective_expiration <= _utcnow() or not session.account.is_active:
+        return None
+
+    session.revoked_at = _utcnow()
+    new_token = create_session(db, session.account)
+    db.commit()
+    new_session = db.scalar(
+        select(UserSession)
+        .where(UserSession.token_hash == _hash_token(new_token))
+    )
+    if new_session is None:
+        return None
+    return new_token, new_session.expires_at, session.account
+
+
 def revoke_user_sessions(db: Session, username: str) -> None:
     normalized_user = _normalize_username(username)
     db.execute(
@@ -166,3 +210,23 @@ def set_theme_preference(db: Session, username: str, theme: str) -> str:
         preference.theme = theme
     db.commit()
     return preference.theme
+
+
+def get_landing_ui_preference(db: Session, username: str) -> str:
+    preference = db.get(UserPreference, username)
+    return preference.landing_ui if preference else "legacy"
+
+
+def set_landing_ui_preference(db: Session, username: str, landing_ui: str) -> str:
+    preference = db.get(UserPreference, username)
+    if preference is None:
+        preference = UserPreference(
+            username=username,
+            theme="default",
+            landing_ui=landing_ui,
+        )
+        db.add(preference)
+    else:
+        preference.landing_ui = landing_ui
+    db.commit()
+    return preference.landing_ui

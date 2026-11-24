@@ -3,6 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import * as apiClient from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { ThemeName } from '../types';
+import {
+  getLandingUiMode,
+  LANDING_UI_CHANGED_EVENT,
+  setSessionLandingUiMode,
+  setLandingUiMode,
+  type LandingUiMode,
+} from '../utils/landingUi';
 
 type ToolbarDialog = 'patch' | 'unfixed' | 'api' | 'game' | null;
 type ApiTestState = 'idle' | 'checking' | 'online' | 'offline';
@@ -199,6 +206,8 @@ export function AppToolbar() {
   const navigate = useNavigate();
   const { mode, user, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState(() => dateTimeFormatter.format(new Date()));
+  const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number | null>(null);
+  const [sessionRefreshing, setSessionRefreshing] = useState(false);
   const [activeDialog, setActiveDialog] = useState<ToolbarDialog>(null);
   const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.4.1');
   const [apiTestState, setApiTestState] = useState<ApiTestState>('idle');
@@ -209,6 +218,7 @@ export function AppToolbar() {
   const [themeSaving, setThemeSaving] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
   const [showExtraTools, setShowExtraTools] = useState(false);
+  const [landingUiMode, setLandingUiModeState] = useState(getLandingUiMode);
   const [isDragging, setIsDragging] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const toolbarRef = useRef<HTMLElement>(null);
@@ -320,9 +330,23 @@ export function AppToolbar() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setCurrentTime(dateTimeFormatter.format(new Date()));
+      if (mode === 'user') {
+        const expiresAt = window.localStorage.getItem(
+          apiClient.AUTH_SESSION_EXPIRATION_STORAGE_KEY,
+        );
+        if (expiresAt) {
+          const remaining = Math.max(
+            0,
+            Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
+          );
+          setSessionRemainingSeconds(remaining);
+        }
+      } else {
+        setSessionRemainingSeconds(null);
+      }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     if (!themeMenuOpen) return;
@@ -334,6 +358,31 @@ export function AppToolbar() {
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [themeMenuOpen]);
+
+  useEffect(() => {
+    const handleLandingUiChange = (event: Event) => {
+      const customEvent = event as CustomEvent<LandingUiMode>;
+      setLandingUiModeState(customEvent.detail);
+    };
+    window.addEventListener(LANDING_UI_CHANGED_EVENT, handleLandingUiChange);
+    return () => window.removeEventListener(LANDING_UI_CHANGED_EVENT, handleLandingUiChange);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (mode === 'user') {
+      void apiClient.getLandingUiPreference()
+        .then((savedMode) => {
+          if (active) setLandingUiModeState(savedMode);
+        })
+        .catch(() => undefined);
+    } else if (mode === 'guest') {
+      setLandingUiModeState('legacy');
+    }
+    return () => {
+      active = false;
+    };
+  }, [mode, user?.user]);
 
   useEffect(() => {
     let active = true;
@@ -415,6 +464,42 @@ export function AppToolbar() {
     navigate('/login');
   };
 
+  const refreshAuthenticatedSession = async () => {
+    if (mode !== 'user' || sessionRefreshing) return;
+    setSessionRefreshing(true);
+    try {
+      const refreshed = await apiClient.refreshSession();
+      window.localStorage.setItem(apiClient.AUTH_TOKEN_STORAGE_KEY, refreshed.token);
+      window.localStorage.setItem(
+        apiClient.AUTH_SESSION_EXPIRATION_STORAGE_KEY,
+        refreshed.expires_at,
+      );
+      setSessionRemainingSeconds(
+        Math.max(
+          0,
+          Math.floor(
+            (new Date(refreshed.expires_at).getTime() - Date.now()) / 1000,
+          ),
+        ),
+      );
+    } catch {
+      window.dispatchEvent(new Event(apiClient.AUTH_SESSION_EXPIRED_EVENT));
+    } finally {
+      setSessionRefreshing(false);
+    }
+  };
+
+  const formatSessionRemaining = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    return [
+      String(hours).padStart(2, '0'),
+      String(minutes).padStart(2, '0'),
+      String(remainingSeconds).padStart(2, '0'),
+    ].join(':');
+  };
+
   const handleThemeChange = async (nextTheme: ThemeName) => {
     themeRequestId.current += 1;
     setTheme(nextTheme);
@@ -437,6 +522,21 @@ export function AppToolbar() {
 
   const toggleExtraTools = () => {
     setShowExtraTools((visible) => !visible);
+  };
+
+  const toggleLandingUi = async () => {
+    const nextMode = landingUiMode === 'legacy' ? 'alternative' : 'legacy';
+    setLandingUiModeState(nextMode);
+    if (mode === 'user') {
+      setLandingUiMode(nextMode);
+      try {
+        await apiClient.updateLandingUiPreference(nextMode);
+      } catch {
+        // localStorage fallback remains active if the server preference cannot be saved.
+      }
+    } else {
+      setSessionLandingUiMode(nextMode);
+    }
   };
 
   const handlePatchTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -517,6 +617,41 @@ export function AppToolbar() {
             <p className="mt-0.5 whitespace-nowrap font-mono text-xs font-medium tabular-nums text-slate-200">
               {currentTime}
             </p>
+            {mode === 'user' && (
+              <div className="mt-1 flex items-center justify-end gap-1">
+                <span
+                  className={`whitespace-nowrap font-mono text-[10px] tabular-nums ${
+                    sessionRemainingSeconds !== null && sessionRemainingSeconds < 300
+                      ? 'text-rose-300'
+                      : 'text-slate-400'
+                  }`}
+                  title="Sisa masa aktif sesi"
+                >
+                  Sesi {sessionRemainingSeconds === null
+                    ? '--:--:--'
+                    : formatSessionRemaining(sessionRemainingSeconds)}
+                </span>
+                <button
+                  type="button"
+                  disabled={sessionRefreshing}
+                  onClick={() => void refreshAuthenticatedSession()}
+                  className="flex size-5 items-center justify-center rounded-md text-slate-400 transition hover:bg-sky-500/15 hover:text-sky-300 disabled:cursor-wait disabled:opacity-50"
+                  aria-label="Perbarui sesi"
+                  title="Perbarui sesi tanpa memasukkan password"
+                >
+                  <svg
+                    className={`h-3 w-3 ${sessionRefreshing ? 'animate-spin' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20 11a8 8 0 10-2.34 5.66M20 11V5m0 6h-6" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -607,6 +742,22 @@ export function AppToolbar() {
               role="group"
               aria-label="Extra toolbar tools"
             >
+              <ToolbarActionButton
+                tooltip={landingUiMode === 'legacy' ? 'Tampilan Alternatif' : 'Legacy UI'}
+                ariaLabel={
+                  landingUiMode === 'legacy'
+                    ? 'Gunakan tampilan landing page alternatif'
+                    : 'Kembali ke tampilan landing page Legacy UI'
+                }
+                tone={landingUiMode === 'alternative' ? 'emerald' : 'default'}
+                onClick={() => void toggleLandingUi()}
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 5.5A1.5 1.5 0 015.5 4h13A1.5 1.5 0 0120 5.5v13a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 18.5v-13zM4 9h16M9 9v11" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 13l2 2-2 2m3-2h3" />
+                </svg>
+              </ToolbarActionButton>
+
               <ToolbarActionButton
                 tooltip="Patch Notes (v1.4.1)"
                 ariaLabel="Buka Patch Notes"

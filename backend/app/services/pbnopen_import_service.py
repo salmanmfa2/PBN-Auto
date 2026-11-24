@@ -58,6 +58,10 @@ EMPLOYEE_REFERENCE_COLUMNS = (
     ("unit_kerja_id", "Unit Kerja", "ref_unit_kerja", "unit_kerja_id"),
     ("rumpun_id", "Rumpun Pdd Terakhir", "ref_rumpun_pendidikan", "rumpun_id"),
 )
+UNIT_KERJA_KANWIL_SOURCE_PREFIX = (
+    "Kantor Wilayah Direktorat Jenderal Perbendaharaan Provinsi "
+)
+UNIT_KERJA_KANWIL_REFERENCE_PREFIX = "Kanwil DJPb Prov. "
 EMPLOYEE_TABLE_SOURCES = {
     "dt_employee": "fetch_pbnopen",
     "dt_employee_q2_2026": "fetch_pbnopen_q2_2026",
@@ -232,6 +236,21 @@ def _employee_reference_label(value: object) -> str | None:
         return None
     label = str(value)
     return label if label.strip() else None
+
+
+def _employee_reference_lookup_label(
+    source_column: str,
+    label: str,
+    reference_labels: dict[str, int],
+) -> str:
+    if label in reference_labels or source_column != "Unit Kerja":
+        return label
+    if not label.startswith(UNIT_KERJA_KANWIL_SOURCE_PREFIX):
+        return label
+
+    province = label[len(UNIT_KERJA_KANWIL_SOURCE_PREFIX):]
+    canonical_label = f"{UNIT_KERJA_KANWIL_REFERENCE_PREFIX}{province}"
+    return canonical_label if canonical_label in reference_labels else label
 
 
 def _prepare_reference_upload(
@@ -609,7 +628,21 @@ def _prepare_employee_sync(connection: Any, target: TableMaintenanceTarget) -> d
         }
         for target_column, source_column, reference_name, _ in EMPLOYEE_REFERENCE_COLUMNS:
             label = _employee_reference_label(source_row[source_column])
-            reference_id = reference_maps[reference_name].get(label) if label else None
+            reference_labels = reference_maps[reference_name]
+            lookup_label = (
+                _employee_reference_lookup_label(
+                    source_column,
+                    label,
+                    reference_labels,
+                )
+                if label is not None
+                else None
+            )
+            reference_id = (
+                reference_labels.get(lookup_label)
+                if lookup_label is not None
+                else None
+            )
             if label is not None and reference_id is None:
                 unmapped_counts[source_column] += 1
             employee_row[target_column] = reference_id

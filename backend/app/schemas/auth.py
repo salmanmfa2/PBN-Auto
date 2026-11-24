@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 AuthLevel = Literal[1, 2, 3, 4]
 AssignableAuthLevel = Literal[1, 2, 3, 4]
 ThemeName = Literal["default", "dark", "light"]
+LandingUiName = Literal["legacy", "alternative"]
 
 
 class UserRead(BaseModel):
@@ -67,6 +68,11 @@ class AdminUserUpdate(BaseModel):
 class AuthResponse(BaseModel):
     token: str
     user: UserRead
+    expires_at: datetime
+
+
+class SessionStatusRead(BaseModel):
+    expires_at: datetime
 
 
 class MessageResponse(BaseModel):
@@ -79,3 +85,11 @@ class ThemePreferenceRead(BaseModel):
 
 class ThemePreferenceUpdate(BaseModel):
     theme: ThemeName
+
+
+class LandingUiPreferenceRead(BaseModel):
+    landing_ui: LandingUiName
+
+
+class LandingUiPreferenceUpdate(BaseModel):
+    landing_ui: LandingUiName

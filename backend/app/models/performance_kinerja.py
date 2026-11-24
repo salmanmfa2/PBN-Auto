@@ -23,8 +23,6 @@ class PerformanceKinerjaDataset(Base):
     )
     uploaded_by_user: Mapped[str] = mapped_column(String(80), nullable=False)
     uploaded_by_name: Mapped[str] = mapped_column(String(200), nullable=False)
-
-
 class PerformanceKinerjaRecord(Base):
     __tablename__ = "performance_kinerja_records"
 

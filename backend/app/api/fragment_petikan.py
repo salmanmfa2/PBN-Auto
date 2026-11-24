@@ -28,25 +28,70 @@ def _sanitize_filename(value: str) -> str:
     return cleaned[:MAX_FILENAME_LENGTH].rstrip(" _-") or "Tanpa Nama"
 
 
-def _extract_fragment_name(text: str) -> str | None:
-    matches = re.findall(
-        r"(?is)Sdr\.\s*(.*?)\s*\(\s*NIP",
-        text,
+def _extract_fragment_name(
+    text: str,
+    start_marker: str = "Sdr.",
+    end_marker: str = "(NIP",
+) -> str | None:
+    pattern = (
+        rf"(?is){re.escape(start_marker)}\s*(.*?)"
+        rf"\s*{re.escape(end_marker)}"
     )
+    matches = re.findall(pattern, text)
     if not matches:
         return None
     name = re.sub(r"\s+", " ", matches[0]).strip(" ,;:")
     return _sanitize_filename(name) if name else None
 
 
+def _parse_ignored_pages(value: str, page_count: int) -> set[int]:
+    ignored: set[int] = set()
+    if not value.strip():
+        return ignored
+
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if re.fullmatch(r"\d+", item):
+            page_number = int(item)
+            if page_number < 1 or page_number > page_count:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Nomor halaman abaikan berada di luar PDF.",
+                )
+            ignored.add(page_number - 1)
+            continue
+        range_match = re.fullmatch(r"(\d+)\s*-\s*(\d+)", item)
+        if not range_match:
+            raise HTTPException(
+                status_code=422,
+                detail="Format halaman abaikan tidak valid. Gunakan angka atau rentang, misalnya 1,3-5.",
+            )
+        first = int(range_match.group(1))
+        last = int(range_match.group(2))
+        if first < 1 or last < first or last > page_count:
+            raise HTTPException(
+                status_code=422,
+                detail="Rentang halaman abaikan berada di luar PDF.",
+            )
+        ignored.update(range(first - 1, last))
+    return ignored
+
+
 @router.post("/split")
 async def split_petikan_pdf(
     file: UploadFile = File(...),
     pages_per_fragment: int = Form(...),
+    start_marker: str = Form("Sdr."),
+    end_marker: str = Form("(NIP"),
+    ignored_pages: str = Form(""),
     _: User = Depends(get_current_user),
 ):
-    if pages_per_fragment not in {2, 3}:
-        raise HTTPException(status_code=422, detail="Jumlah halaman per fragment harus 2 atau 3.")
+    if pages_per_fragment < 1:
+        raise HTTPException(status_code=422, detail="Jumlah halaman per fragment minimal 1.")
+    if not start_marker.strip() or not end_marker.strip():
+        raise HTTPException(status_code=422, detail="Teks awal dan teks akhir penamaan wajib diisi.")
 
     filename = file.filename or ""
     if not filename.lower().endswith(".pdf"):
@@ -66,16 +111,31 @@ async def split_petikan_pdf(
     if len(reader.pages) == 0:
         raise HTTPException(status_code=422, detail="PDF tidak memiliki halaman.")
 
+    ignored_indexes = _parse_ignored_pages(ignored_pages, len(reader.pages))
+    active_page_indexes = [
+        page_index
+        for page_index in range(len(reader.pages))
+        if page_index not in ignored_indexes
+    ]
+    if not active_page_indexes:
+        raise HTTPException(
+            status_code=422,
+            detail="Semua halaman dipilih untuk diabaikan; tidak ada halaman yang diproses.",
+        )
+    active_page_count = len(active_page_indexes)
+    leftover_page_count = active_page_count % pages_per_fragment
+
     output = BytesIO()
     fragment_count = 0
     used_names: set[str] = set()
     skipped_count = 0
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
-        for start in range(0, len(reader.pages), pages_per_fragment):
-            end = min(start + pages_per_fragment, len(reader.pages))
+        for start in range(0, active_page_count, pages_per_fragment):
+            end = min(start + pages_per_fragment, active_page_count)
             chunk_text_parts: list[str] = []
             writer = PdfWriter()
-            for page_index in range(start, end):
+            for active_position in range(start, end):
+                page_index = active_page_indexes[active_position]
                 page = reader.pages[page_index]
                 writer.add_page(page)
                 try:
@@ -84,7 +144,11 @@ async def split_petikan_pdf(
                     chunk_text_parts.append("")
 
             fragment_count += 1
-            mined_name = _extract_fragment_name("\n".join(chunk_text_parts))
+            mined_name = _extract_fragment_name(
+                "\n".join(chunk_text_parts),
+                start_marker.strip(),
+                end_marker.strip(),
+            )
             if mined_name is None:
                 skipped_count += 1
                 mined_name = "Tanpa Nama"
@@ -113,5 +177,7 @@ async def split_petikan_pdf(
             "Content-Disposition": 'attachment; filename="fragment-petikan.zip"',
             "X-Fragment-Count": str(fragment_count),
             "X-Skipped-Name-Count": str(skipped_count),
+            "X-Ignored-Page-Count": str(len(ignored_indexes)),
+            "X-Leftover-Page-Count": str(leftover_page_count),
         },
     )

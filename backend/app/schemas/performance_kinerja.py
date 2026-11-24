@@ -129,6 +129,7 @@ class PerformanceUnitMetrics(BaseModel):
     dampak_pelanggaran_count: int
     dampak_perilaku_count: int
     correction: PerformanceCorrectionStats
+    correction_percentage: float
     average_nkp_akhir: float | None
     nkp_akhir_sangat_istimewa_count: int
     nkp_akhir_sangat_istimewa_percentage: float

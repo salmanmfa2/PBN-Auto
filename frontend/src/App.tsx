@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import AdminPage from './pages/AdminPage';
 import LandingPage from './pages/LandingPage';
+const AlternativeLandingPage = lazy(() => import('./pages/LandingPage_Alternative'));
 import AnalyticsPage from './pages/AnalyticsPage';
 import InsightHubPage from './pages/InsightHubPage';
 import LoginPage from './pages/LoginPage';
@@ -15,7 +16,14 @@ import { ChatWidget } from './components/ChatWidget';
 import { FeedbackWidget } from './components/FeedbackWidget';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { MenuAccessProvider, useMenuAccess } from './contexts/MenuAccessContext';
+import * as apiClient from './services/api';
 import type { MenuAccessKey } from './types';
+import {
+  getLandingUiMode,
+  LANDING_UI_CHANGED_EVENT,
+  setLandingUiMode as persistLandingUiMode,
+  type LandingUiMode,
+} from './utils/landingUi';
 
 function RequireSession() {
   const { mode, isLoading } = useAuth();
@@ -64,6 +72,32 @@ function RedirectExperimentalPelantikanRoute() {
 function AppRoutes() {
   const { mode, user, isLoading } = useAuth();
   const [activeWidget, setActiveWidget] = useState<'chat' | 'feedback' | null>(null);
+  const [landingUiMode, setLandingUiModeState] = useState<LandingUiMode>(getLandingUiMode);
+
+  useEffect(() => {
+    const handleLandingUiChange = (event: Event) => {
+      const customEvent = event as CustomEvent<LandingUiMode>;
+      setLandingUiModeState(customEvent.detail);
+    };
+    window.addEventListener(LANDING_UI_CHANGED_EVENT, handleLandingUiChange);
+    return () => window.removeEventListener(LANDING_UI_CHANGED_EVENT, handleLandingUiChange);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (mode === 'user') {
+      void apiClient.getLandingUiPreference()
+        .then((savedMode) => {
+          if (active) persistLandingUiMode(savedMode);
+        })
+        .catch(() => undefined);
+    } else if (mode === 'guest') {
+      setLandingUiModeState('legacy');
+    }
+    return () => {
+      active = false;
+    };
+  }, [mode, user?.user]);
 
   if (isLoading) {
     return <main className="flex min-h-screen items-center justify-center bg-surface-950 text-sm text-slate-400">Memuat aplikasi…</main>;
@@ -96,12 +130,26 @@ function AppRoutes() {
           element={mode ? <Navigate to="/" replace /> : <LoginPage />}
         />
         <Route element={<RequireSession />}>
-          <Route path="/" element={<LandingPage />} />
+          <Route
+            path="/"
+            element={
+              landingUiMode === 'alternative' ? (
+                <Suspense
+                  fallback={
+                    <main className="flex min-h-screen items-center justify-center bg-surface-950 text-sm text-slate-400">
+                      Memuat tampilan alternatif…
+                    </main>
+                  }
+                >
+                  <AlternativeLandingPage />
+                </Suspense>
+              ) : (
+                <LandingPage />
+              )
+            }
+          />
           <Route element={<RequireMenuView menuKey="analytics" />}>
             <Route path="/pbn-analytics" element={<AnalyticsPage />} />
-          </Route>
-          <Route element={<RequireMenuView menuKey="insights" />}>
-            <Route path="/insights" element={<InsightHubPage />} />
           </Route>
           <Route element={<RequireMenuView menuKey="insights-beta" />}>
             <Route path="/insights-beta" element={<InsightHubPage source="database" />} />

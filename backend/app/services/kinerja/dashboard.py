@@ -123,6 +123,7 @@ def _make_unit_metrics(
     nkp_akhir_count = sum(
         1 for record in records if _status(record.nkp_akhir) == "Sangat Istimewa"
     )
+    correction = _make_correction_stats(records)
     return {
         "label": label,
         "unit_kerja_id": min(unit_kerja_ids) if unit_kerja_ids else None,
@@ -165,7 +166,8 @@ def _make_unit_metrics(
             if record.nilai_dampak_perilaku is not None
             and record.nilai_dampak_perilaku != ZERO
         ),
-        "correction": _make_correction_stats(records),
+        "correction": correction,
+        "correction_percentage": _percentage(correction["count"], len(records)),
         "average_nkp_akhir": _average([record.nkp_akhir for record in records]),
         "nkp_akhir_sangat_istimewa_count": nkp_akhir_count,
         "nkp_akhir_sangat_istimewa_percentage": _percentage(nkp_akhir_count, len(records)),
@@ -188,6 +190,7 @@ def _unit_comparison_values(
         "dampak_pelanggaran_count",
         "dampak_perilaku_count",
         "correction.count",
+        "correction_percentage",
         "correction.positive_count",
         "correction.negative_count",
         "correction.average",
@@ -295,7 +298,12 @@ def _units_with_comparisons(
     ]
 
 def _dashboard_dataset_signature(dataset: PerformanceKinerjaDataset) -> tuple[Any, ...]:
-    return (dataset.id, dataset.period, dataset.row_count, dataset.uploaded_at)
+    return (
+        dataset.id,
+        dataset.period,
+        dataset.row_count,
+        dataset.uploaded_at,
+    )
 
 def _unit_order_key(
     label: str,

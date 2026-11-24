@@ -534,7 +534,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
                 (1, "123456789012345679"),
             )
             self.assertEqual(boundary_record.status_nkp_perhitungan, "Sangat Istimewa")
-            self.assertEqual(session.get(PerformanceKinerjaDataset, 1).period, "Q3-2026")
+            migrated_dataset = session.get(PerformanceKinerjaDataset, 1)
+            self.assertEqual(migrated_dataset.period, "Q3-2026")
 
         with legacy_engine.begin() as connection:
             connection.exec_driver_sql(
@@ -573,7 +574,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             )
             connection.exec_driver_sql(
                 "INSERT INTO pbncleaner.ref_unit_kerja VALUES "
-                "(10, 'Direktorat Utama'), (20, 'Direktorat Q2')"
+                "(10, 'Direktorat Utama'), "
+                "(20, 'Direktorat Q2')"
             )
             connection.exec_driver_sql(
                 'CREATE TABLE pbncleaner.fetch_pbnopen ('
@@ -1603,6 +1605,72 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(very_special["delta"], 1)
         self.assertEqual(special["delta"], -1)
         self.assertNotIn("nkp_awal_status_counts.Sangat Istimewa", comparison)
+
+    def test_unit_comparison_includes_correction_percentage(self) -> None:
+        current = kinerja_dashboard._make_unit_metrics(
+            "Unit A",
+            [
+                PerformanceKinerjaRecord(
+                    nip="123456789012345679",
+                    dataset_id=1,
+                    nama="Current corrected",
+                    unit_eselon_ii="Unit A",
+                    nilai_koreksi=Decimal("1"),
+                ),
+                PerformanceKinerjaRecord(
+                    nip="123456789012345680",
+                    dataset_id=1,
+                    nama="Current unchanged",
+                    unit_eselon_ii="Unit A",
+                    nilai_koreksi=Decimal("0"),
+                ),
+            ],
+        )
+        previous = kinerja_dashboard._make_unit_metrics(
+            "Unit A",
+            [
+                PerformanceKinerjaRecord(
+                    nip="123456789012345681",
+                    dataset_id=2,
+                    nama="Previous corrected",
+                    unit_eselon_ii="Unit A",
+                    nilai_koreksi=Decimal("-1"),
+                ),
+                PerformanceKinerjaRecord(
+                    nip="123456789012345682",
+                    dataset_id=2,
+                    nama="Previous unchanged 1",
+                    unit_eselon_ii="Unit A",
+                    nilai_koreksi=Decimal("0"),
+                ),
+                PerformanceKinerjaRecord(
+                    nip="123456789012345683",
+                    dataset_id=2,
+                    nama="Previous unchanged 2",
+                    unit_eselon_ii="Unit A",
+                    nilai_koreksi=Decimal("0"),
+                ),
+                PerformanceKinerjaRecord(
+                    nip="123456789012345684",
+                    dataset_id=2,
+                    nama="Previous unchanged 3",
+                    unit_eselon_ii="Unit A",
+                    nilai_koreksi=Decimal("0"),
+                ),
+            ],
+        )
+
+        comparison = kinerja_dashboard._unit_comparison_values(current, previous)
+
+        self.assertEqual(current["correction_percentage"], 50)
+        self.assertEqual(previous["correction_percentage"], 25)
+        self.assertEqual(comparison["correction_percentage"]["current"], 50)
+        self.assertEqual(comparison["correction_percentage"]["previous"], 25)
+        self.assertEqual(comparison["correction_percentage"]["delta"], 25)
+        self.assertEqual(
+            comparison["correction_percentage"]["percentage_change"],
+            100,
+        )
 
     def test_get_records_filters_and_sorts_across_the_dataset(self) -> None:
         self.import_active_dataset()

@@ -165,7 +165,7 @@ def _lookup_employee_records(
             "Check database connectivity and the NIP column."
         ) from exc
 
-    matches: dict[str, dict[str, str]] = {}
+    matches: dict[str, dict[str, Any]] = {}
     duplicates: set[str] = set()
     for row in rows:
         nip = normalize_nip(row["NIP"])

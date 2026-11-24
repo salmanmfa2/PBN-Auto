@@ -25,14 +25,21 @@ class FragmentPetikanTests(unittest.TestCase):
         self.assertLessEqual(len(sanitized), 50)
         self.assertNotRegex(sanitized, r'[<>:"/\\|?*]')
 
+    def test_extract_fragment_name_accepts_custom_markers(self) -> None:
+        text = "Pegawai: Ahmad Wijaya | ID 123"
+        self.assertEqual(
+            _extract_fragment_name(text, "Pegawai:", "| ID"),
+            "Ahmad Wijaya",
+        )
+
     def test_split_endpoint_returns_two_page_and_three_page_zip_fragments(self) -> None:
         user = type("User", (), {"user": "owner", "auth_level": 4})()
         app.dependency_overrides[get_current_user] = lambda: user
         app.dependency_overrides[get_optional_current_user] = lambda: user
         try:
             client = TestClient(app)
-            for pages in (2, 3):
-                pdf_bytes = self._create_pdf(4)
+            for pages in (2, 3, 4):
+                pdf_bytes = self._create_pdf(6)
                 response = client.post(
                     "/fragment-petikan/split",
                     data={"pages_per_fragment": str(pages)},
@@ -41,8 +48,33 @@ class FragmentPetikanTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.headers["content-type"], "application/zip")
                 with ZipFile(io.BytesIO(response.content), "r") as archive:
-                    expected_count = 4 // pages + (1 if 4 % pages else 0)
+                    expected_count = 6 // pages + (1 if 6 % pages else 0)
                     self.assertEqual(len(archive.namelist()), expected_count)
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_optional_current_user, None)
+
+    def test_split_endpoint_supports_custom_markers_ignored_pages_and_remainder(self) -> None:
+        user = type("User", (), {"user": "owner", "auth_level": 4})()
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_optional_current_user] = lambda: user
+        try:
+            client = TestClient(app)
+            response = client.post(
+                "/fragment-petikan/split",
+                data={
+                    "pages_per_fragment": "3",
+                    "start_marker": "Nama:",
+                    "end_marker": "| NIP",
+                    "ignored_pages": "2-3",
+                },
+                files={"file": ("source.pdf", self._create_pdf(6), "application/pdf")},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.headers["x-ignored-page-count"], "2")
+            self.assertEqual(response.headers["x-leftover-page-count"], "1")
+            with ZipFile(io.BytesIO(response.content), "r") as archive:
+                self.assertEqual(len(archive.namelist()), 2)
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_optional_current_user, None)

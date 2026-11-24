@@ -64,3 +64,8 @@ class UserPreference(Base):
         primary_key=True,
     )
     theme: Mapped[str] = mapped_column(String(10), nullable=False, default="default")
+    landing_ui: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="legacy",
+    )

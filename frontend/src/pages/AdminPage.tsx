@@ -38,7 +38,6 @@ const emptyForm: UserForm = {
 
 const menuAccessLabels: Record<MenuAccessKey, string> = {
   analytics: 'PBN Analytics',
-  insights: 'Insight Hub',
   'insights-beta': 'Insight Hub Beta',
   'analisis-kinerja': 'Analisis Kinerja DJPb',
   'analisis-mutasi': 'Analisis Mutasi/Promosi',

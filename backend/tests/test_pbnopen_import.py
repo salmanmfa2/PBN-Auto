@@ -311,6 +311,32 @@ class DtEmployeeSyncTests(unittest.TestCase):
                 ).mappings()
             )
 
+    def test_sync_maps_full_kanwil_label_to_existing_reference(self) -> None:
+        source_record = self._source_record("001", "Employee")
+        source_record["Unit Kerja"] = (
+            "Kantor Wilayah Direktorat Jenderal Perbendaharaan Provinsi Jawa Tengah"
+        )
+        with self.test_engine.begin() as connection:
+            connection.exec_driver_sql(
+                "UPDATE pbncleaner.ref_unit_kerja SET value = ? WHERE unit_kerja_id = 1",
+                ("Kanwil DJPb Prov. Jawa Tengah",),
+            )
+        self._insert_source([source_record])
+
+        with patch.object(pbnopen_import_service, "engine", self.test_engine):
+            row_count = pbnopen_import_service.sync_dt_employee_from_pbnopen()
+
+        self.assertEqual(row_count, 1)
+        self.assertEqual(self._employee_rows()[0]["unit_kerja_id"], 1)
+        with self.test_engine.connect() as connection:
+            reference_value = connection.execute(
+                text(
+                    "SELECT value FROM pbncleaner.ref_unit_kerja "
+                    "WHERE unit_kerja_id = 1"
+                )
+            ).scalar_one()
+        self.assertEqual(reference_value, "Kanwil DJPb Prov. Jawa Tengah")
+
     def test_sync_maps_reference_labels_preserves_ids_and_removes_obsolete_rows(self) -> None:
         self._insert_source(
             [self._source_record("001", "Updated"), self._source_record("002", "New")]
@@ -444,6 +470,9 @@ class DtEmployeeSyncTests(unittest.TestCase):
     def test_missing_reference_mapping_leaves_employee_table_unchanged(self) -> None:
         source_record = self._source_record("001", "Updated")
         source_record["Pangkat"] = "Unmapped rank"
+        source_record["Unit Kerja"] = (
+            "Kantor Wilayah Direktorat Jenderal Perbendaharaan Provinsi Unknown"
+        )
         self._insert_source([source_record])
         self._insert_employee(100, "001", "Old")
 

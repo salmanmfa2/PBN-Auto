@@ -585,7 +585,9 @@ export default function PerformanceAnalysisPage() {
   const [analysis, setAnalysis] = useState<PerformanceDashboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'units' | 'employees'>(
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'units' | 'employees'
+  >(
     () => savedViewState?.activeTab ?? 'overview',
   );
   const [isOverviewCompareMode, setIsOverviewCompareMode] = useState(false);

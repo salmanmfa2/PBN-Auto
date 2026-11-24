@@ -159,6 +159,7 @@ const UNIT_COMPARISON_LABELS: Record<string, string> = {
   dampak_pelanggaran_count: 'Dampak pelanggaran · jumlah pegawai',
   dampak_perilaku_count: 'Dampak perilaku · jumlah pegawai',
   'correction.count': 'Koreksi · jumlah',
+  correction_percentage: 'Pemberian Koreksi (%)',
   'correction.positive_count': 'Koreksi · penambahan',
   'correction.negative_count': 'Koreksi · pengurangan',
   'correction.average': 'Koreksi · rata-rata',
@@ -254,29 +255,38 @@ export function UnitComparisonDialog({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {Object.entries(comparison).map(([key, values]) => (
-                <tr key={key} className="text-slate-300 transition-colors hover:bg-slate-800/45">
-                  <td className="px-4 py-2.5 font-medium text-slate-200">{comparisonLabel(key)}</td>
-                  <td className="px-4 py-2.5 font-mono tabular-nums font-semibold text-slate-100">{formatNumber(values.current)}</td>
-                  <td className="px-4 py-2.5 font-mono tabular-nums text-slate-400">{formatNumber(values.previous)}</td>
-                  <td className="px-4 py-2.5 font-mono tabular-nums">{formatSignedNumber(values.delta)}</td>
-                  <td
-                    className={`px-4 py-2.5 font-mono tabular-nums font-semibold ${
-                      values.percentage_change === null
-                        ? 'text-slate-400'
-                        : values.percentage_change > 0
-                          ? 'text-emerald-400'
-                          : values.percentage_change < 0
-                            ? 'text-rose-400'
-                            : 'text-slate-300'
-                    }`}
-                  >
-                    {values.percentage_change === null
-                      ? '—'
-                      : `${formatSignedNumber(values.percentage_change)}%`}
-                  </td>
-                </tr>
-              ))}
+              {Object.entries(comparison).map(([key, values]) => {
+                const isCorrectionPercentage = key === 'correction_percentage';
+                return (
+                  <tr key={key} className="text-slate-300 transition-colors hover:bg-slate-800/45">
+                    <td className="px-4 py-2.5 font-medium text-slate-200">{comparisonLabel(key)}</td>
+                    <td className="px-4 py-2.5 font-mono tabular-nums font-semibold text-slate-100">
+                      {formatNumber(values.current)}{isCorrectionPercentage && values.current !== null ? '%' : ''}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono tabular-nums text-slate-400">
+                      {formatNumber(values.previous)}{isCorrectionPercentage && values.previous !== null ? '%' : ''}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono tabular-nums">
+                      {formatSignedNumber(values.delta)}{isCorrectionPercentage && values.delta !== null ? ' pp' : ''}
+                    </td>
+                    <td
+                      className={`px-4 py-2.5 font-mono tabular-nums font-semibold ${
+                        values.percentage_change === null
+                          ? 'text-slate-400'
+                          : values.percentage_change > 0
+                            ? 'text-emerald-400'
+                            : values.percentage_change < 0
+                              ? 'text-rose-400'
+                              : 'text-slate-300'
+                      }`}
+                    >
+                      {values.percentage_change === null
+                        ? '—'
+                        : `${formatSignedNumber(values.percentage_change)}%`}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 from app.api.auth import create_managed_user, get_god_user, get_super_admin, update_managed_user
 from app.history_db import Base
 from app.models.auth import User, UserPreference, UserSession
-from app.schemas.auth import AdminUserCreate, AdminUserUpdate, RegisterRequest, ThemePreferenceUpdate
+from app.schemas.auth import (
+    AdminUserCreate,
+    AdminUserUpdate,
+    LandingUiPreferenceUpdate,
+    RegisterRequest,
+    ThemePreferenceUpdate,
+)
 from app.services import auth_service
 
 
@@ -169,6 +175,20 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertIsNone(auth_service.get_user_by_token(self.db, token))
 
+    def test_refresh_session_revokes_old_token_and_creates_new_token(self):
+        account = auth_service.create_user(self.db, "alice", "Alice", "plain-password")
+        old_token = auth_service.create_session(self.db, account)
+
+        refreshed = auth_service.refresh_session(self.db, old_token)
+
+        self.assertIsNotNone(refreshed)
+        new_token, expires_at, refreshed_user = refreshed
+        self.assertNotEqual(new_token, old_token)
+        self.assertEqual(refreshed_user.user, "alice")
+        self.assertGreater(expires_at, datetime.now(timezone.utc).replace(tzinfo=None))
+        self.assertIsNone(auth_service.get_user_by_token(self.db, old_token))
+        self.assertEqual(auth_service.get_user_by_token(self.db, new_token).user, "alice")
+
     def test_super_admin_count_includes_active_super_admin_and_god_user_accounts(self):
         auth_service.create_user(self.db, "super", "Super Admin", "pw", auth_level=3)
         auth_service.create_user(self.db, "salmanmfa", "God User", "pw", auth_level=4)
@@ -293,6 +313,42 @@ class AuthServiceTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             ThemePreferenceUpdate.model_validate({"theme": "system"})
+
+    def test_landing_ui_preference_is_stored_per_user(self):
+        auth_service.create_user(self.db, "alice", "Alice", "pw")
+        auth_service.create_user(self.db, "bob", "Bob", "pw")
+
+        self.assertEqual(
+            auth_service.get_landing_ui_preference(self.db, "alice"),
+            "legacy",
+        )
+        auth_service.set_landing_ui_preference(
+            self.db,
+            "alice",
+            "alternative",
+        )
+        self.assertEqual(
+            auth_service.get_landing_ui_preference(self.db, "alice"),
+            "alternative",
+        )
+        self.assertEqual(
+            auth_service.get_landing_ui_preference(self.db, "bob"),
+            "legacy",
+        )
+
+    def test_landing_ui_preference_accepts_only_supported_modes(self):
+        for landing_ui in ("legacy", "alternative"):
+            self.assertEqual(
+                LandingUiPreferenceUpdate(
+                    landing_ui=landing_ui,
+                ).landing_ui,
+                landing_ui,
+            )
+
+        with self.assertRaises(ValidationError):
+            LandingUiPreferenceUpdate.model_validate(
+                {"landing_ui": "compact"},
+            )
 
 
 if __name__ == "__main__":

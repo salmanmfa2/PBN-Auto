@@ -10,7 +10,6 @@ MenuAction = Literal["view", "edit"]
 
 DEFAULT_MENU_ACCESS_POLICIES: tuple[tuple[str, int, int], ...] = (
     ("analytics", 0, 0),
-    ("insights", 0, 0),
     ("insights-beta", 0, 0),
     ("analisis-kinerja", 0, 2),
     ("analisis-mutasi", 0, 0),

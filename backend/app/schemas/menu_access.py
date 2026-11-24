@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 
 MenuKey = Literal[
     "analytics",
-    "insights",
     "insights-beta",
     "analisis-kinerja",
     "analisis-mutasi",

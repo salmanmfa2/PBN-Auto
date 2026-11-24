@@ -74,7 +74,6 @@ export interface AuthUser {
 
 export type MenuAccessKey =
   | 'analytics'
-  | 'insights'
   | 'insights-beta'
   | 'analisis-kinerja'
   | 'analisis-mutasi'
@@ -206,9 +205,11 @@ export interface MutationTalentFinderSearchResponse {
 export interface AuthSessionResponse {
   token: string;
   user: AuthUser;
+  expires_at: string;
 }
 
 export type ThemeName = 'default' | 'dark' | 'light';
+export type LandingUiName = 'legacy' | 'alternative';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -222,7 +223,6 @@ export interface ChatResponse {
 export const FEEDBACK_MENU_OPTIONS = [
   'Overall',
   'PBN Analytics',
-  'Insight Hub',
   'Insight Hub Beta',
   'Analisis Kinerja DJPb',
   'Analisis Mutasi/Promosi',
@@ -471,6 +471,7 @@ export interface PerformanceUnitMetrics {
   dampak_pelanggaran_count: number;
   dampak_perilaku_count: number;
   correction: PerformanceCorrectionStats;
+  correction_percentage: number;
   average_nkp_akhir: number | null;
   nkp_akhir_sangat_istimewa_count: number;
   nkp_akhir_sangat_istimewa_percentage: number;

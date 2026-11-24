@@ -52,6 +52,7 @@ import type {
   PerformanceCorrectionBatchResult,
   PerformanceUploadValidation,
   ThemeName,
+  LandingUiName,
   ChatMessage,
   ChatResponse,
   FeedbackSubmitPayload,
@@ -78,6 +79,7 @@ const api = axios.create({
 
 export const AUTH_TOKEN_STORAGE_KEY = 'pbn.auth.token';
 export const AUTH_GUEST_STORAGE_KEY = 'pbn.auth.guest';
+export const AUTH_SESSION_EXPIRATION_STORAGE_KEY = 'pbn.auth.expires-at';
 export const AUTH_SESSION_EXPIRED_EVENT = 'pbn:auth-session-expired';
 
 function dispatchSessionExpiredEvent(): void {
@@ -148,6 +150,16 @@ export async function register(payload: AuthRegistrationPayload): Promise<AuthUs
 
 export async function getCurrentUser(): Promise<AuthUser> {
   const { data } = await api.get<AuthUser>('/auth/me');
+  return data;
+}
+
+export async function getSessionStatus(): Promise<{ expires_at: string }> {
+  const { data } = await api.get<{ expires_at: string }>('/auth/session');
+  return data;
+}
+
+export async function refreshSession(): Promise<AuthSessionResponse> {
+  const { data } = await api.post<AuthSessionResponse>('/auth/refresh');
   return data;
 }
 
@@ -240,12 +252,23 @@ export async function deleteMutationWorkspace(workspaceId: string): Promise<void
 
 export async function splitFragmentPetikanPdf(
   file: File,
-  pagesPerFragment: 2 | 3,
-): Promise<Blob> {
+  pagesPerFragment: number,
+  startMarker: string,
+  endMarker: string,
+  ignoredPages: string,
+): Promise<{
+  blob: Blob;
+  ignoredPageCount: number;
+  leftoverPageCount: number;
+  fragmentCount: number;
+}> {
   const form = new FormData();
   form.append('file', file);
   form.append('pages_per_fragment', String(pagesPerFragment));
-  const { data } = await api.post<Blob>(
+  form.append('start_marker', startMarker);
+  form.append('end_marker', endMarker);
+  form.append('ignored_pages', ignoredPages);
+  const response = await api.post<Blob>(
     '/fragment-petikan/split',
     form,
     {
@@ -253,7 +276,12 @@ export async function splitFragmentPetikanPdf(
       timeout: 300_000,
     },
   );
-  return data;
+  return {
+    blob: response.data,
+    ignoredPageCount: Number(response.headers['x-ignored-page-count'] ?? 0),
+    leftoverPageCount: Number(response.headers['x-leftover-page-count'] ?? 0),
+    fragmentCount: Number(response.headers['x-fragment-count'] ?? 0),
+  };
 }
 
 export async function lookupMutationNips(nips: string[]): Promise<MutationLookupResponse> {
@@ -305,6 +333,19 @@ export async function getThemePreference(): Promise<ThemeName> {
 
 export async function updateThemePreference(theme: ThemeName): Promise<void> {
   await api.put('/auth/preferences/theme', { theme });
+}
+
+export async function getLandingUiPreference(): Promise<LandingUiName> {
+  const { data } = await api.get<{ landing_ui: LandingUiName }>(
+    '/auth/preferences/landing-ui',
+  );
+  return data.landing_ui;
+}
+
+export async function updateLandingUiPreference(
+  landingUi: LandingUiName,
+): Promise<void> {
+  await api.put('/auth/preferences/landing-ui', { landing_ui: landingUi });
 }
 
 export async function logout(): Promise<void> {

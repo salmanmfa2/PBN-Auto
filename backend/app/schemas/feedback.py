@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 FeedbackMenu = Literal[
     "Overall",
     "PBN Analytics",
-    "Insight Hub",
     "Insight Hub Beta",
     "Analisis Kinerja DJPb",
     "Analisis Mutasi/Promosi",

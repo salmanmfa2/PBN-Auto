@@ -186,7 +186,8 @@ export function readPerformanceRecordsViewState(
     }
     const state = parsed as Record<string, unknown>;
     const direction = state.recordSortDirection === 'desc' ? 'desc' : 'asc';
-    const activeTab = state.activeTab === 'units' || state.activeTab === 'employees'
+    const activeTab = state.activeTab === 'units'
+      || state.activeTab === 'employees'
       ? state.activeTab
       : 'overview';
     return {

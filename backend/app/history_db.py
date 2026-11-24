@@ -417,6 +417,24 @@ def init_history_db() -> None:
     from app.models.user_feedback import UserFeedback  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    if inspect(engine).has_table("user_preferences"):
+        preference_columns = {
+            column["name"]
+            for column in inspect(engine).get_columns("user_preferences")
+        }
+        if "landing_ui" not in preference_columns:
+            if engine.dialect.name not in {"mysql", "mariadb", "sqlite"}:
+                raise RuntimeError(
+                    f"Cannot add landing UI preference on {engine.dialect.name}."
+                )
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE user_preferences "
+                        "ADD COLUMN landing_ui VARCHAR(20) "
+                        "NOT NULL DEFAULT 'legacy'"
+                    )
+                )
     _migrate_auth_level_role(engine)
     _migrate_mutation_analysis_schema(engine)
 

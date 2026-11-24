@@ -71,15 +71,6 @@ const features: Feature[] = [
     path: '/analisis-mutasi',
   },
   {
-    key: 'insights',
-    title: 'Insight Hub',
-    subtitle: 'Dasbor PBN Open + Edu + HB berbasis file unggahan',
-    group: 'Analytics & Insight',
-    status: 'dev',
-    icon: 'insight',
-    path: '/insights',
-  },
-  {
     key: 'fragment-petikan',
     title: 'Fragment Petikan',
     subtitle: 'Pecah PDF besar menjadi potongan 2 atau 3 halaman dengan nama file dari teks Sdr.',

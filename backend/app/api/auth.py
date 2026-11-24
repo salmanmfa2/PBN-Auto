@@ -17,6 +17,9 @@ from app.schemas.auth import (
     RegisterRequest,
     ThemePreferenceRead,
     ThemePreferenceUpdate,
+    LandingUiPreferenceRead,
+    LandingUiPreferenceUpdate,
+    SessionStatusRead,
     UserRead,
 )
 from app.schemas.pbnopen_data_source import PbnOpenDataSourceSyncStatus
@@ -297,12 +300,49 @@ def login(req: LoginRequest, db: Session = Depends(get_history_db)):
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    return {"token": auth_service.create_session(db, user), "user": user}
+    token = auth_service.create_session(db, user)
+    expires_at = auth_service.get_session_expiration(db, token)
+    if expires_at is None:
+        raise HTTPException(status_code=500, detail="Could not initialize session.")
+    return {
+        "token": token,
+        "user": user,
+        "expires_at": expires_at.replace(tzinfo=timezone.utc),
+    }
 
 
 @router.get("/me", response_model=UserRead)
 def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.get("/session", response_model=SessionStatusRead)
+def session_status(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_history_db),
+):
+    token = _extract_token(authorization)
+    expires_at = auth_service.get_session_expiration(db, token)
+    if expires_at is None:
+        raise HTTPException(status_code=401, detail="Session expired or invalid.")
+    return {"expires_at": expires_at.replace(tzinfo=timezone.utc)}
+
+
+@router.post("/refresh", response_model=AuthResponse)
+def refresh(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_history_db),
+):
+    token = _extract_token(authorization)
+    refreshed = auth_service.refresh_session(db, token)
+    if refreshed is None:
+        raise HTTPException(status_code=401, detail="Session expired or invalid.")
+    new_token, expires_at, user = refreshed
+    return {
+        "token": new_token,
+        "user": user,
+        "expires_at": expires_at,
+    }
 
 
 @router.get("/preferences/theme", response_model=ThemePreferenceRead)
@@ -320,6 +360,29 @@ def update_theme_preference(
     db: Session = Depends(get_history_db),
 ):
     return {"theme": auth_service.set_theme_preference(db, user.user, request.theme)}
+
+
+@router.get("/preferences/landing-ui", response_model=LandingUiPreferenceRead)
+def get_landing_ui_preference(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    return {"landing_ui": auth_service.get_landing_ui_preference(db, user.user)}
+
+
+@router.put("/preferences/landing-ui", response_model=LandingUiPreferenceRead)
+def update_landing_ui_preference(
+    request: LandingUiPreferenceUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_history_db),
+):
+    return {
+        "landing_ui": auth_service.set_landing_ui_preference(
+            db,
+            user.user,
+            request.landing_ui,
+        )
+    }
 
 
 @router.post("/logout", response_model=MessageResponse)

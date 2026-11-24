@@ -30,6 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleSessionExpired = () => {
       window.localStorage.removeItem(apiClient.AUTH_TOKEN_STORAGE_KEY);
+      window.localStorage.removeItem(apiClient.AUTH_SESSION_EXPIRATION_STORAGE_KEY);
       window.localStorage.removeItem(apiClient.AUTH_GUEST_STORAGE_KEY);
       setUser(null);
       setMode(null);
@@ -53,11 +54,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    apiClient.getCurrentUser()
-      .then((authenticatedUser) => {
+    Promise.all([
+      apiClient.getCurrentUser(),
+      apiClient.getSessionStatus(),
+    ])
+      .then(([authenticatedUser, sessionStatus]) => {
         if (!active) return;
         setUser(authenticatedUser);
         setMode('user');
+        window.localStorage.setItem(
+          apiClient.AUTH_SESSION_EXPIRATION_STORAGE_KEY,
+          sessionStatus.expires_at,
+        );
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -77,6 +85,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionExpired(false);
     const session = await apiClient.login(username, password);
     window.localStorage.setItem(apiClient.AUTH_TOKEN_STORAGE_KEY, session.token);
+    window.localStorage.setItem(
+      apiClient.AUTH_SESSION_EXPIRATION_STORAGE_KEY,
+      session.expires_at,
+    );
     window.localStorage.removeItem(apiClient.AUTH_GUEST_STORAGE_KEY);
     setUser(session.user);
     setMode('user');
@@ -89,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const continueAsGuest = () => {
     window.localStorage.removeItem(apiClient.AUTH_TOKEN_STORAGE_KEY);
+    window.localStorage.removeItem(apiClient.AUTH_SESSION_EXPIRATION_STORAGE_KEY);
     window.localStorage.setItem(apiClient.AUTH_GUEST_STORAGE_KEY, 'true');
     setUser(null);
     setInitializationError(null);
@@ -106,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLogoutError(error instanceof Error ? error.message : String(error));
     } finally {
       window.localStorage.removeItem(apiClient.AUTH_TOKEN_STORAGE_KEY);
+      window.localStorage.removeItem(apiClient.AUTH_SESSION_EXPIRATION_STORAGE_KEY);
       window.localStorage.removeItem(apiClient.AUTH_GUEST_STORAGE_KEY);
       setUser(null);
       setMode(null);
