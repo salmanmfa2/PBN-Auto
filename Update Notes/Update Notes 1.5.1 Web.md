@@ -20,3 +20,4 @@
 ## Menu authorization
 
 - Fixed the Set Auth Menu save button, which was disabled because it checked for 9 menu policies while the application has 11.
+- Set Auth Menu now permits Guest/Level 0 as a Minimum Edit level for any menu policy. Edit level must still not be lower than View level. This enables temporary/local guest editing permissions without requiring a permanent account.

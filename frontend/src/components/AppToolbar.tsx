@@ -49,6 +49,18 @@ const themeOptions: Array<{
 
 const PATCH_NOTES = [
   {
+    version: '1.5.1',
+    label: '1.5.1',
+    items: [
+      'Analisis Kinerja menambahkan filter Eselon khusus pada tab Unit Eselon II. Rata-rata Nilai Koreksi pada Overview sekarang dihitung dari jumlah koreksi dibagi hanya oleh koreksi yang bukan nol.',
+      'Sesi pengguna yang masuk diperpanjang dari satu jam menjadi dua jam.',
+      'Penyusunan Kandidat menambahkan workspace, pemilihan kandidat, Pertimbangan, staging data yang dapat diedit, dan ekspor Single/Batch ke PPTX.',
+      'Ekspor Single menggunakan satu slide per kandidat. Ekspor Batch menggunakan dua profil per slide.',
+      'Kolom Masa Kerja pada Batch dihitung dari TMT Jabatan; Tour of Duty pada format Single diambil dari tiga riwayat Jabatan pertama.',
+      'Set Auth Menu kini mendukung Minimum Edit Guest/Level 0 untuk seluruh kebijakan menu, selama tidak lebih rendah dari Minimum View.',
+    ],
+  },
+  {
     version: '1.5.0',
     label: '1.5.0',
     items: [
@@ -225,7 +237,7 @@ export function AppToolbar() {
   const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number | null>(null);
   const [sessionRefreshing, setSessionRefreshing] = useState(false);
   const [activeDialog, setActiveDialog] = useState<ToolbarDialog>(null);
-  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.5.0');
+  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.5.1');
   const [apiTestState, setApiTestState] = useState<ApiTestState>('idle');
   const [apiDiagnostics, setApiDiagnostics] = useState<apiClient.ApiDiagnostic[]>([]);
   const [apiElapsedMs, setApiElapsedMs] = useState<number | null>(null);
@@ -775,10 +787,10 @@ export function AppToolbar() {
               </ToolbarActionButton>
 
               <ToolbarActionButton
-                tooltip="Patch Notes (v1.5.0)"
+                tooltip="Patch Notes (v1.5.1)"
                 ariaLabel="Buka Patch Notes"
                 onClick={() => {
-                  setSelectedPatchVersion('1.5.0');
+                  setSelectedPatchVersion('1.5.1');
                   setActiveDialog('patch');
                 }}
               >

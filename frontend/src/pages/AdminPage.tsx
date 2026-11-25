@@ -50,14 +50,6 @@ const menuAccessLabels: Record<MenuAccessKey, string> = {
   admin: 'Admin',
 };
 
-const minimumEditLevel: Partial<Record<MenuAccessKey, number>> = {
-  'analisis-kinerja': 1,
-  'penyusunan-kandidat': 1,
-  'fragment-petikan': 1,
-  'plt-plh': 1,
-  'nd-undangan': 1,
-};
-
 const accessLevels = [
   { value: 0, label: 'Guest' },
   { value: 1, label: 'User' },
@@ -176,12 +168,12 @@ export default function AdminPage() {
         return {
           ...policy,
           view_level: level,
-          edit_level: Math.max(policy.edit_level, level, minimumEditLevel[menuKey] ?? 0),
+          edit_level: Math.max(policy.edit_level, level),
         };
       }
       return {
         ...policy,
-        edit_level: Math.max(level, policy.view_level, minimumEditLevel[menuKey] ?? 0),
+        edit_level: Math.max(level, policy.view_level),
       };
     }));
   };
@@ -1014,7 +1006,6 @@ export default function AdminPage() {
                   {menuAccessDraft.map((policy) => {
                     const editMinimum = Math.max(
                       policy.view_level,
-                      minimumEditLevel[policy.menu_key] ?? 0,
                     );
                     return (
                       <tr key={policy.menu_key} className="hover:bg-slate-800/30">

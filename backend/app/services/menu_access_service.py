@@ -22,13 +22,6 @@ DEFAULT_MENU_ACCESS_POLICIES: tuple[tuple[str, int, int], ...] = (
     ("admin", 3, 3),
 )
 MENU_KEYS = tuple(item[0] for item in DEFAULT_MENU_ACCESS_POLICIES)
-MINIMUM_EDIT_LEVELS = {
-    "analisis-kinerja": 1,
-    "penyusunan-kandidat": 1,
-    "fragment-petikan": 1,
-    "plt-plh": 1,
-    "nd-undangan": 1,
-}
 _DEFAULTS_BY_KEY = {
     menu_key: (view_level, edit_level)
     for menu_key, view_level, edit_level in DEFAULT_MENU_ACCESS_POLICIES
@@ -90,11 +83,6 @@ def update_menu_access_settings(
         if edit_level < view_level:
             raise ValueError(
                 f"Menu '{menu_key}' cannot require a lower level to edit than to view."
-            )
-        if edit_level < MINIMUM_EDIT_LEVELS.get(menu_key, 0):
-            raise ValueError(
-                f"Menu '{menu_key}' requires at least level "
-                f"{MINIMUM_EDIT_LEVELS[menu_key]} to edit."
             )
 
     try:

@@ -76,6 +76,37 @@ class MenuAccessTests(unittest.TestCase):
         self.assertEqual(self.db.get(MenuAccessPolicy, "analytics").view_level, 1)
         self.assertEqual(self.db.get(MenuAccessPolicy, "analytics").edit_level, 1)
 
+    def test_god_user_can_assign_guest_edit_access(self) -> None:
+        self.user.auth_level = 4
+        payload = self.settings_payload()
+        candidate_policy = next(
+            policy
+            for policy in payload["policies"]
+            if policy["menu_key"] == "penyusunan-kandidat"
+        )
+        candidate_policy["view_level"] = 0
+        candidate_policy["edit_level"] = 0
+
+        response = self.client.put("/menu-access", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        saved = self.db.get(MenuAccessPolicy, "penyusunan-kandidat")
+        self.assertEqual(saved.view_level, 0)
+        self.assertEqual(saved.edit_level, 0)
+
+        check_edit_access = require_menu_access("penyusunan-kandidat", "edit")
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/candidate-preparation/workspaces",
+                "headers": [],
+            }
+        )
+        self.assertIsNone(
+            check_edit_access(request, self.db, SimpleNamespace(auth_level=0))
+        )
+
     def test_invalid_policy_updates_are_rejected_without_persisting(self) -> None:
         self.user.auth_level = 4
         payload = self.settings_payload()
