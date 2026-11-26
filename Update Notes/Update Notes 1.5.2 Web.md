@@ -31,3 +31,8 @@ This note describes the planned scope for Web 1.5.2. Web 1.5.1 remains finalized
 - Verify stale-cache prevention after manual correction, batch correction, undo, upload, delete, and EPRIDE synchronization.
 - Confirm that period switching no longer refreshes inactive tabs.
 - Report measured performance results only after baseline and post-change timing are available.
+
+## UI Improvement
+- Admin Page UI refinement
+- Removing UI inconsistencies in `Analisis Kinerja` and `PBN Analytics`
+
