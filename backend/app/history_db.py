@@ -58,7 +58,10 @@ def get_history_db() -> Generator[Session, None, None]:
 
 
 def _migrate_performance_schema(database_engine: Engine | None = None) -> None:
-    from app.models.performance_kinerja import PerformanceKinerjaRecord
+    from app.models.performance_kinerja import (
+        PerformanceKinerjaDataset,
+        PerformanceKinerjaRecord,
+    )
 
     if database_engine is None:
         database_engine = engine
@@ -110,6 +113,24 @@ def _migrate_performance_schema(database_engine: Engine | None = None) -> None:
                 text(
                     f"ALTER TABLE performance_kinerja_records "
                     f"ADD COLUMN {name} {column_type}"
+                )
+            )
+
+    dataset_table = PerformanceKinerjaDataset.__table__
+    dataset_columns = {
+        column["name"]
+        for column in inspect(database_engine).get_columns(dataset_table.name)
+    }
+    if "revision" not in dataset_columns:
+        if database_engine.dialect.name not in {"mysql", "mariadb", "sqlite"}:
+            raise RuntimeError(
+                f"Cannot add period revision data on {database_engine.dialect.name}."
+            )
+        with database_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE performance_kinerja_datasets "
+                    "ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
                 )
             )
 

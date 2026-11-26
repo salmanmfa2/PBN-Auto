@@ -13,7 +13,7 @@ from app.models.performance_kinerja import (
     PerformanceKinerjaDataset,
     PerformanceCorrectionEditLog,
 )
-from .cache import invalidate_dashboard_cache
+from .cache import invalidate_period_dashboard_cache
 
 FULL_DATA_HEADERS = (
     "Nama",
@@ -70,6 +70,18 @@ EMPLOYEE_REFERENCE_TABLES = {
     "fetch_pbnopen": ("fetch_pbnopen", False, True),
     "dt_employee_q2_2026": ("dt_employee_q2_2026", True, False),
 }
+
+
+def get_employee_reference_table(employee_source: str) -> tuple[str, bool, bool]:
+    static_reference = EMPLOYEE_REFERENCE_TABLES.get(employee_source)
+    if static_reference is not None:
+        return static_reference
+    if re.fullmatch(r"dt_employee_q[1-4]_\d{4}", employee_source):
+        return employee_source, True, False
+    raise ValueError(
+        "Employee source must be 'fetch_pbnopen' or a legacy "
+        "'dt_employee_q#_YYYY' table."
+    )
 
 STATUS_LABELS = (
     "Sangat Istimewa",
@@ -234,6 +246,7 @@ def _dataset_status(dataset: PerformanceKinerjaDataset) -> dict[str, Any]:
     return {
         "period": dataset.period,
         "row_count": dataset.row_count,
+        "revision": dataset.revision,
         "uploaded_at": uploaded_at,
         "uploaded_by_user": dataset.uploaded_by_user,
         "uploaded_by_name": dataset.uploaded_by_name,
@@ -268,7 +281,7 @@ def delete_dataset_period(db: Session, period: str) -> str:
         db.rollback()
         raise
 
-    invalidate_dashboard_cache()
+    invalidate_period_dashboard_cache(normalized_period)
     return normalized_period
 
 def _parse_decimal(

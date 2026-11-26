@@ -130,6 +130,57 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             uploaded_by_name="Admin",
         )
 
+    def test_wildcard_compare_only_returns_matching_nip_differences(self) -> None:
+        self.import_active_dataset()
+        output = StringIO()
+        writer = csv.writer(output, delimiter=";")
+        headers = list(reversed(kinerja_common.FULL_DATA_HEADERS))
+        writer.writerow(headers)
+        values = {
+            header: value
+            for header, value in zip(kinerja_common.FULL_DATA_HEADERS, [
+                "Pegawai Contoh",
+                NIP,
+                "81",
+                "100",
+                "80",
+                "100",
+                "85",
+                "Di atas Ekspektasi",
+                "Sesuai Ekspektasi",
+                "Baik",
+                "-1",
+                "-2",
+                "-3",
+                "1",
+                "90",
+                "84",
+                "Di atas Ekspektasi",
+                "Sesuai Ekspektasi",
+                "Baik",
+            ], strict=True)
+        }
+        writer.writerow([values[header] for header in headers])
+
+        result = kinerja_records.compare_wildcard_csv(
+            self.session,
+            output.getvalue().encode("utf-8"),
+            period="Q3-2026",
+            search="",
+            filters={},
+            sort_by="nama",
+            sort_order="asc",
+        )
+
+        self.assertEqual(result["matched_count"], 1)
+        self.assertEqual(result["difference_count"], 1)
+        changed = {
+            difference["field"]: difference
+            for difference in result["differences"][0]["differences"]
+        }
+        self.assertEqual(changed["nhk"]["uploaded"], "81")
+        self.assertEqual(changed["nkp_akhir"]["uploaded"], "84")
+
     def get_dataset(self, period: str) -> PerformanceKinerjaDataset | None:
         return self.session.scalar(
             select(PerformanceKinerjaDataset).where(
@@ -536,6 +587,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
             self.assertEqual(boundary_record.status_nkp_perhitungan, "Sangat Istimewa")
             migrated_dataset = session.get(PerformanceKinerjaDataset, 1)
             self.assertEqual(migrated_dataset.period, "Q3-2026")
+            self.assertEqual(migrated_dataset.revision, 1)
 
         with legacy_engine.begin() as connection:
             connection.exec_driver_sql(
@@ -836,6 +888,8 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
 
     def test_manual_correction_edit_recalculates_and_records_editor(self) -> None:
         self.import_active_dataset()
+        dataset = self.get_dataset("Q3-2026")
+        initial_revision = dataset.revision
 
         result = kinerja_corrections.update_manual_correction(
             self.session,
@@ -866,6 +920,7 @@ class PerformanceKinerjaServiceTests(unittest.TestCase):
         self.assertEqual(log.new_value, Decimal("2.75"))
         self.assertEqual(log.edited_by_user, "admin")
         self.assertEqual(log.edited_by_name, "Admin User")
+        self.assertEqual(dataset.revision, initial_revision + 1)
 
     def test_manual_correction_accepts_range_endpoints_and_rejects_outside_values(self) -> None:
         self.import_active_dataset()

@@ -10,6 +10,7 @@ from app.api.auth import get_current_user, get_super_admin
 from app.api.menu_access import require_menu_access
 from app.history_db import get_history_db
 from app.models.auth import User
+from app.services import pbnopen_import_service
 from app.schemas.performance_kinerja import (
     PerformanceAnalysisResponse,
     PerformanceDashboardResponse,
@@ -153,6 +154,33 @@ def update_performance_insight(
         )
     except SQLAlchemyError as exc:
         raise _database_error("Could not save the performance insight text.") from exc
+
+
+@router.post("/records/wildcard-compare")
+async def wildcard_compare_performance_records(
+    file: UploadFile = File(...),
+    search: str = Form(default="", max_length=100),
+    filters: str = Form(default="{}", max_length=4000),
+    sort_by: str = Form(default="nama", max_length=80),
+    sort_order: str = Form(default="asc", max_length=4),
+    period: str | None = Form(default=None, max_length=7),
+    db: Session = Depends(get_history_db),
+):
+    content = await _read_upload(file, ".csv")
+    try:
+        return kinerja_records.compare_wildcard_csv(
+            db,
+            content,
+            period=period,
+            search=search,
+            filters=_parse_record_filters(filters),
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+    except ValueError as exc:
+        raise _validation_error(exc) from exc
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise _database_error("Could not compare the uploaded Kinerja CSV.") from exc
 
 
 @router.get("/records", response_model=PerformanceRecordsResponse)
@@ -359,6 +387,13 @@ def download_performance_records(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="daftar-pegawai-kinerja.xlsx"'},
     )
+
+
+@router.get("/employee-sources")
+def get_performance_employee_sources(
+    _: User = Depends(get_super_admin),
+):
+    return {"sources": pbnopen_import_service.get_legacy_employee_sources()}
 
 
 @router.post("/full-data/validate", response_model=PerformanceUploadValidation)

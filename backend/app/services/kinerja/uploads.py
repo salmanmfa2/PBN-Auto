@@ -14,7 +14,7 @@ from app.models.performance_kinerja import (
     PerformanceKinerjaDataset,
     PerformanceCorrectionEditLog,
 )
-from .cache import invalidate_dashboard_cache
+from .cache import invalidate_period_dashboard_cache
 from .common import (
     EMPLOYEE_REFERENCE_TABLES,
     FULL_DATA_HEADERS,
@@ -29,6 +29,7 @@ from .common import (
     _validate_numeric_range,
     normalize_nip,
     validate_period,
+    get_employee_reference_table,
 )
 
 def _read_full_csv(content: bytes) -> list[dict[str, Any]]:
@@ -121,11 +122,7 @@ def _lookup_employee_records(
     nips: set[str],
     employee_source: str = "fetch_pbnopen",
 ) -> dict[str, dict[str, Any]]:
-    employee_reference = EMPLOYEE_REFERENCE_TABLES.get(employee_source)
-    if employee_reference is None:
-        raise ValueError(
-            "Employee source must be 'fetch_pbnopen' or 'dt_employee_q2_2026'."
-        )
+    employee_reference = get_employee_reference_table(employee_source)
     employee_table, uses_eselon_reference, uses_unit_kerja_reference = employee_reference
     if not nips:
         return {}
@@ -280,6 +277,7 @@ def replace_full_upload(
             dataset = PerformanceKinerjaDataset(
                 period=normalized_period,
                 row_count=len(records),
+                revision=1,
                 uploaded_at=datetime.now(timezone.utc),
                 uploaded_by_user=uploaded_by_user,
                 uploaded_by_name=uploaded_by_name,
@@ -290,6 +288,7 @@ def replace_full_upload(
             dataset.period = normalized_period
             dataset.row_count = len(records)
             dataset.uploaded_at = datetime.now(timezone.utc)
+            dataset.revision = (dataset.revision or 0) + 1
             dataset.uploaded_by_user = uploaded_by_user
             dataset.uploaded_by_name = uploaded_by_name
             db.execute(
@@ -304,7 +303,7 @@ def replace_full_upload(
     except SQLAlchemyError:
         db.rollback()
         raise
-    invalidate_dashboard_cache()
+    invalidate_period_dashboard_cache(normalized_period)
     return {
         "period": normalized_period,
         "row_count": len(records),

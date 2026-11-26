@@ -19,6 +19,7 @@ from app.api import (
     dataset,
     feedback,
     fragment_petikan,
+    insights,
     insights_beta,
     menu_access,
     mutation_analysis,
@@ -103,6 +104,7 @@ app.include_router(mutation_analysis.router)
 app.include_router(upload.router, tags=["upload"])
 app.include_router(cleaning.router)
 app.include_router(dataset.router)
+app.include_router(insights.router)
 app.include_router(insights_beta.router)
 app.include_router(pelantikan_agenda.router)
 app.include_router(performance_kinerja.router)

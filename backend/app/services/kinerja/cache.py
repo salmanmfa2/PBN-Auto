@@ -44,3 +44,30 @@ _dashboard_cache_lock = RLock()
 def invalidate_dashboard_cache() -> None:
     with _dashboard_cache_lock:
         _dashboard_cache.clear()
+
+
+def invalidate_period_dashboard_cache(period: str) -> None:
+    normalized = period.strip().upper()
+    quarter = int(normalized[1]) if len(normalized) >= 2 and normalized[0] == "Q" else 0
+    year = int(normalized[3:]) if len(normalized) >= 7 else 0
+    related_periods = {normalized}
+    if quarter in (1, 2, 3, 4) and year:
+        previous = (
+            f"Q4-{year - 1}"
+            if quarter == 1
+            else f"Q{quarter - 1}-{year}"
+        )
+        following = (
+            f"Q1-{year + 1}"
+            if quarter == 4
+            else f"Q{quarter + 1}-{year}"
+        )
+        related_periods.update({previous, following})
+    with _dashboard_cache_lock:
+        stale_keys = [
+            cache_key
+            for cache_key, cache in _dashboard_cache.items()
+            if str(cache.dataset.get("period", "")).upper() in related_periods
+        ]
+        for cache_key in stale_keys:
+            _dashboard_cache.pop(cache_key, None)

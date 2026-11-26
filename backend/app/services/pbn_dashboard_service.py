@@ -24,6 +24,8 @@ COLUMN_ALIASES = {
     "religion": ("agama",),
 }
 
+RETIREMENT_60_ESELON_IDS = frozenset({2, 11})
+
 AGE_GROUPS = ("<20 Th", "20 - 30 Th", "31 - 40 Th", "41 - 50 Th", "51+ Th", "Tidak diketahui")
 
 
@@ -128,6 +130,93 @@ def _display_category(value: Any) -> str:
     return text or "Tidak diketahui"
 
 
+def _parse_birth_date(value: Any) -> date | None:
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, Real) and not isinstance(value, bool):
+        if not 10_000 <= value <= 100_000:
+            return None
+        return (datetime(1899, 12, 30) + timedelta(days=float(value))).date()
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("'"):
+            text = text[1:].strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+        except ValueError:
+            for format_string in ("%d/%m/%Y", "%d-%m-%Y", "%Y%m%d", "%Y/%m/%d"):
+                try:
+                    return datetime.strptime(text, format_string).date()
+                except ValueError:
+                    continue
+    return None
+
+
+def _add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, _last_day(year, month))
+    return date(year, month, day)
+
+
+def _last_day(year: int, month: int) -> int:
+    if month == 12:
+        return (date(year + 1, 1, 1) - timedelta(days=1)).day
+    return (date(year, month + 1, 1) - timedelta(days=1)).day
+
+
+def _count_nearing_retirement(source: pd.DataFrame, today: date) -> int:
+    if "Tanggal Lahir" not in source.columns:
+        return 0
+    eselon_id_column = next(
+        (
+            column
+            for column in source.columns
+            if _normalize_column_name(column) == "eselonid"
+        ),
+        None,
+    )
+    eselon_label_column = next(
+        (
+            column
+            for column in source.columns
+            if _normalize_column_name(column) == "eselon"
+        ),
+        None,
+    )
+    if eselon_id_column is None and eselon_label_column is None:
+        return 0
+    three_month_end = _add_months(today, 3)
+    count = 0
+    for _, row in source.iterrows():
+        birth_date = _parse_birth_date(row["Tanggal Lahir"])
+        if birth_date is None:
+            continue
+        eselon_id = 0
+        if eselon_id_column is not None:
+            raw_eselon_id = row[eselon_id_column]
+            try:
+                eselon_id = int(raw_eselon_id)
+            except (TypeError, ValueError):
+                eselon_id = 0
+        elif eselon_label_column is not None:
+            label = _display_category(row[eselon_label_column]).casefold()
+            if label in {"ii.a", "fungs. ahli madya"}:
+                eselon_id = 2 if label == "ii.a" else 11
+        retirement_age = 60 if eselon_id in RETIREMENT_60_ESELON_IDS else 58
+        retirement_date = _add_months(birth_date, retirement_age * 12)
+        if today < retirement_date <= three_month_end:
+            count += 1
+    return count
+
+
 def _distribution(values: list[str], total: int) -> list[dict[str, Any]]:
     counts = Counter(values)
     return [
@@ -215,6 +304,24 @@ def _filter_dashboard_data(
             ages = ages.loc[source.index]
             tenure = tenure.loc[source.index]
 
+    name_query = filters.name.strip().casefold()
+    if name_query:
+        name_columns, _ = _resolve_alias_columns(
+            source,
+            {
+                "name": ("nama gelar", "nama", "nama/nip", "nama lengkap"),
+            },
+        )
+        name_column = name_columns.get("name")
+        if name_column is not None:
+            names = source[name_column].map(
+                lambda value: "" if value is None or pd.isna(value) else str(value).casefold()
+            )
+            escaped_query = name_query.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            source = source.loc[names.str.contains(escaped_query, regex=False, na=False)]
+            ages = ages.loc[source.index]
+            tenure = tenure.loc[source.index]
+
     return FilteredDashboardData(
         source=source,
         original_source=original_source,
@@ -246,7 +353,7 @@ def build_pbn_dashboard(
     data = _get_filtered_dashboard_data(
         dataset_id, sheet_name, filters, today
     )
-    return _build_dashboard_result(data, dataset_id)
+    return _build_dashboard_result(data, dataset_id, today or date.today())
 
 
 def build_pbnopen_dashboard(
@@ -260,12 +367,17 @@ def build_pbnopen_dashboard(
         "fetch_pbnopen",
         today,
     )
-    return _build_dashboard_result(data, "pbncleaner.fetch_pbnopen")
+    return _build_dashboard_result(
+        data,
+        "pbncleaner.fetch_pbnopen",
+        today or date.today(),
+    )
 
 
 def _build_dashboard_result(
     data: FilteredDashboardData,
     dataset_id: str,
+    today: date | None = None,
 ) -> dict[str, Any]:
     source = data.source
     columns = data.columns
@@ -280,10 +392,18 @@ def _build_dashboard_result(
         for group in AGE_GROUPS
     ]
 
+    retirement_count = 0
+    if dataset_id == "pbncleaner.fetch_pbnopen":
+        retirement_count = _count_nearing_retirement(
+            data.source,
+            today or date.today(),
+        )
+
     return {
         "dataset_id": dataset_id,
         "sheet_name": data.sheet_name,
         "total_employees": total,
+        "retirement_count": retirement_count,
         "sex_distribution": _distribution(
             source[columns["sex"]].map(_display_category).tolist(), total
         ),
@@ -329,13 +449,48 @@ PEOPLE_COLUMN_ALIASES = {
     ),
     "Jurusan": ("jurusan",),
     "Universitas/Sekolah Tinggi": ("universitas/sekolah tinggi", "universitas"),
+    "NIP": ("nip",),
+    "Eselon ID": ("eselon_id", "eselon id"),
+    "Gol": ("gol", "golongan"),
+    "Pangkat": ("pangkat",),
+    "Unit Eselon II": ("unit eselon ii",),
+    "Unit Eselon III": ("unit eselon iii",),
+    "Unit Eselon IV": ("unit eselon iv",),
+    "Tanggal Lahir": ("tanggal lahir",),
+    "Usia": ("usia (th.)", "usia (th)", "usia"),
+    "Agama": ("agama",),
+    "Sex": ("sex", "jenis kelamin"),
+    "Region Homebase": ("region homebase", "region"),
+    "Homebase": ("homebase",),
+    "Rumpun Pendidikan": ("rumpun pdd terakhir", "rumpun", "rumpun pendidikan"),
 }
+
+PEOPLE_CORE_COLUMN_NAMES = (
+    "Nama",
+    "Eselon",
+    "Jabatan",
+    "Pendidikan Terakhir (Th.)",
+    "Jurusan",
+    "Universitas/Sekolah Tinggi",
+)
 
 
 def _resolve_people_columns(source: pd.DataFrame) -> dict[str, Any]:
-    resolved, missing = _resolve_alias_columns(source, PEOPLE_COLUMN_ALIASES)
+    aliases = {
+        name: aliases
+        for name, aliases in PEOPLE_COLUMN_ALIASES.items()
+        if name in PEOPLE_CORE_COLUMN_NAMES
+    }
+    resolved, missing = _resolve_alias_columns(source, aliases)
     if missing:
         raise ValueError(f"People table requires these columns: {', '.join(missing)}.")
+    optional_aliases = {
+        name: aliases
+        for name, aliases in PEOPLE_COLUMN_ALIASES.items()
+        if name not in PEOPLE_CORE_COLUMN_NAMES
+    }
+    optional_resolved, _ = _resolve_alias_columns(source, optional_aliases)
+    resolved.update(optional_resolved)
     return resolved
 
 

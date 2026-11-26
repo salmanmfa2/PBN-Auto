@@ -1,6 +1,6 @@
 from datetime import timezone
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -96,6 +96,24 @@ async def _read_pbnopen_csv(file: UploadFile) -> bytes:
     return content
 
 
+async def _read_legacy_database_upload(file: UploadFile) -> tuple[bytes, str]:
+    filename = file.filename or ""
+    if not filename.lower().endswith((".csv", ".xlsx", ".xls")):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV, XLSX, and XLS files are supported.",
+        )
+    content = await file.read(MAX_PBNOPEN_CSV_SIZE + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if len(content) > MAX_PBNOPEN_CSV_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="The upload exceeds the 50 MB limit.",
+        )
+    return content, filename
+
+
 @admin_router.post("/pbnopen-data-source/validate")
 async def validate_pbnopen_data_source(
     file: UploadFile = File(...),
@@ -185,6 +203,57 @@ def sync_dt_employee_from_pbnopen(
         "message": "'pbncleaner.dt_employee' synced successfully from 'pbncleaner.fetch_pbnopen'.",
         "row_count": row_count,
     }
+
+
+@admin_router.post("/legacy-database/validate")
+async def validate_legacy_database_upload(
+    year: int = Form(..., ge=2000, le=2100),
+    quarter: int = Form(..., ge=1, le=4),
+    file: UploadFile = File(...),
+    _: User = Depends(get_god_user),
+):
+    content, filename = await _read_legacy_database_upload(file)
+    try:
+        result = pbnopen_import_service.preview_legacy_database_upload(
+            year,
+            quarter,
+            content,
+            filename,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not validate the legacy PBN database upload.",
+        ) from exc
+    return {"filename": filename, **result}
+
+
+@admin_router.post("/legacy-database/create")
+async def create_legacy_database_upload(
+    year: int = Form(..., ge=2000, le=2100),
+    quarter: int = Form(..., ge=1, le=4),
+    file: UploadFile = File(...),
+    _: User = Depends(get_god_user),
+):
+    content, filename = await _read_legacy_database_upload(file)
+    try:
+        result = pbnopen_import_service.apply_legacy_database_upload(
+            year,
+            quarter,
+            content,
+            filename,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not create or replace the legacy PBN database tables.",
+        ) from exc
+    invalidate_dashboard_cache()
+    return {"message": "Legacy PBN database tables created successfully.", **result}
 
 
 @admin_router.get("/database/tables")

@@ -49,14 +49,26 @@ const themeOptions: Array<{
 
 const PATCH_NOTES = [
   {
+    version: '1.5.2',
+    label: '1.5.2 (Planned)',
+    items: [
+      'Legacy Database Upload direncanakan untuk God User dengan pemilihan tahun/triwulan, unggah CSV/XLS/XLSX, validasi referensi, dan pembuatan pasangan tabel fetch_pbnopen_q#_YYYY/dt_employee_q#_YYYY.',
+      'Analisis Kinerja module performance improvement direncanakan melalui snapshot per periode, lazy loading tab Daftar Pegawai, paging/filter SQL untuk daftar pegawai, revalidasi dashboard cache, dan invalidasi berbasis revisi.',
+      'Perubahan koreksi atau penyesuaian data hanya memperbarui periode terkait dan perbandingan periode yang bergantung, tanpa menghapus cache periode lain.',
+      'Peningkatan kinerja akan diukur terhadap baseline; angka dan klaim kecepatan belum diumumkan sebelum pengujian selesai.',
+    ],
+  },
+  {
     version: '1.5.1',
     label: '1.5.1',
     items: [
       'Analisis Kinerja menambahkan filter Eselon khusus pada tab Unit Eselon II. Rata-rata Nilai Koreksi pada Overview sekarang dihitung dari jumlah koreksi dibagi hanya oleh koreksi yang bukan nol.',
+      'Wildcard Compare pada Daftar Pegawai membandingkan CSV Kinerja lengkap dengan baris yang aktif difilter dan menampilkan serta mengekspor hanya baris yang berbeda.',
       'Sesi pengguna yang masuk diperpanjang dari satu jam menjadi dua jam.',
       'Penyusunan Kandidat menambahkan workspace, pemilihan kandidat, Pertimbangan, staging data yang dapat diedit, dan ekspor Single/Batch ke PPTX.',
       'Ekspor Single menggunakan satu slide per kandidat. Ekspor Batch menggunakan dua profil per slide.',
       'Kolom Masa Kerja pada Batch dihitung dari TMT Jabatan; Tour of Duty pada format Single diambil dari tiga riwayat Jabatan pertama.',
+      'Insight Hub Beta mendukung pencarian nama, pemilihan kolom tabel, ekspor kolom pilihan, dan kartu Employee Nearing Retirement sebagai pengganti Pendidikan Dominan.',
       'Set Auth Menu kini mendukung Minimum Edit Guest/Level 0 untuk seluruh kebijakan menu, selama tidak lebih rendah dari Minimum View.',
     ],
   },
@@ -237,7 +249,7 @@ export function AppToolbar() {
   const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState<number | null>(null);
   const [sessionRefreshing, setSessionRefreshing] = useState(false);
   const [activeDialog, setActiveDialog] = useState<ToolbarDialog>(null);
-  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.5.1');
+  const [selectedPatchVersion, setSelectedPatchVersion] = useState<PatchNoteVersion>('1.5.2');
   const [apiTestState, setApiTestState] = useState<ApiTestState>('idle');
   const [apiDiagnostics, setApiDiagnostics] = useState<apiClient.ApiDiagnostic[]>([]);
   const [apiElapsedMs, setApiElapsedMs] = useState<number | null>(null);
@@ -787,10 +799,10 @@ export function AppToolbar() {
               </ToolbarActionButton>
 
               <ToolbarActionButton
-                tooltip="Patch Notes (v1.5.1)"
+                tooltip="Patch Notes (v1.5.2)"
                 ariaLabel="Buka Patch Notes"
                 onClick={() => {
-                  setSelectedPatchVersion('1.5.1');
+                  setSelectedPatchVersion('1.5.2');
                   setActiveDialog('patch');
                 }}
               >

@@ -46,7 +46,11 @@ import type {
   PerformanceInsight,
   PerformanceRecord,
   PerformanceRecordsResponse,
+  WildcardCompareResponse,
   PerformanceEmployeeSource,
+  PerformanceEmployeeSourceOption,
+  LegacyDatabaseUploadPreview,
+  LegacyDatabaseUploadResult,
   PerformanceCorrectionSyncPreview,
   PerformanceCorrectionSyncResult,
   PerformanceCorrectionSourceYear,
@@ -633,6 +637,48 @@ export async function applyDatabaseMaintenanceCsv(
   }
 }
 
+export async function previewLegacyDatabaseUpload(
+  year: number,
+  quarter: number,
+  file: File,
+): Promise<LegacyDatabaseUploadPreview> {
+  const form = new FormData();
+  form.append('year', String(year));
+  form.append('quarter', String(quarter));
+  form.append('file', file);
+  try {
+    const { data } = await api.post<LegacyDatabaseUploadPreview>(
+      '/admin/legacy-database/validate',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getAdminDatabaseError(error);
+  }
+}
+
+export async function createLegacyDatabaseUpload(
+  year: number,
+  quarter: number,
+  file: File,
+): Promise<LegacyDatabaseUploadResult> {
+  const form = new FormData();
+  form.append('year', String(year));
+  form.append('quarter', String(quarter));
+  form.append('file', file);
+  try {
+    const { data } = await api.post<LegacyDatabaseUploadResult>(
+      '/admin/legacy-database/create',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getAdminDatabaseError(error);
+  }
+}
+
 export async function previewDatabaseEmployeeSync(
   targetKey: string,
 ): Promise<DatabaseMaintenancePreview> {
@@ -799,6 +845,33 @@ export async function downloadPerformanceRecordsExcel(
   }
 }
 
+export async function wildcardComparePerformanceRecords(
+  file: File,
+  search: string,
+  filters: Record<string, string> = {},
+  sortBy: keyof PerformanceRecord = 'nama',
+  sortOrder: 'asc' | 'desc' = 'asc',
+  period?: string,
+): Promise<WildcardCompareResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('search', search);
+  form.append('filters', JSON.stringify(filters));
+  form.append('sort_by', sortBy);
+  form.append('sort_order', sortOrder);
+  if (period) form.append('period', period);
+  try {
+    const { data } = await api.post<WildcardCompareResponse>(
+      '/performance/records/wildcard-compare',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
 export async function getPerformanceRecords(
   page: number,
   pageSize: number,
@@ -897,6 +970,17 @@ export async function undoPerformanceCorrectionEdit(
       `/performance/corrections/edit-log/${logId}/undo`,
     );
     return data;
+  } catch (error) {
+    throw getPerformanceRequestError(error);
+  }
+}
+
+export async function getPerformanceEmployeeSources(): Promise<PerformanceEmployeeSourceOption[]> {
+  try {
+    const { data } = await api.get<{ sources: PerformanceEmployeeSourceOption[] }>(
+      '/performance/employee-sources',
+    );
+    return data.sources;
   } catch (error) {
     throw getPerformanceRequestError(error);
   }

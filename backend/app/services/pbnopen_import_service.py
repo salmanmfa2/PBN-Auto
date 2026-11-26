@@ -1,4 +1,5 @@
 import csv
+import re
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from io import BytesIO, StringIO
@@ -6,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 import pandas as pd
-from sqlalchemy import MetaData, String, Table, bindparam, delete, func, insert, inspect, select, update
+from sqlalchemy import MetaData, String, Table, bindparam, delete, func, insert, inspect, select, text, update
 
 from app.history_db import engine
 from app.models.pbnopen_data_source_sync import PbnOpenDataSourceSync
@@ -66,6 +67,10 @@ EMPLOYEE_TABLE_SOURCES = {
     "dt_employee": "fetch_pbnopen",
     "dt_employee_q2_2026": "fetch_pbnopen_q2_2026",
 }
+
+LEGACY_TABLE_PATTERN = re.compile(
+    r"(?:fetch_pbnopen|dt_employee)_q([1-4])_(\d{4})"
+)
 
 
 @dataclass(frozen=True)
@@ -160,6 +165,74 @@ def _read_csv(content: bytes, expected_columns: list[str]) -> pd.DataFrame:
     return dataframe.loc[:, expected_columns]
 
 
+def _read_legacy_table_upload(
+    content: bytes,
+    filename: str,
+    expected_columns: list[str],
+) -> pd.DataFrame:
+    lower_filename = filename.lower()
+    try:
+        if lower_filename.endswith(".csv"):
+            dataframe = pd.read_csv(
+                BytesIO(content),
+                dtype=str,
+                keep_default_na=False,
+                encoding="utf-8-sig",
+                sep=None,
+                engine="python",
+            )
+        elif lower_filename.endswith(".xlsx"):
+            dataframe = pd.read_excel(
+                BytesIO(content),
+                dtype=str,
+                keep_default_na=False,
+                engine="openpyxl",
+            )
+        elif lower_filename.endswith(".xls"):
+            dataframe = pd.read_excel(
+                BytesIO(content),
+                dtype=str,
+                keep_default_na=False,
+                engine="xlrd",
+            )
+        else:
+            raise ValueError("Only CSV, XLSX, and XLS files are supported.")
+    except ValueError:
+        raise
+    except (UnicodeDecodeError, pd.errors.EmptyDataError, pd.errors.ParserError) as exc:
+        raise ValueError("The uploaded file is not a valid CSV or Excel workbook.") from exc
+    except Exception as exc:
+        raise ValueError("Could not read the uploaded CSV or Excel workbook.") from exc
+
+    if dataframe.empty:
+        raise ValueError("The uploaded file must contain at least one data row.")
+
+    normalized_columns = [str(column).strip() for column in dataframe.columns]
+    if len(normalized_columns) != len(set(normalized_columns)):
+        raise ValueError("The uploaded file contains duplicate column names.")
+    dataframe.columns = normalized_columns
+    missing_columns = [
+        column for column in expected_columns
+        if column not in normalized_columns
+    ]
+    extra_columns = [
+        column for column in normalized_columns
+        if column not in expected_columns
+    ]
+    if missing_columns or extra_columns:
+        details = []
+        if missing_columns:
+            details.append(f"Missing columns: {', '.join(missing_columns)}")
+        if extra_columns:
+            details.append(f"Unexpected columns: {', '.join(extra_columns)}")
+        raise ValueError(
+            "The file columns do not match the PBN Open source schema. "
+            + " ".join(details)
+            + "."
+        )
+    return dataframe.loc[:, expected_columns]
+
+
 def _get_maintenance_target(target_key: str) -> TableMaintenanceTarget:
     target = TABLE_MAINTENANCE_TARGETS.get(target_key)
     if target is None:
@@ -168,12 +241,39 @@ def _get_maintenance_target(target_key: str) -> TableMaintenanceTarget:
                 inspect(connection).get_table_names(schema=TABLE_SCHEMA)
             )
             if target_key in existing_tables:
-                target = TableMaintenanceTarget(
+                source_match = re.fullmatch(
+                    r"fetch_pbnopen_q([1-4])_(\d{4})",
                     target_key,
-                    target_key,
-                    f"Database table: {target_key}",
-                    "replace",
                 )
+                employee_match = re.fullmatch(
+                    r"dt_employee_q([1-4])_(\d{4})",
+                    target_key,
+                )
+                if source_match:
+                    quarter, year = source_match.groups()
+                    target = TableMaintenanceTarget(
+                        target_key,
+                        target_key,
+                        f"PBN Open legacy (Q{quarter} {year})",
+                        "replace",
+                    )
+                elif employee_match:
+                    quarter, year = employee_match.groups()
+                    source_table = f"fetch_pbnopen_q{quarter}_{year}"
+                    target = TableMaintenanceTarget(
+                        target_key,
+                        target_key,
+                        f"Employee table legacy (Q{quarter} {year})",
+                        "sync",
+                        source_table=source_table,
+                    )
+                else:
+                    target = TableMaintenanceTarget(
+                        target_key,
+                        target_key,
+                        f"Database table: {target_key}",
+                        "replace",
+                    )
     if target is None:
         raise ValueError(f"'{target_key}' is not an allowed database-maintenance target.")
     return target
@@ -200,15 +300,40 @@ def get_table_maintenance_catalog() -> list[dict[str, str | None]]:
     for table_name in sorted(existing_tables):
         if table_name in catalog_keys:
             continue
-        catalog.append(
-            {
+        source_match = re.fullmatch(
+            r"fetch_pbnopen_q([1-4])_(\d{4})",
+            table_name,
+        )
+        employee_match = re.fullmatch(
+            r"dt_employee_q([1-4])_(\d{4})",
+            table_name,
+        )
+        if source_match:
+            quarter, year = source_match.groups()
+            catalog.append({
+                "key": table_name,
+                "table_name": table_name,
+                "label": f"PBN Open legacy (Q{quarter} {year})",
+                "operation": "replace",
+                "source_table": None,
+            })
+        elif employee_match:
+            quarter, year = employee_match.groups()
+            catalog.append({
+                "key": table_name,
+                "table_name": table_name,
+                "label": f"Employee table legacy (Q{quarter} {year})",
+                "operation": "sync",
+                "source_table": f"fetch_pbnopen_q{quarter}_{year}",
+            })
+        else:
+            catalog.append({
                 "key": table_name,
                 "table_name": table_name,
                 "label": f"Database table: {table_name}",
                 "operation": "replace",
                 "source_table": None,
-            }
-        )
+            })
     return catalog
 
 
@@ -231,6 +356,63 @@ def _validate_source_nips(dataframe: pd.DataFrame, table_name: str) -> None:
         raise ValueError(f"Cannot replace {table_name} because the CSV contains duplicate NIPs.")
 
 
+def _validate_legacy_reference_mappings(
+    connection: Any,
+    dataframe: pd.DataFrame,
+    employee_table_name: str,
+) -> None:
+    reference_maps: dict[str, dict[str, int]] = {}
+    for _, _, reference_name, id_column in EMPLOYEE_REFERENCE_COLUMNS:
+        reference_table = _table_for(connection, reference_name)
+        references: dict[str, int] = {}
+        for reference in connection.execute(
+            select(reference_table.c[id_column], reference_table.c.value)
+        ).mappings():
+            label = _employee_reference_label(reference["value"])
+            if label is None:
+                continue
+            if label in references:
+                raise ValueError(
+                    f"Cannot create {employee_table_name} because "
+                    f"{reference_name}.value contains duplicate labels."
+                )
+            references[label] = reference[id_column]
+        reference_maps[reference_name] = references
+
+    missing_counts: dict[str, int] = {}
+    for target_column, source_column, reference_name, _ in EMPLOYEE_REFERENCE_COLUMNS:
+        if source_column not in dataframe.columns:
+            raise ValueError(
+                f"Cannot create {employee_table_name} because "
+                f"the source is missing '{source_column}'."
+            )
+        missing = 0
+        reference_labels = reference_maps[reference_name]
+        for value in dataframe[source_column].tolist():
+            label = _employee_reference_label(value)
+            if label is None:
+                continue
+            lookup_label = _employee_reference_lookup_label(
+                source_column,
+                label,
+                reference_labels,
+            )
+            if lookup_label not in reference_labels:
+                missing += 1
+        if missing:
+            missing_counts[source_column] = missing
+
+    if missing_counts:
+        details = ", ".join(
+            f"{count} rows for {column}"
+            for column, count in missing_counts.items()
+        )
+        raise ValueError(
+            f"Cannot create {employee_table_name} because reference mappings "
+            f"are missing: {details}. Update the matching ref_* table and retry."
+        )
+
+
 def _employee_reference_label(value: object) -> str | None:
     if value is None:
         return None
@@ -243,6 +425,10 @@ def _employee_reference_lookup_label(
     label: str,
     reference_labels: dict[str, int],
 ) -> str:
+    if source_column == "Eselon" and label.strip().casefold() == "ii.b":
+        alias = "II.A"
+        if alias in reference_labels:
+            return alias
     if label in reference_labels or source_column != "Unit Kerja":
         return label
     if not label.startswith(UNIT_KERJA_KANWIL_SOURCE_PREFIX):
@@ -312,9 +498,26 @@ def _prepare_reference_upload(
     incoming_ids = {row[primary_key] for row in rows}
     removed_ids = existing_ids - incoming_ids
     if removed_ids:
-        for employee_table_name, employee_column_name in REFERENCE_EMPLOYEE_COLUMNS[
-            target.table_name
-        ]:
+        employee_references = list(
+            REFERENCE_EMPLOYEE_COLUMNS[target.table_name]
+        )
+        existing_table_names = inspect(connection).get_table_names(
+            schema=TABLE_SCHEMA
+        )
+        for employee_table_name in existing_table_names:
+            if not re.fullmatch(
+                r"dt_employee_q[1-4]_\d{4}",
+                employee_table_name,
+            ):
+                continue
+            employee_references.extend(
+                (employee_table_name, target_column)
+                for target_column, _, mapped_reference, _ in EMPLOYEE_REFERENCE_COLUMNS
+                if mapped_reference == target.table_name
+            )
+        for employee_table_name, employee_column_name in dict.fromkeys(
+            employee_references
+        ):
             if not inspect(connection).has_table(employee_table_name, schema=TABLE_SCHEMA):
                 continue
             employee_table = _table_for(connection, employee_table_name)
@@ -776,6 +979,207 @@ def sync_employee_table(target_key: str) -> dict[str, int]:
                 f"{plan['source_count']}-row source."
             )
     return _employee_sync_result(plan)
+
+
+def _normalize_legacy_period(year: int, quarter: int) -> tuple[str, str, str]:
+    if year < 2000 or year > 2100:
+        raise ValueError("The legacy year must be between 2000 and 2100.")
+    if quarter not in (1, 2, 3, 4):
+        raise ValueError("The legacy quarter must be 1, 2, 3, or 4.")
+    suffix = f"q{quarter}_{year}"
+    return (
+        f"Q{quarter}-{year}",
+        f"fetch_pbnopen_{suffix}",
+        f"dt_employee_{suffix}",
+    )
+
+
+def preview_legacy_database_upload(
+    year: int,
+    quarter: int,
+    content: bytes,
+    filename: str,
+) -> dict[str, Any]:
+    _, source_table_name, employee_table_name = _normalize_legacy_period(
+        year,
+        quarter,
+    )
+    with engine.connect() as connection:
+        template_table = _table_for(connection, TABLE_NAME)
+        columns = [column.name for column in template_table.columns]
+        if not columns:
+            raise RuntimeError(
+                f"Database table '{TABLE_SCHEMA}.{TABLE_NAME}' has no columns."
+            )
+        dataframe = _read_legacy_table_upload(
+            content,
+            filename,
+            columns,
+        )
+        _validate_source_nips(dataframe, source_table_name)
+        _validate_legacy_reference_mappings(
+            connection,
+            dataframe,
+            employee_table_name,
+        )
+        existing_tables = set(
+            inspect(connection).get_table_names(schema=TABLE_SCHEMA)
+        )
+        if source_table_name in existing_tables:
+            existing_source_columns = [
+                column.name
+                for column in _table_for(connection, source_table_name).columns
+            ]
+            if existing_source_columns != columns:
+                raise RuntimeError(
+                    f"Legacy source table '{source_table_name}' does not match "
+                    "the PBN Open source schema."
+                )
+    return {
+        "period": f"Q{quarter}-{year}",
+        "source_table": source_table_name,
+        "employee_table": employee_table_name,
+        "columns": columns,
+        "row_count": len(dataframe),
+        "source_table_exists": source_table_name in existing_tables,
+        "employee_table_exists": employee_table_name in existing_tables,
+    }
+
+
+def apply_legacy_database_upload(
+    year: int,
+    quarter: int,
+    content: bytes,
+    filename: str,
+) -> dict[str, Any]:
+    _, source_table_name, employee_table_name = _normalize_legacy_period(
+        year,
+        quarter,
+    )
+    with engine.begin() as connection:
+        template_table = _table_for(connection, TABLE_NAME)
+        columns = [column.name for column in template_table.columns]
+        if not columns:
+            raise RuntimeError(
+                f"Database table '{TABLE_SCHEMA}.{TABLE_NAME}' has no columns."
+            )
+        dataframe = _read_legacy_table_upload(
+            content,
+            filename,
+            columns,
+        )
+        _validate_source_nips(dataframe, source_table_name)
+        _validate_legacy_reference_mappings(
+            connection,
+            dataframe,
+            employee_table_name,
+        )
+
+        existing_tables = set(
+            inspect(connection).get_table_names(schema=TABLE_SCHEMA)
+        )
+        if source_table_name in existing_tables:
+            existing_source_columns = [
+                column.name
+                for column in _table_for(connection, source_table_name).columns
+            ]
+            if existing_source_columns != columns:
+                raise RuntimeError(
+                    f"Legacy source table '{source_table_name}' does not match "
+                    "the PBN Open source schema."
+                )
+        if source_table_name not in existing_tables:
+            connection.execute(
+                text(
+                    f"CREATE TABLE `{TABLE_SCHEMA}`.`{source_table_name}` "
+                    f"LIKE `{TABLE_SCHEMA}`.`{TABLE_NAME}`"
+                )
+            )
+
+        employee_template_name = (
+            "dt_employee_q2_2026"
+            if "dt_employee_q2_2026" in existing_tables
+            else EMPLOYEE_TABLE_NAME
+        )
+        if employee_table_name not in existing_tables:
+            connection.execute(
+                text(
+                    f"CREATE TABLE `{TABLE_SCHEMA}`.`{employee_table_name}` "
+                    f"LIKE `{TABLE_SCHEMA}`.`{employee_template_name}`"
+                )
+            )
+
+        source_table = _table_for(connection, source_table_name)
+        connection.execute(delete(source_table))
+        dataframe.to_sql(
+            source_table_name,
+            connection,
+            schema=TABLE_SCHEMA,
+            if_exists="append",
+            index=False,
+            chunksize=1000,
+        )
+
+        target = TableMaintenanceTarget(
+            employee_table_name,
+            employee_table_name,
+            f"Employee table legacy (Q{quarter} {year})",
+            "sync",
+            source_table=source_table_name,
+        )
+        plan = _prepare_employee_sync(connection, target)
+        employee_table = plan["employee_table"]
+        if plan["updates"]:
+            connection.execute(plan["update_statement"], plan["updates"])
+        if plan["inserts"]:
+            connection.execute(insert(employee_table), plan["inserts"])
+        if plan["obsolete_employee_ids"]:
+            connection.execute(
+                delete(employee_table).where(
+                    employee_table.c.employee_id.in_(plan["obsolete_employee_ids"])
+                )
+            )
+        row_count = connection.scalar(
+            select(func.count()).select_from(employee_table)
+        ) or 0
+        if row_count != plan["source_count"]:
+            raise RuntimeError(
+                f"{employee_table_name} sync produced {row_count} rows for a "
+                f"{plan['source_count']}-row source."
+            )
+        sync_result = _employee_sync_result(plan)
+
+    return {
+        "period": f"Q{quarter}-{year}",
+        "source_table": source_table_name,
+        "employee_table": employee_table_name,
+        "row_count": len(dataframe),
+        "inserted_count": sync_result["inserted_count"],
+        "updated_count": sync_result["updated_count"],
+        "deleted_count": sync_result["deleted_count"],
+    }
+
+
+def get_legacy_employee_sources() -> list[dict[str, str]]:
+    sources: list[dict[str, str]] = [{
+        "value": "fetch_pbnopen",
+        "label": "Default (fetch_pbnopen)",
+    }]
+    try:
+        with engine.connect() as connection:
+            existing_tables = inspect(connection).get_table_names(schema=TABLE_SCHEMA)
+    except Exception:
+        existing_tables = []
+
+    for table_name in sorted(existing_tables):
+        match = re.fullmatch(r"dt_employee_q([1-4])_(\d{4})", table_name)
+        if match:
+            quarter, year = match.groups()
+            sources.append({
+                "value": table_name,
+                "label": f"Q{quarter} {year} ({table_name})",
+            })
+    return sources
 
 
 def sync_dt_employee_from_pbnopen() -> int:

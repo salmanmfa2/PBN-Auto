@@ -307,6 +307,7 @@ def _dashboard_dataset_signature(dataset: PerformanceKinerjaDataset) -> tuple[An
         dataset.period,
         dataset.row_count,
         dataset.uploaded_at,
+        dataset.revision,
     )
 
 def _unit_order_key(

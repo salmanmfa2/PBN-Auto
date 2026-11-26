@@ -78,6 +78,57 @@ class PbnDashboardTests(unittest.TestCase):
         self.assertEqual(result["region_distribution"][0]["label"], "West")
         self.assertEqual(result["available_filters"]["region"], ["East", "North", "West"])
 
+    def test_database_name_filter_matches_nama_gelar_keyword(self) -> None:
+        source = DatasetStore.get(self.dataset_id)["Sheet1"]
+        with patch(
+            "app.repositories.pbn_dashboard_repository.load_pbnopen_source",
+            return_value=source,
+        ):
+            dashboard = build_pbnopen_dashboard(
+                PbnDashboardFilters(name="li"),
+                today=date(2026, 10, 19),
+            )
+            people = get_pbnopen_dashboard_people(
+                PbnDashboardFilters(name="li"),
+                today=date(2026, 10, 19),
+            )
+
+        self.assertEqual(dashboard["total_employees"], 1)
+        self.assertEqual([person["Nama"] for person in people["people"]], ["Alice"])
+
+    def test_database_retirement_count_uses_60_for_2_11_and_58_for_other_eselon(self) -> None:
+        source = pd.DataFrame({
+            "Nama Gelar": ["II A", "Fungs Ahli Madya", "IV A", "Too Far", "Already Retired"],
+            "NIP": ["001", "002", "003", "004", "005"],
+            "Tanggal Lahir": [
+                "15/11/1966",
+                "15/12/1966",
+                "15/12/1968",
+                "15/01/2000",
+                "15/06/1968",
+            ],
+            "Eselon": ["II.A", "Fungs. Ahli Madya", "IV.A", "IV.A", "IV.A"],
+            "Eselon ID": [2, 11, 4, 4, 4],
+            "Sex": ["M", "M", "F", "F", "F"],
+            "Usia (th.)": [60, 60, 58, 26, 58],
+            "TMT Jabatan": ["01/01/2000"] * 5,
+            "Pendidikan Terakhir (Short)": ["S1"] * 5,
+            "Rumpun Pdd Terakhir": ["Teknik"] * 5,
+            "Region Homebase": ["West"] * 5,
+            "Unit Eselon II": ["Unit A"] * 5,
+            "Agama": ["Islam"] * 5,
+        })
+        with patch(
+            "app.repositories.pbn_dashboard_repository.load_pbnopen_source",
+            return_value=source,
+        ):
+            result = build_pbnopen_dashboard(
+                PbnDashboardFilters(),
+                today=date(2026, 10, 19),
+            )
+
+        self.assertEqual(result["retirement_count"], 3)
+
     def test_database_people_uses_same_filters_and_shape(self) -> None:
         source = DatasetStore.get(self.dataset_id)["Sheet1"]
         with patch(
@@ -200,6 +251,12 @@ class PbnDashboardTests(unittest.TestCase):
                 "Pendidikan Terakhir (Th.)",
                 "Jurusan",
                 "Universitas/Sekolah Tinggi",
+                "Unit Eselon II",
+                "Usia",
+                "Agama",
+                "Sex",
+                "Region Homebase",
+                "Rumpun Pendidikan",
             ],
         )
 

@@ -378,6 +378,7 @@ export type PerformanceGroupBy = 'overall' | 'unit_eselon_ii' | 'eselon_level' |
 export interface PerformanceDatasetStatus {
   period: string;
   row_count: number;
+  revision: number;
   uploaded_at: string;
   uploaded_by_user: string;
   uploaded_by_name: string;
@@ -388,7 +389,34 @@ export interface PerformancePeriodOption {
   row_count: number;
 }
 
-export type PerformanceEmployeeSource = 'fetch_pbnopen' | 'dt_employee_q2_2026';
+export type PerformanceEmployeeSource = string;
+
+export interface PerformanceEmployeeSourceOption {
+  value: PerformanceEmployeeSource;
+  label: string;
+}
+
+export interface LegacyDatabaseUploadPreview {
+  filename?: string;
+  period: string;
+  source_table: string;
+  employee_table: string;
+  columns: string[];
+  row_count: number;
+  source_table_exists: boolean;
+  employee_table_exists: boolean;
+}
+
+export interface LegacyDatabaseUploadResult {
+  message?: string;
+  period: string;
+  source_table: string;
+  employee_table: string;
+  row_count: number;
+  inserted_count: number;
+  updated_count: number;
+  deleted_count: number;
+}
 
 export interface PerformanceUploadValidation {
   period: string;
@@ -614,6 +642,26 @@ export interface PerformanceRecordsResponse {
   numeric_ranges: Partial<Record<keyof PerformanceRecord, [number | null, number | null]>>;
 }
 
+export interface WildcardCompareDifference {
+  field: string;
+  label: string;
+  current: string;
+  uploaded: string;
+}
+
+export interface WildcardCompareRow {
+  nip: string;
+  nama: string;
+  differences: WildcardCompareDifference[];
+}
+
+export interface WildcardCompareResponse {
+  period: string;
+  matched_count: number;
+  difference_count: number;
+  differences: WildcardCompareRow[];
+}
+
 export interface CleaningMethodRecommendation {
   dataset_id: string;
   sheet_name: string;
@@ -628,6 +676,7 @@ export interface PbnDashboardFilters {
   age_max?: number;
   tenure_min?: number;
   tenure_max?: number;
+  name?: string;
   eselon: string[];
   education: string[];
   region: string[];
@@ -645,6 +694,7 @@ export interface PbnDashboardResponse {
   dataset_id: string;
   sheet_name: string;
   total_employees: number;
+  retirement_count: number;
   sex_distribution: PbnDashboardCount[];
   age_group_distribution: PbnDashboardCount[];
   region_distribution: PbnDashboardCount[];
@@ -674,6 +724,20 @@ export interface PbnDashboardPeopleResponse {
     'Pendidikan Terakhir (Th.)': string | null;
     Jurusan: string | null;
     'Universitas/Sekolah Tinggi': string | null;
+    NIP?: string | null;
+    'Eselon ID'?: string | null;
+    Gol?: string | null;
+    Pangkat?: string | null;
+    'Unit Eselon II'?: string | null;
+    'Unit Eselon III'?: string | null;
+    'Unit Eselon IV'?: string | null;
+    'Tanggal Lahir'?: string | null;
+    Usia?: string | null;
+    Agama?: string | null;
+    Sex?: string | null;
+    'Region Homebase'?: string | null;
+    Homebase?: string | null;
+    'Rumpun Pendidikan'?: string | null;
   }>;
 }
 

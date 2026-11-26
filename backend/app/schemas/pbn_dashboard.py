@@ -6,6 +6,7 @@ class PbnDashboardFilters(BaseModel):
     age_max: int | None = None
     tenure_min: int | None = None
     tenure_max: int | None = None
+    name: str = ""
     eselon: list[str] = Field(default_factory=list)
     education: list[str] = Field(default_factory=list)
     region: list[str] = Field(default_factory=list)
@@ -38,6 +39,7 @@ class PbnDashboardResponse(BaseModel):
     dataset_id: str
     sheet_name: str
     total_employees: int
+    retirement_count: int = 0
     sex_distribution: list[PbnDashboardCount]
     age_group_distribution: list[PbnDashboardCount]
     region_distribution: list[PbnDashboardCount]

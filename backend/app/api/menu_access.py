@@ -21,6 +21,7 @@ _READ_ONLY_POST_PREFIXES = (
     "/insights/pbn/dashboard/",
     "/insights-beta/pbn/dashboard",
     "/performance/adjustments/check",
+    "/performance/records/wildcard-compare",
     "/performance/full-data/validate",
     "/candidate-preparation/talent-finder/",
 )

@@ -17,6 +17,74 @@ from main import app
 
 
 class PbnOpenCsvValidationTests(unittest.TestCase):
+    def test_legacy_eselon_ii_b_alias_maps_to_ii_a(self) -> None:
+        mapped = pbnopen_import_service._employee_reference_lookup_label(
+            "Eselon",
+            "II.B",
+            {"II.A": 2, "III.A": 3},
+        )
+
+        self.assertEqual(mapped, "II.A")
+
+    def test_legacy_period_normalizes_table_names(self) -> None:
+        period, source_table, employee_table = (
+            pbnopen_import_service._normalize_legacy_period(2027, 3)
+        )
+
+        self.assertEqual(period, "Q3-2027")
+        self.assertEqual(source_table, "fetch_pbnopen_q3_2027")
+        self.assertEqual(employee_table, "dt_employee_q3_2027")
+
+    def test_legacy_period_rejects_invalid_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "year"):
+            pbnopen_import_service._normalize_legacy_period(1999, 1)
+        with self.assertRaisesRegex(ValueError, "quarter"):
+            pbnopen_import_service._normalize_legacy_period(2027, 5)
+
+    def test_legacy_csv_reader_accepts_semicolon_delimiter(self) -> None:
+        dataframe = pbnopen_import_service._read_legacy_table_upload(
+            b"NIP;Nama Gelar\n1234567890123456;A\n",
+            "legacy.csv",
+            ["NIP", "Nama Gelar"],
+        )
+
+        self.assertEqual(
+            dataframe.to_dict(orient="records"),
+            [{"NIP": "1234567890123456", "Nama Gelar": "A"}],
+        )
+
+    def test_dynamic_employee_source_catalog_includes_live_legacy_tables(self) -> None:
+        fake_connection = unittest.mock.MagicMock()
+        fake_context = unittest.mock.MagicMock()
+        fake_context.__enter__.return_value = fake_connection
+        fake_context.__exit__.return_value = False
+        fake_inspector = SimpleNamespace(
+            get_table_names=lambda schema=None: [
+                "fetch_pbnopen",
+                "dt_employee",
+                "dt_employee_q1_2025",
+                "dt_employee_q2_2026",
+                "dt_employee_q4_2027",
+            ],
+        )
+        with patch(
+            "app.services.pbnopen_import_service.engine.connect",
+            return_value=fake_context,
+        ), patch(
+            "app.services.pbnopen_import_service.inspect",
+            return_value=fake_inspector,
+        ):
+            sources = pbnopen_import_service.get_legacy_employee_sources()
+
+        self.assertIn(
+            {"value": "dt_employee_q1_2025", "label": "Q1 2025 (dt_employee_q1_2025)"},
+            sources,
+        )
+        self.assertIn(
+            {"value": "dt_employee_q4_2027", "label": "Q4 2027 (dt_employee_q4_2027)"},
+            sources,
+        )
+
     def test_database_maintenance_catalog_discovers_live_schema_tables(self) -> None:
         fake_connection = unittest.mock.MagicMock()
         fake_context = unittest.mock.MagicMock()

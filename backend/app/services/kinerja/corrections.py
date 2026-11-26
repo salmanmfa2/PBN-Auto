@@ -23,7 +23,7 @@ from app.repositories.epride_performance_repository import (
     fetch_submitted_correction_rows,
     fetch_available_source_periods as fetch_epride_available_source_periods,
 )
-from .cache import invalidate_dashboard_cache
+from .cache import invalidate_period_dashboard_cache
 from .common import (
     CORRECTION_BATCH_HEADERS,
     CORRECTION_SCALE,
@@ -410,18 +410,29 @@ def sync_adjustments_from_epride(
         )
         for record in records
     ]
+    normalized_period = validate_period(period)
+    dataset = db.scalar(
+        select(PerformanceKinerjaDataset)
+        .where(PerformanceKinerjaDataset.period == normalized_period)
+        .with_for_update()
+    )
+    if dataset is None:
+        raise PerformanceDatasetNotFoundError(
+            f"No performance dataset is stored for {normalized_period}."
+        )
 
     try:
         for record, correction, final_score in updates:
             record.nilai_koreksi = correction
             record.nkp_akhir = final_score
+        dataset.revision = (dataset.revision or 0) + 1
         db.execute(delete(PerformanceCorrectionEditLog))
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         raise
 
-    invalidate_dashboard_cache()
+    invalidate_period_dashboard_cache(normalized_period)
     return {
         **sync_data["summary"],
         "conflicts": [],
@@ -500,13 +511,14 @@ def update_manual_correction(
             edited_at=datetime.now(timezone.utc),
         )
     )
+    dataset.revision = (dataset.revision or 0) + 1
     try:
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         raise
 
-    invalidate_dashboard_cache()
+    invalidate_period_dashboard_cache(normalized_period)
     return {
         "period": normalized_period,
         "nip": normalized_nip,
@@ -597,13 +609,14 @@ def update_manual_corrections_from_excel(
     try:
         if edit_logs:
             db.add_all(edit_logs)
+            dataset.revision = (dataset.revision or 0) + 1
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         raise
 
     if edit_logs:
-        invalidate_dashboard_cache()
+        invalidate_period_dashboard_cache(normalized_period)
     return {
         "period": normalized_period,
         "input_count": len(corrections),
@@ -732,11 +745,18 @@ def undo_manual_correction(
             PerformanceCorrectionEditLog.id >= selected_log.id,
         )
     )
+    dataset = db.scalar(
+        select(PerformanceKinerjaDataset)
+        .where(PerformanceKinerjaDataset.period == selected_log.period)
+        .with_for_update()
+    )
+    if dataset is not None:
+        dataset.revision = (dataset.revision or 0) + 1
     try:
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         raise
 
-    invalidate_dashboard_cache()
+    invalidate_period_dashboard_cache(selected_log.period)
     return result

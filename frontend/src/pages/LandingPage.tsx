@@ -651,7 +651,7 @@ export default function LandingPage() {
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 px-3 py-1 text-xs font-medium text-sky-300">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                <span>MPK Workspace · v1.5.</span>
+                <span>MPK Workspace · v1.5.2</span>
                 <span className="text-slate-500">|</span>
                 <span className="text-slate-300">{getWibDateLabel()}</span>
               </div>

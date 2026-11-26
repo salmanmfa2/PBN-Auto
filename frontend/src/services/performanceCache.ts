@@ -150,6 +150,32 @@ export async function clearPerformanceCache(userKey: string): Promise<void> {
   await transactionDone;
 }
 
+export async function deletePerformanceCacheEntriesByPrefix(
+  userKey: string,
+  prefix: string,
+): Promise<void> {
+  const database = await openDatabase();
+  const transaction = database.transaction(CACHE_STORE, 'readwrite');
+  const transactionDone = transactionResult(transaction);
+  const store = transaction.objectStore(CACHE_STORE);
+  const entriesRequest = store.index('by-user').openKeyCursor(
+    IDBKeyRange.only(userKey),
+  );
+  entriesRequest.onsuccess = () => {
+    const cursor = entriesRequest.result;
+    if (!cursor) return;
+    const key = String(cursor.primaryKey);
+    if (key.startsWith(prefix)) {
+      store.delete(cursor.primaryKey);
+    }
+    cursor.continue();
+  };
+  entriesRequest.onerror = () => {
+    transaction.abort();
+  };
+  await transactionDone;
+}
+
 function deletePerformanceCacheEntry(key: string): Promise<void> {
   return openDatabase().then((database) => {
     const transaction = database.transaction(CACHE_STORE, 'readwrite');

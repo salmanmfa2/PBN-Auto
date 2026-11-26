@@ -779,7 +779,7 @@ export default function LandingPage() {
           </div>
         )}
 
-        <p className="mt-12 text-xs text-slate-400">MPK Workspace v1.5.0</p>
+        <p className="mt-12 text-xs text-slate-400">MPK Workspace v1.5.2</p>
       </div>
 
       {/* Experimental Passcode Modal */}

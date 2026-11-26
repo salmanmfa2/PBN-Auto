@@ -727,6 +727,17 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
   const [error, setError] = useState<string | null>(null);
   const [showPeople, setShowPeople] = useState(false);
   const [peopleSearch, setPeopleSearch] = useState('');
+  const [employeeNameSearch, setEmployeeNameSearch] = useState('');
+  const [visiblePeopleColumns, setVisiblePeopleColumns] = useState<string[]>([
+    'No',
+    'Nama',
+    'Eselon',
+    'Jabatan',
+    'Pendidikan Terakhir (Th.)',
+    'Jurusan',
+    'Universitas/Sekolah Tinggi',
+  ]);
+  const [showPeopleColumnChooser, setShowPeopleColumnChooser] = useState(false);
   const [people, setPeople] = useState<PbnDashboardPeopleResponse['people']>([]);
   const [isPeopleLoading, setIsPeopleLoading] = useState(false);
   const [peopleError, setPeopleError] = useState<string | null>(null);
@@ -743,6 +754,17 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
     setError(null);
     setShowPeople(false);
     setPeopleSearch('');
+    setEmployeeNameSearch('');
+    setVisiblePeopleColumns([
+      'No',
+      'Nama',
+      'Eselon',
+      'Jabatan',
+      'Pendidikan Terakhir (Th.)',
+      'Jurusan',
+      'Universitas/Sekolah Tinggi',
+    ]);
+    setShowPeopleColumnChooser(false);
     setPeople([]);
   }, [datasetId, sheetName]);
 
@@ -765,6 +787,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
     let active = true;
     const timer = window.setTimeout(() => {
       const filters: PbnDashboardFilters = {
+        name: employeeNameSearch,
         eselon: selectedEselon,
         education: selectedEducation,
         region: selectedRegion,
@@ -812,6 +835,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
     selectedRegion,
     selectedUnit,
     selectedRumpun,
+    employeeNameSearch,
   ]);
 
   useEffect(() => {
@@ -819,6 +843,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
 
     let active = true;
     const filters: PbnDashboardFilters = {
+      name: employeeNameSearch,
       eselon: selectedEselon,
       education: selectedEducation,
       region: selectedRegion,
@@ -865,6 +890,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
     selectedRegion,
     selectedUnit,
     selectedRumpun,
+    employeeNameSearch,
   ]);
 
   const ageBounds = dashboard?.available_filters.age;
@@ -884,6 +910,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
   const activeFilterCount =
     (hasAgeFilter ? 1 : 0)
     + (hasTenureFilter ? 1 : 0)
+    + (employeeNameSearch.trim() ? 1 : 0)
     + selectedEselon.length
     + selectedEducation.length
     + selectedRegion.length
@@ -893,6 +920,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
   const resetAllFilters = () => {
     setAgeRange(null);
     setTenureRange(null);
+    setEmployeeNameSearch('');
     setSelectedEselon([]);
     setSelectedEducation([]);
     setSelectedRegion([]);
@@ -917,11 +945,6 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
     return [...dashboard.unit_distribution].sort((a, b) => b.count - a.count)[0];
   }, [dashboard?.unit_distribution]);
 
-  const topEducation = useMemo(() => {
-    if (!dashboard?.education_level_distribution.length) return null;
-    return [...dashboard.education_level_distribution].sort((a, b) => b.count - a.count)[0];
-  }, [dashboard?.education_level_distribution]);
-
   const filteredPeople = useMemo(() => {
     const query = peopleSearch.trim().toLowerCase();
     if (!query) return people;
@@ -938,25 +961,16 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
 
   const exportPeopleCsv = () => {
     if (filteredPeople.length === 0) return;
-    const headers = [
-      'No',
-      'Nama',
-      'Eselon',
-      'Jabatan',
-      'Pendidikan Terakhir (Th.)',
-      'Jurusan',
-      'Universitas/Sekolah Tinggi',
-    ];
+    const availableColumns = visiblePeopleColumns.filter((column) => (
+      column === 'No'
+      || (filteredPeople[0] as unknown as Record<string, unknown>).hasOwnProperty(column)
+    ));
+    const headers = availableColumns;
     const escapeCell = (val: unknown) => `"${String(val ?? '').replace(/"/g, '""')}"`;
-    const rows = filteredPeople.map((person) => [
-      person.index,
-      person.Nama,
-      person.Eselon,
-      person.Jabatan,
-      person['Pendidikan Terakhir (Th.)'],
-      person.Jurusan,
-      person['Universitas/Sekolah Tinggi'],
-    ].map(escapeCell).join(','));
+    const rows = filteredPeople.map((person) => availableColumns.map((column) => {
+      if (column === 'No') return escapeCell(person.index);
+      return escapeCell((person as unknown as Record<string, unknown>)[column]);
+    }).join(','));
 
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1102,6 +1116,18 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
                   </button>
                 )}
 
+                {isDatabaseSource && employeeNameSearch.trim() && (
+                  <button
+                    type="button"
+                    disabled={!canEditParameters}
+                    onClick={() => setEmployeeNameSearch('')}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/35 bg-sky-500/15 px-2.5 py-1 font-medium text-sky-200 hover:bg-sky-500/25 disabled:opacity-50"
+                  >
+                    <span>Nama: {employeeNameSearch.trim()}</span>
+                    <span aria-hidden="true">×</span>
+                  </button>
+                )}
+
                 {selectedEselon.map((val) => (
                   <button
                     key={`es-${val}`}
@@ -1195,6 +1221,21 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
                         : 'Mode baca saja (akses edit diperlukan).'}
                     </p>
                   </div>
+
+                  {isDatabaseSource && (
+                    <label className="block text-xs font-medium text-slate-300">
+                      Cari Nama Pegawai
+                      <input
+                        type="search"
+                        value={employeeNameSearch}
+                        onChange={(event) => setEmployeeNameSearch(event.target.value)}
+                        placeholder="Kata kunci Nama Gelar..."
+                        disabled={!canEditParameters}
+                        aria-label="Cari nama pegawai Nama Gelar"
+                        className="input mt-1.5 w-full py-2 text-xs"
+                      />
+                    </label>
+                  )}
                   {canEditParameters && activeFilterCount > 0 && (
                     <button
                       type="button"
@@ -1346,22 +1387,24 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
                     )}
                   </div>
 
-                  {/* Dominant Education Level Card */}
+                  {/* Nearing Retirement Card */}
                   <div className="ih-panel rounded-2xl border border-slate-800 bg-slate-900/75 p-4">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Pendidikan Dominan
+                      Pegawai Mendekati Pensiun
                     </p>
-                    {topEducation ? (
+                    {isDatabaseSource ? (
                       <>
-                        <p className="mt-2 line-clamp-1 text-sm font-bold text-slate-100" title={topEducation.label}>
-                          {topEducation.label}
+                        <p className="mt-2 font-mono text-2xl font-bold text-amber-300">
+                          {(dashboard?.retirement_count ?? 0).toLocaleString()}
                         </p>
-                        <p className="mt-1.5 font-mono text-xs text-amber-300">
-                          {topEducation.count.toLocaleString()} pegawai ({topEducation.percentage}%)
+                        <p className="mt-1 text-xs text-slate-400">
+                          Pensiun dalam 3 bulan
                         </p>
                       </>
                     ) : (
-                      <p className="mt-3 text-xs text-slate-500">Tidak ada data</p>
+                      <p className="mt-3 text-xs text-slate-500">
+                        Tersedia pada Insight Hub Beta
+                      </p>
                     )}
                   </div>
                 </section>
@@ -1503,6 +1546,15 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
                 >
                   Export CSV
                 </button>
+                {isDatabaseSource && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPeopleColumnChooser((current) => !current)}
+                    className="btn-secondary !rounded-xl !px-3 !py-1.5 text-xs font-semibold"
+                  >
+                    Pilih Kolom
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowPeople(false)}
@@ -1520,19 +1572,69 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
               </p>
             )}
 
+            {showPeopleColumnChooser && (
+              <div className="border-b border-slate-800 px-4 py-3 sm:px-6">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Kolom tabel
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    'No',
+                    'Nama',
+                    'NIP',
+                    'Eselon',
+                    'Eselon ID',
+                    'Jabatan',
+                    'Gol',
+                    'Pangkat',
+                    'Pendidikan Terakhir (Th.)',
+                    'Jurusan',
+                    'Universitas/Sekolah Tinggi',
+                    'Unit Eselon II',
+                    'Unit Eselon III',
+                    'Unit Eselon IV',
+                    'Tanggal Lahir',
+                    'Usia',
+                    'Agama',
+                    'Sex',
+                    'Region Homebase',
+                    'Homebase',
+                    'Rumpun Pendidikan',
+                  ].map((column) => {
+                    const checked = visiblePeopleColumns.includes(column);
+                    return (
+                      <label
+                        key={column}
+                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${
+                          checked
+                            ? 'border-sky-500/50 bg-sky-500/10 text-sky-200'
+                            : 'border-slate-800 text-slate-400'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            setVisiblePeopleColumns((current) => (
+                              event.target.checked
+                                ? [...current, column]
+                                : current.filter((item) => item !== column)
+                            ));
+                          }}
+                        />
+                        {column}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="min-h-0 flex-1 overflow-auto">
               <table className="w-full min-w-[900px] border-collapse text-left text-sm">
                 <thead className="ih-table-head sticky top-0 z-10 bg-slate-950 text-xs uppercase tracking-wider text-slate-400">
                   <tr>
-                    {[
-                      'No',
-                      'Nama',
-                      'Eselon',
-                      'Jabatan',
-                      'Pendidikan Terakhir (Th.)',
-                      'Jurusan',
-                      'Universitas/Sekolah Tinggi',
-                    ].map((column) => (
+                    {visiblePeopleColumns.map((column) => (
                       <th key={column} className="border-b border-slate-800 px-3.5 py-3 font-semibold">
                         {column}
                       </th>
@@ -1545,27 +1647,29 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
                       key={`${person.index}-${person.Nama ?? ''}`}
                       className="transition-colors hover:bg-slate-800/40"
                     >
-                      <td className="px-3.5 py-2.5 font-mono text-xs tabular-nums text-slate-400">
-                        {person.index}
-                      </td>
-                      <td className="px-3.5 py-2.5 font-medium text-slate-100">
-                        {person.Nama ?? '—'}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-slate-300">{person.Eselon ?? '—'}</td>
-                      <td className="px-3.5 py-2.5 text-slate-300">{person.Jabatan ?? '—'}</td>
-                      <td className="px-3.5 py-2.5 text-slate-300">
-                        {person['Pendidikan Terakhir (Th.)'] ?? '—'}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-slate-300">{person.Jurusan ?? '—'}</td>
-                      <td className="px-3.5 py-2.5 text-slate-300">
-                        {person['Universitas/Sekolah Tinggi'] ?? '—'}
-                      </td>
+                      {visiblePeopleColumns.map((column) => (
+                        <td
+                          key={column}
+                          className={
+                            column === 'No'
+                              ? 'px-3.5 py-2.5 font-mono text-xs tabular-nums text-slate-400'
+                              : column === 'Nama'
+                                ? 'px-3.5 py-2.5 font-medium text-slate-100'
+                                : 'px-3.5 py-2.5 text-slate-300'
+                          }
+                        >
+                          {column === 'No'
+                            ? person.index
+                            : ((person as unknown as Record<string, unknown>)[column] as string | number | null)
+                              ?? '—'}
+                        </td>
+                      ))}
                     </tr>
                   ))}
 
                   {!isPeopleLoading && filteredPeople.length === 0 && !peopleError && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={visiblePeopleColumns.length} className="px-4 py-10 text-center text-sm text-slate-500">
                         Tidak ada pegawai yang sesuai dengan kriteria pencarian atau filter.
                       </td>
                     </tr>
@@ -1573,7 +1677,7 @@ export default function InsightHubPage({ source = 'dataset' }: InsightHubPagePro
 
                   {isPeopleLoading && people.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={visiblePeopleColumns.length} className="px-4 py-10 text-center text-sm text-slate-500">
                         Memuat daftar pegawai…
                       </td>
                     </tr>

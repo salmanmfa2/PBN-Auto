@@ -121,7 +121,7 @@ def create_performance_records_workbook(
 
     dataset = _select_dataset(_performance_datasets(db), period)
     if dataset is not None:
-        records = _query_performance_records(
+        records, _ = _query_performance_records(
             db,
             dataset,
             search=search,

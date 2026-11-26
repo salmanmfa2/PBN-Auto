@@ -16,6 +16,7 @@ class PerformanceKinerjaDataset(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     period: Mapped[str] = mapped_column(String(7), nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

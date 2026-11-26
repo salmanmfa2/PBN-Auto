@@ -28,12 +28,20 @@ import type {
   PerformanceCorrectionEditResult,
   PerformanceCorrectionBatchResult,
   PerformanceUploadValidation,
+  WildcardCompareResponse,
+  PerformanceEmployeeSourceOption,
 } from '../types';
 import { Spinner } from '../components/Spinner';
 import { Histogram, StatusDistribution } from '../components/performance/PerformanceVisuals';
 import { OverviewComparisonDetail, UnitComparisonDialog, UnitComparisonButton, UnitMetricCells } from '../components/performance/PerformanceComparisons';
+
+const PERFORMANCE_GUIDE_PDF_URL = new URL(
+  '../assets/Panduan_Modul_Analisis_Kinerja_DJPb_v2.pdf',
+  import.meta.url,
+).href;
 import {
   clearPerformanceCache,
+  deletePerformanceCacheEntriesByPrefix,
   readPerformanceCache,
   readPerformanceRecordsViewState,
   writePerformanceCache,
@@ -55,9 +63,10 @@ const PERFORMANCE_EMPLOYEE_SOURCES: {
 ];
 
 function getPerformanceEmployeeSourceLabel(source: PerformanceEmployeeSource): string {
-  return source === 'dt_employee_q2_2026'
-    ? 'Q2 2026 (dt_employee_q2_2026)'
-    : 'Default (fetch_pbnopen)';
+  if (source === 'fetch_pbnopen') return 'Default (fetch_pbnopen)';
+  const match = /^dt_employee_q([1-4])_(\d{4})$/.exec(source);
+  if (match) return `Q${match[1]} ${match[2]} (${source})`;
+  return source;
 }
 
 type UnitColumnKey =
@@ -302,27 +311,35 @@ function isRecordColumnKey(value: string): value is keyof PerformanceRecord {
   return RECORD_COLUMNS.some((column) => column.key === value);
 }
 
-function makeRecordsCacheKey(
-  page: number,
-  pageSize: number,
-  search: string,
-  filters: Record<string, string>,
-  sortBy: keyof PerformanceRecord,
-  sortOrder: 'asc' | 'desc',
+function makeDashboardCacheKey(
+  unitEselonII: string,
+  eselons: string[],
   period: string | undefined,
+  unitEselonIII: string,
+  unitEselonIV: string,
+  unitEselon: string,
 ): string {
-  const stableFilters = Object.fromEntries(
-    Object.entries(filters).sort(([left], [right]) => left.localeCompare(right)),
-  );
-  return `records:${JSON.stringify({
-    page,
-    pageSize,
-    search,
-    filters: stableFilters,
-    sortBy,
-    sortOrder,
+  return `dashboard:${period ?? 'none'}:${JSON.stringify({
+    unitEselonII,
+    eselons: [...eselons].sort((left, right) => left.localeCompare(right)),
     period: period ?? null,
+    unitEselonIII,
+    unitEselonIV,
+    unitEselon,
   })}`;
+}
+
+function getRelatedPeriodCachePrefixes(period: string): string[] {
+  const normalized = period.trim().toUpperCase();
+  const match = /^Q([1-4])-(\d{4})$/.exec(normalized);
+  if (!match) return [normalized];
+  const quarter = Number(match[1]);
+  const year = Number(match[2]);
+  const previous =
+    quarter === 1 ? `Q4-${year - 1}` : `Q${quarter - 1}-${year}`;
+  const following =
+    quarter === 4 ? `Q1-${year + 1}` : `Q${quarter + 1}-${year}`;
+  return [...new Set([normalized, previous, following])];
 }
 
 const RECORD_LITE_COLUMNS = new Set<keyof PerformanceRecord>([
@@ -732,6 +749,13 @@ export default function PerformanceAnalysisPage() {
   const [unitExportError, setUnitExportError] = useState<string | null>(null);
   const [recordsExportBusy, setRecordsExportBusy] = useState(false);
   const [recordsExportError, setRecordsExportError] = useState<string | null>(null);
+  const [isWildcardCompareOpen, setIsWildcardCompareOpen] = useState(false);
+  const [wildcardCompareFile, setWildcardCompareFile] = useState<File | null>(null);
+  const [wildcardCompareBusy, setWildcardCompareBusy] = useState(false);
+  const [wildcardCompareError, setWildcardCompareError] = useState<string | null>(null);
+  const [wildcardCompareResult, setWildcardCompareResult] =
+    useState<WildcardCompareResponse | null>(null);
+  const wildcardCompareFileInput = useRef<HTMLInputElement>(null);
   const [insight, setInsight] = useState<PerformanceInsight | null>(null);
   const [insightDraft, setInsightDraft] = useState('');
   const [insightLoading, setInsightLoading] = useState(true);
@@ -763,6 +787,9 @@ export default function PerformanceAnalysisPage() {
   const moduleLoadProgress = Math.round(
     (completedModuleLoadTasks / Object.keys(moduleLoadTasks).length) * 100,
   );
+  const hasModuleLoadError = Object.values(moduleLoadTasks)
+    .some((task) => task.status === 'failed');
+  const isModuleLoadInProgress = moduleLoadDurationMs === null;
   const isUnitExpanded = (key: string) => (
     expandedUnits.includes(key)
     || (
@@ -1047,6 +1074,8 @@ export default function PerformanceAnalysisPage() {
   const [fullFile, setFullFile] = useState<File | null>(null);
   const [fullEmployeeSource, setFullEmployeeSource] =
     useState<PerformanceEmployeeSource>('fetch_pbnopen');
+  const [performanceEmployeeSources, setPerformanceEmployeeSources] =
+    useState<PerformanceEmployeeSourceOption[]>(PERFORMANCE_EMPLOYEE_SOURCES);
   const [fullValidation, setFullValidation] = useState<PerformanceUploadValidation | null>(null);
   const [fullBusy, setFullBusy] = useState(false);
   const [fullError, setFullError] = useState<string | null>(null);
@@ -1068,10 +1097,32 @@ export default function PerformanceAnalysisPage() {
   const [correctionConflictResolutions, setCorrectionConflictResolutions] =
     useState<Record<string, string>>({});
   const [isDataManagementOpen, setIsDataManagementOpen] = useState(false);
+  const [isPerformanceGuideOpen, setIsPerformanceGuideOpen] = useState(false);
   const fullFileInput = useRef<HTMLInputElement>(null);
   const analysisRequestId = useRef(0);
   const recordFilterTimer = useRef<number | null>(null);
   const recordRequestId = useRef(0);
+  const preloadedDashboardPeriodsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    if ((user?.auth_level ?? 0) < 3) return undefined;
+    let active = true;
+    void apiClient.getPerformanceEmployeeSources()
+      .then((sources) => {
+        if (!active) return;
+        setPerformanceEmployeeSources(sources);
+        if (!sources.some((source) => source.value === fullEmployeeSource)) {
+          setFullEmployeeSource('fetch_pbnopen');
+          setFullValidation(null);
+        }
+      })
+      .catch(() => {
+        if (active) setPerformanceEmployeeSources(PERFORMANCE_EMPLOYEE_SOURCES);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.auth_level, fullEmployeeSource]);
 
   useEffect(() => {
     if (!isDataManagementOpen || (user?.auth_level ?? 0) < 3) return undefined;
@@ -1143,11 +1194,42 @@ export default function PerformanceAnalysisPage() {
     setIsLoading(true);
     setError(null);
     let loadFailure: string | null = null;
+    const queryPeriod =
+      requestedPeriod === null ? undefined : requestedPeriod ?? selectedPeriod;
+    const dashboardCacheKey = makeDashboardCacheKey(
+      selectedUnit,
+      selectedEselon ? [selectedEselon] : [],
+      queryPeriod,
+      selectedEselonIII,
+      selectedEselonIV,
+      selectedUnitEselon,
+    );
+    try {
+      const cached = await readPerformanceCache<PerformanceDashboardResponse>(
+        userCacheKey,
+        dashboardCacheKey,
+      );
+      if (requestId === analysisRequestId.current && cached) {
+        setAnalysis(cached);
+        setIsLoading(false);
+        completeModuleLoadTask('dashboard', null);
+        if (cached.dataset) {
+          setQuarter(cached.dataset.period.slice(0, 2));
+          setYear(cached.dataset.period.slice(3));
+        }
+      }
+    } catch (cacheError) {
+      if (requestId === analysisRequestId.current) {
+        setPerformanceCacheWarning(
+          `Could not read the dashboard browser cache: ${errorMessage(cacheError)}`,
+        );
+      }
+    }
     try {
       const result = await apiClient.getPerformanceDashboard(
         selectedUnit,
         selectedEselon ? [selectedEselon] : [],
-        requestedPeriod === null ? undefined : requestedPeriod ?? selectedPeriod,
+        queryPeriod,
         selectedEselonIII,
         selectedEselonIV,
         selectedUnitEselon,
@@ -1157,6 +1239,15 @@ export default function PerformanceAnalysisPage() {
       if (result.dataset) {
         setQuarter(result.dataset.period.slice(0, 2));
         setYear(result.dataset.period.slice(3));
+      }
+      try {
+        await writePerformanceCache(userCacheKey, dashboardCacheKey, result);
+      } catch (cacheError) {
+        if (requestId === analysisRequestId.current) {
+          setPerformanceCacheWarning(
+            `Could not save the dashboard in the browser cache: ${errorMessage(cacheError)}`,
+          );
+        }
       }
     } catch (loadError) {
       if (requestId === analysisRequestId.current) {
@@ -1177,11 +1268,74 @@ export default function PerformanceAnalysisPage() {
     selectedUnitEselon,
     selectedPeriod,
     selectedUnit,
+    userCacheKey,
   ]);
 
   useEffect(() => {
     void refreshAnalysis();
   }, [refreshAnalysis]);
+
+  useEffect(() => {
+    if (isLoading || !analysis?.available_periods.length) return;
+    const activePeriod =
+      selectedPeriod ?? analysis.dataset?.period ?? null;
+    if (!activePeriod) return;
+    const periods = analysis.available_periods.map((item) => item.period);
+    const activeIndex = periods.indexOf(activePeriod);
+    if (activeIndex < 0) return;
+    const adjacentPeriods = [
+      periods[activeIndex - 1],
+      periods[activeIndex + 1],
+    ].filter((period): period is string => Boolean(period));
+    if (!adjacentPeriods.length) return;
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void Promise.all(
+        adjacentPeriods.map(async (period) => {
+          if (preloadedDashboardPeriodsRef.current.has(period)) return;
+          preloadedDashboardPeriodsRef.current.add(period);
+          try {
+            const result = await apiClient.getPerformanceDashboard(
+              selectedUnit,
+              selectedEselon ? [selectedEselon] : [],
+              period,
+              selectedEselonIII,
+              selectedEselonIV,
+              selectedUnitEselon,
+            );
+            if (!active) return;
+            const cacheKey = makeDashboardCacheKey(
+              selectedUnit,
+              selectedEselon ? [selectedEselon] : [],
+              period,
+              selectedEselonIII,
+              selectedEselonIV,
+              selectedUnitEselon,
+            );
+            await writePerformanceCache(userCacheKey, cacheKey, result);
+          } catch {
+            preloadedDashboardPeriodsRef.current.delete(period);
+          }
+        }),
+      );
+    }, 500);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [
+    analysis,
+    isLoading,
+    selectedEselon,
+    selectedEselonIII,
+    selectedEselonIV,
+    selectedPeriod,
+    selectedUnit,
+    selectedUnitEselon,
+    userCacheKey,
+  ]);
 
   useEffect(() => {
     if (viewStateOwnerKey === userCacheKey) return;
@@ -1268,38 +1422,10 @@ export default function PerformanceAnalysisPage() {
   const refreshRecords = useCallback(async (requestedPeriod?: string | null) => {
     const requestId = ++recordRequestId.current;
     const queryPeriod = requestedPeriod === null ? undefined : requestedPeriod ?? selectedPeriod;
-    const cacheKey = makeRecordsCacheKey(
-      recordPage,
-      RECORD_PAGE_SIZE,
-      recordSearch,
-      recordFilters,
-      recordSort.key,
-      recordSort.direction,
-      queryPeriod,
-    );
     setIsLoadingRecords(true);
     setRecordError(null);
     setRecordsFromCache(false);
     let loadFailure: string | null = null;
-    let cachedRecordsLoaded = false;
-    try {
-      const cached = await readPerformanceCache<PerformanceRecordsResponse>(
-        userCacheKey,
-        cacheKey,
-      );
-      if (requestId === recordRequestId.current && cached) {
-        setRecordData(cached);
-        setRecordsFromCache(true);
-        setIsLoadingRecords(false);
-        cachedRecordsLoaded = true;
-      }
-    } catch (cacheError) {
-      if (requestId === recordRequestId.current) {
-        setPerformanceCacheWarning(
-          `Could not read the employee-record browser cache: ${errorMessage(cacheError)}`,
-        );
-      }
-    }
     try {
       const result = await apiClient.getPerformanceRecords(
         recordPage,
@@ -1318,21 +1444,11 @@ export default function PerformanceAnalysisPage() {
         }
         setRecordData(result);
         setRecordsFromCache(false);
-        try {
-          await writePerformanceCache(userCacheKey, cacheKey, result);
-        } catch (cacheError) {
-          setPerformanceCacheWarning(
-            `Could not save employee records in the browser cache: ${errorMessage(cacheError)}`,
-          );
-        }
       }
     } catch (loadError) {
       if (requestId === recordRequestId.current) {
         loadFailure = errorMessage(loadError);
         setRecordError(loadFailure);
-        if (cachedRecordsLoaded) {
-          setRecordsFromCache(true);
-        }
       }
     } finally {
       if (requestId === recordRequestId.current) {
@@ -1347,14 +1463,19 @@ export default function PerformanceAnalysisPage() {
     recordSearch,
     recordSort,
     selectedPeriod,
-    userCacheKey,
   ]);
 
   useEffect(() => {
+    if (activeTab !== 'employees') return;
     void refreshRecords();
-  }, [refreshRecords]);
+  }, [activeTab, refreshRecords]);
 
-  const invalidatePerformanceBrowserCache = useCallback(async () => {
+  useEffect(() => {
+    if (activeTab === 'employees') return;
+    completeModuleLoadTask('records', null);
+  }, [activeTab, completeModuleLoadTask]);
+
+  const invalidatePerformanceBrowserCache = useCallback(async (period?: string) => {
     recordRequestId.current += 1;
     correctionLogRequestId.current += 1;
     setIsLoadingRecords(false);
@@ -1363,7 +1484,27 @@ export default function PerformanceAnalysisPage() {
     setCorrectionLogValidated(false);
     setRecordsFromCache(false);
     try {
-      await clearPerformanceCache(userCacheKey);
+      if (period) {
+        const relatedPeriods = getRelatedPeriodCachePrefixes(period);
+        await Promise.all([
+          ...relatedPeriods.map((relatedPeriod) =>
+            deletePerformanceCacheEntriesByPrefix(
+              userCacheKey,
+              `dashboard:${relatedPeriod}:`,
+            )),
+          ...relatedPeriods.map((relatedPeriod) =>
+            deletePerformanceCacheEntriesByPrefix(
+              userCacheKey,
+              `records:${relatedPeriod}:`,
+            )),
+          deletePerformanceCacheEntriesByPrefix(
+            userCacheKey,
+            'correction-logs:',
+          ),
+        ]);
+      } else {
+        await clearPerformanceCache(userCacheKey);
+      }
     } catch (cacheError) {
       setPerformanceCacheWarning(
         `Could not clear the performance browser cache: ${errorMessage(cacheError)}`,
@@ -1475,7 +1616,7 @@ export default function PerformanceAnalysisPage() {
       setCorrectionEditNotice(
         `Nilai Koreksi untuk NIP ${result.nip} tersimpan dan NKP Akhir dihitung ulang.`,
       );
-      await invalidatePerformanceBrowserCache();
+      await invalidatePerformanceBrowserCache(result.period);
       await Promise.all([
         analysisPeriod === result.period
           ? refreshAnalysis(result.period)
@@ -1551,7 +1692,7 @@ export default function PerformanceAnalysisPage() {
       );
       if (result.updated_count === 0) return;
 
-      await invalidatePerformanceBrowserCache();
+      await invalidatePerformanceBrowserCache(result.period);
       await Promise.all([
         refreshAnalysis(result.period),
         refreshRecords(result.period),
@@ -1583,7 +1724,7 @@ export default function PerformanceAnalysisPage() {
       setCorrectionLogNotice(
         `Nilai Koreksi NIP ${result.nip} pada ${result.period} dipulihkan; edit berikutnya untuk pegawai dan periode tersebut dihapus.`,
       );
-      await invalidatePerformanceBrowserCache();
+      await invalidatePerformanceBrowserCache(result.period);
       await Promise.all([
         refreshCorrectionEditLogs(1),
         analysisPeriod === result.period
@@ -1615,6 +1756,15 @@ export default function PerformanceAnalysisPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isDataManagementOpen]);
+
+  useEffect(() => {
+    if (!isPerformanceGuideOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsPerformanceGuideOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPerformanceGuideOpen]);
 
   useEffect(() => {
     if (!comparisonTarget) return;
@@ -1742,7 +1892,7 @@ export default function PerformanceAnalysisPage() {
       setCorrectionSyncError(null);
       setCorrectionSyncNotice(null);
       setSelectedPeriod(result.period);
-      await invalidatePerformanceBrowserCache();
+      await invalidatePerformanceBrowserCache(result.period);
       if (selectedPeriod === result.period) {
         await Promise.all([
           refreshAnalysis(result.period),
@@ -1773,6 +1923,60 @@ export default function PerformanceAnalysisPage() {
     } finally {
       setUnitExportBusy(false);
     }
+  };
+
+  const openWildcardCompare = () => {
+    setWildcardCompareFile(null);
+    setWildcardCompareError(null);
+    setWildcardCompareResult(null);
+    setIsWildcardCompareOpen(true);
+  };
+
+  const runWildcardCompare = async () => {
+    if (!wildcardCompareFile || wildcardCompareBusy) return;
+    setWildcardCompareBusy(true);
+    setWildcardCompareError(null);
+    setWildcardCompareResult(null);
+    try {
+      const result = await apiClient.wildcardComparePerformanceRecords(
+        wildcardCompareFile,
+        recordSearch,
+        recordFilters,
+        recordSort.key,
+        recordSort.direction,
+        analysisPeriod,
+      );
+      setWildcardCompareResult(result);
+    } catch (compareError) {
+      setWildcardCompareError(errorMessage(compareError));
+    } finally {
+      setWildcardCompareBusy(false);
+    }
+  };
+
+  const downloadWildcardCompare = () => {
+    if (!wildcardCompareResult) return;
+    const headers = ['NIP', 'Nama', 'Kolom', 'Nilai Sekarang', 'Nilai CSV'];
+    const escapeCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = wildcardCompareResult.differences.flatMap((row) =>
+      row.differences.map((difference) => [
+        row.nip,
+        row.nama,
+        difference.label,
+        difference.current,
+        difference.uploaded,
+      ].map(escapeCell).join(',')),
+    );
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `wildcard-compare-${wildcardCompareResult.period}.csv`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportRecords = async () => {
@@ -1814,7 +2018,7 @@ export default function PerformanceAnalysisPage() {
     setDatasetDeleteNotice(null);
     try {
       await apiClient.deletePerformanceDatasetPeriod(periodToDelete);
-      await invalidatePerformanceBrowserCache();
+      await invalidatePerformanceBrowserCache(periodToDelete);
       setDatasetDeleteNotice(
         `Dataset periode ${periodToDelete} beserta data pegawai dan log koreksinya berhasil dihapus.`,
       );
@@ -1970,7 +2174,7 @@ export default function PerformanceAnalysisPage() {
       );
       setCorrectionSyncPreview(null);
       setCorrectionConflictResolutions({});
-      await invalidatePerformanceBrowserCache();
+      await invalidatePerformanceBrowserCache(result.period);
       await Promise.all([
         refreshAnalysis(result.period),
         refreshRecords(result.period),
@@ -2024,7 +2228,22 @@ export default function PerformanceAnalysisPage() {
             </div>
 
             <div>
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Analisis Kinerja DJPb</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Analisis Kinerja DJPb</h1>
+                <button
+                  type="button"
+                  onClick={() => setIsPerformanceGuideOpen(true)}
+                  aria-label="Buka Panduan Modul Analisis Kinerja"
+                  title="Panduan Modul Analisis Kinerja"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl border border-sky-500/35 bg-sky-500/10 text-sky-300 transition hover:border-sky-400/60 hover:bg-sky-500/20 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z" />
+                    <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5A2.5 2.5 0 0 1 20 21.5v-16Z" />
+                    <path d="M8 7h1m6 0h1" />
+                  </svg>
+                </button>
+              </div>
               <p className="mt-1 text-sm text-slate-400">
                 Evaluasi distribusi NPK, penyesuaian koreksi triwulanan, dan capaian unit kerja aktif.
               </p>
@@ -2071,92 +2290,98 @@ export default function PerformanceAnalysisPage() {
         </header>
 
         {/* Compact Module Telemetry Bar */}
-        <section
-          className="perf-panel rounded-2xl border border-slate-800 bg-slate-900/65 px-4 py-3"
-          aria-busy={moduleLoadDurationMs === null}
-          aria-label="Proses pemuatan awal Analisis Kinerja"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <span
-                className={`size-2 rounded-full ${
-                  moduleLoadDurationMs === null ? 'animate-pulse bg-sky-400' : 'bg-emerald-400'
-                }`}
-              />
-              <h2 className="text-xs font-semibold text-slate-200">
-                {moduleLoadDurationMs === null
-                  ? 'Memuat modul Analisis Kinerja'
-                  : 'Modul Analisis Kinerja siap'}
-              </h2>
-              <span className="font-mono text-xs text-slate-400">
-                ·{' '}
-                {moduleLoadDurationMs === null
-                  ? `Berjalan ${formatLoadTime(moduleLoadElapsedMs)}`
-                  : `Selesai dalam ${formatLoadTime(moduleLoadDurationMs)}`}
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {MODULE_LOAD_TASK_LABELS.map(({ id, label }) => {
-                const task = moduleLoadTasks[id];
-                const badgeClass =
-                  task.status === 'failed'
-                    ? 'border-rose-500/35 bg-rose-500/10 text-rose-300'
-                    : task.status === 'complete'
-                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                      : 'border-slate-700 bg-slate-800/70 text-slate-400';
-                return (
-                  <span
-                    key={id}
-                    title={task.error ?? undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium ${badgeClass}`}
-                  >
-                    <span>{label}</span>
-                    <span className="font-mono opacity-85">
-                      {task.status === 'loading'
-                        ? '…'
-                        : task.status === 'failed'
-                          ? `Gagal (${formatLoadTime(task.durationMs ?? 0)})`
-                          : formatLoadTime(task.durationMs ?? 0)}
-                    </span>
-                  </span>
-                );
-              })}
-
-              <span className="ml-1 font-mono text-xs font-semibold text-slate-400">
-                {completedModuleLoadTasks}/{MODULE_LOAD_TASK_LABELS.length} · {moduleLoadProgress}%
-              </span>
-            </div>
-          </div>
-
-          <div
-            role="progressbar"
-            aria-label="Kemajuan pemuatan awal"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={moduleLoadProgress}
-            className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-800"
+        {(isModuleLoadInProgress || hasModuleLoadError) && (
+          <section
+            className={`perf-panel rounded-2xl border border-slate-800 bg-slate-900/95 px-4 py-3 shadow-lg backdrop-blur-md ${
+              isModuleLoadInProgress ? 'sticky top-20 z-30' : ''
+            }`}
+            aria-busy={isModuleLoadInProgress}
+            aria-label="Proses pemuatan awal Analisis Kinerja"
+            data-load-state={isModuleLoadInProgress ? 'loading' : 'failed'}
+            role="status"
           >
-            <div
-              className={`h-full rounded-full transition-[width] duration-300 ${
-                moduleLoadDurationMs === null ? 'bg-sky-400' : 'bg-emerald-400'
-              }`}
-              style={{ width: `${moduleLoadProgress}%` }}
-            />
-          </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <span
+                  className={`size-2 rounded-full ${
+                    isModuleLoadInProgress ? 'animate-pulse bg-sky-400' : 'bg-rose-400'
+                  }`}
+                />
+                <h2 className="text-xs font-semibold text-slate-200">
+                  {isModuleLoadInProgress
+                    ? 'Memuat modul Analisis Kinerja'
+                    : 'Sebagian modul Analisis Kinerja gagal dimuat'}
+                </h2>
+                <span className="font-mono text-xs text-slate-400">
+                  ·{' '}
+                  {isModuleLoadInProgress
+                    ? `Berjalan ${formatLoadTime(moduleLoadElapsedMs)}`
+                    : `Selesai dalam ${formatLoadTime(moduleLoadDurationMs ?? 0)}`}
+                </span>
+              </div>
 
-          {Object.values(moduleLoadTasks).some((task) => task.error) && (
-            <div className="mt-2 space-y-1">
-              {MODULE_LOAD_TASK_LABELS.map(({ id, label }) =>
-                moduleLoadTasks[id].error ? (
-                  <p key={id} className="break-words text-xs text-rose-300">
-                    {label}: {moduleLoadTasks[id].error}
-                  </p>
-                ) : null,
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {MODULE_LOAD_TASK_LABELS.map(({ id, label }) => {
+                  const task = moduleLoadTasks[id];
+                  const badgeClass =
+                    task.status === 'failed'
+                      ? 'border-rose-500/35 bg-rose-500/10 text-rose-300'
+                      : task.status === 'complete'
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                        : 'border-slate-700 bg-slate-800/70 text-slate-400';
+                  return (
+                    <span
+                      key={id}
+                      title={task.error ?? undefined}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium ${badgeClass}`}
+                    >
+                      <span>{label}</span>
+                      <span className="font-mono opacity-85">
+                        {task.status === 'loading'
+                          ? '…'
+                          : task.status === 'failed'
+                            ? `Gagal (${formatLoadTime(task.durationMs ?? 0)})`
+                            : formatLoadTime(task.durationMs ?? 0)}
+                      </span>
+                    </span>
+                  );
+                })}
+
+                <span className="ml-1 font-mono text-xs font-semibold text-slate-400">
+                  {completedModuleLoadTasks}/{MODULE_LOAD_TASK_LABELS.length} · {moduleLoadProgress}%
+                </span>
+              </div>
             </div>
-          )}
-        </section>
+
+            <div
+              role="progressbar"
+              aria-label="Kemajuan pemuatan awal"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={moduleLoadProgress}
+              className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-800"
+            >
+              <div
+                className={`h-full rounded-full transition-[width] duration-300 ${
+                  isModuleLoadInProgress ? 'bg-sky-400' : 'bg-rose-400'
+                }`}
+                style={{ width: `${moduleLoadProgress}%` }}
+              />
+            </div>
+
+            {hasModuleLoadError && (
+              <div className="mt-2 space-y-1">
+                {MODULE_LOAD_TASK_LABELS.map(({ id, label }) =>
+                  moduleLoadTasks[id].error ? (
+                    <p key={id} className="break-words text-xs text-rose-300">
+                      {label}: {moduleLoadTasks[id].error}
+                    </p>
+                  ) : null,
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         {error && (
           <div role="alert" className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-4 text-sm text-rose-200">
@@ -2307,7 +2532,7 @@ export default function PerformanceAnalysisPage() {
                           setQuarter(event.target.value);
                           setFullValidation(null);
                         }}
-                        className="input mt-1.5 normal-case"
+                        className="input mt-1.5 w-36 normal-case"
                       >
                         <option value="Q1">Triwulan I</option>
                         <option value="Q2">Triwulan II</option>
@@ -2337,7 +2562,7 @@ export default function PerformanceAnalysisPage() {
                       value={fullEmployeeSource}
                       disabled={fullBusy}
                       onChange={(event) => {
-                        const selectedSource = PERFORMANCE_EMPLOYEE_SOURCES.find(
+                        const selectedSource = performanceEmployeeSources.find(
                           (source) => source.value === event.target.value,
                         )?.value;
                         if (!selectedSource) return;
@@ -2348,7 +2573,7 @@ export default function PerformanceAnalysisPage() {
                       }}
                       className="input mt-1.5 normal-case"
                     >
-                      {PERFORMANCE_EMPLOYEE_SOURCES.map((source) => (
+                      {performanceEmployeeSources.map((source) => (
                         <option key={source.value} value={source.value}>{source.label}</option>
                       ))}
                     </select>
@@ -2997,12 +3222,12 @@ export default function PerformanceAnalysisPage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
-                <label className="block w-40 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Eselon
+                <label className="flex h-9 items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-950/60 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span>Eselon</span>
                   <select
                     value={selectedUnitEselon}
                     onChange={(event) => setSelectedUnitEselon(event.target.value)}
-                    className="input mt-1.5 normal-case"
+                    className="input h-7 w-36 px-2 py-1 text-xs normal-case"
                     aria-label="Filter Eselon untuk analisis unit"
                   >
                     <option value="">Semua Eselon</option>
@@ -3409,6 +3634,19 @@ export default function PerformanceAnalysisPage() {
                       <span>Koreksi Edit Log</span>
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={openWildcardCompare}
+                    disabled={!recordData?.period}
+                    aria-label="Wildcard Compare"
+                    title="Bandingkan daftar pegawai dengan CSV Kinerja acak"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-violet-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4">
+                      <path d="M4 7h10m0 0-3-3m3 3-3 3M20 17H10m0 0 3-3m-3 3 3 3" />
+                    </svg>
+                    <span>Wildcard Compare</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => void exportRecords()}
@@ -4024,6 +4262,217 @@ export default function PerformanceAnalysisPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
+
+      {/* WILDCARD COMPARE PORTAL */}
+      {isWildcardCompareOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !wildcardCompareBusy) {
+              setIsWildcardCompareOpen(false);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wildcard-compare-title"
+            className="perf-modal flex max-h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-slate-800 p-5">
+              <div>
+                <h2 id="wildcard-compare-title" className="text-lg font-bold text-slate-100">
+                  Wildcard Compare
+                </h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  Bandingkan satu kali CSV Kinerja acak dengan NIP yang cocok pada Daftar Pegawai aktif. Hasil hanya menampilkan baris berbeda.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsWildcardCompareOpen(false)}
+                disabled={wildcardCompareBusy}
+                aria-label="Tutup Wildcard Compare"
+                className="flex size-8 items-center justify-center rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-auto p-5">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                <label className="block text-sm font-semibold text-slate-300">
+                  File CSV format Kinerja penuh
+                  <input
+                    ref={wildcardCompareFileInput}
+                    type="file"
+                    accept=".csv,text/csv"
+                    disabled={wildcardCompareBusy}
+                    onChange={(event) => {
+                      setWildcardCompareFile(event.target.files?.[0] ?? null);
+                      setWildcardCompareResult(null);
+                      setWildcardCompareError(null);
+                    }}
+                    className="mt-2 block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-violet-200"
+                  />
+                </label>
+                {wildcardCompareFile && (
+                  <p className="mt-2 font-mono text-xs text-slate-400">
+                    Dipilih: {wildcardCompareFile.name} ({Math.max(1, Math.round(wildcardCompareFile.size / 1024))} KB)
+                  </p>
+                )}
+                {wildcardCompareError && (
+                  <p role="alert" className="mt-3 whitespace-pre-line text-sm text-rose-300">
+                    {wildcardCompareError}
+                  </p>
+                )}
+              </div>
+
+              {wildcardCompareResult && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs text-slate-300">
+                    <span>
+                      {wildcardCompareResult.matched_count.toLocaleString('id-ID')} NIP cocok ·{' '}
+                      <strong className="text-amber-300">
+                        {wildcardCompareResult.difference_count.toLocaleString('id-ID')} baris berbeda
+                      </strong>
+                    </span>
+                    {wildcardCompareResult.difference_count > 0 && (
+                      <button
+                        type="button"
+                        onClick={downloadWildcardCompare}
+                        className="rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 font-semibold text-emerald-200 hover:bg-emerald-500/20"
+                      >
+                        Unduh perbedaan CSV
+                      </button>
+                    )}
+                  </div>
+
+                  {wildcardCompareResult.differences.length > 0 ? (
+                    <div className="overflow-auto rounded-xl border border-slate-700">
+                      <table className="w-full min-w-[850px] text-left text-xs">
+                        <thead className="perf-table-head sticky top-0 bg-slate-800 text-[11px] uppercase tracking-wider text-slate-300">
+                          <tr>
+                            <th className="px-3 py-3 font-semibold">NIP</th>
+                            <th className="px-3 py-3 font-semibold">Nama</th>
+                            <th className="px-3 py-3 font-semibold">Kolom Berbeda</th>
+                            <th className="px-3 py-3 font-semibold">Nilai Sekarang</th>
+                            <th className="px-3 py-3 font-semibold">Nilai CSV</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {wildcardCompareResult.differences.flatMap((row) =>
+                            row.differences.map((difference) => (
+                              <tr key={`${row.nip}-${difference.field}`} className="text-slate-300">
+                                <td className="whitespace-nowrap px-3 py-3 font-mono">{row.nip}</td>
+                                <td className="max-w-56 px-3 py-3 font-medium text-slate-100">
+                                  {row.nama || '—'}
+                                </td>
+                                <td className="whitespace-nowrap px-3 py-3 text-amber-200">
+                                  {difference.label}
+                                </td>
+                                <td className="whitespace-nowrap px-3 py-3 font-mono">{difference.current || '—'}</td>
+                                <td className="whitespace-nowrap px-3 py-3 font-mono text-violet-200">{difference.uploaded || '—'}</td>
+                              </tr>
+                            )),
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+                      Tidak ada perbedaan pada NIP yang cocok.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <footer className="flex justify-end gap-3 border-t border-slate-800 p-5">
+              <button
+                type="button"
+                onClick={() => setIsWildcardCompareOpen(false)}
+                disabled={wildcardCompareBusy}
+                className="btn-secondary px-4 py-2 disabled:opacity-50"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => void runWildcardCompare()}
+                disabled={!wildcardCompareFile || wildcardCompareBusy}
+                className="btn-primary px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {wildcardCompareBusy ? 'Membandingkan…' : 'Bandingkan Sekarang'}
+              </button>
+            </footer>
+          </section>
+        </div>,
+        document.body,
+      )}
+
+      {/* PERFORMANCE GUIDE PORTAL */}
+      {isPerformanceGuideOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-xs sm:p-5"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) {
+              setIsPerformanceGuideOpen(false);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="performance-guide-title"
+            className="perf-modal flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
+          >
+            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 px-4 py-3.5 sm:px-5">
+              <div>
+                <h2 id="performance-guide-title" className="text-lg font-bold text-slate-100">
+                  Panduan Modul Analisis Kinerja
+                </h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  Panduan penggunaan operasional, aturan data, dan semua tombol pada modul.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={PERFORMANCE_GUIDE_PDF_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/20"
+                >
+                  Buka tab baru
+                </a>
+                <a
+                  href={PERFORMANCE_GUIDE_PDF_URL}
+                  download="Panduan_Modul_Analisis_Kinerja_DJPb_v2.pdf"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
+                >
+                  Unduh PDF
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsPerformanceGuideOpen(false)}
+                  aria-label="Tutup panduan Modul Analisis Kinerja"
+                  className="flex size-8 items-center justify-center rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                >
+                  ×
+                </button>
+              </div>
+            </header>
+            <div className="min-h-0 flex-1 bg-slate-950 p-2 sm:p-3">
+              <iframe
+                title="Panduan Modul Analisis Kinerja DJPb"
+                src={`${PERFORMANCE_GUIDE_PDF_URL}#toolbar=1&navpanes=1&view=FitH`}
+                className="h-full w-full rounded-xl border border-slate-800 bg-white"
+              />
             </div>
           </section>
         </div>,

@@ -5,12 +5,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-PerformanceEmployeeSource = Literal["fetch_pbnopen", "dt_employee_q2_2026"]
+PerformanceEmployeeSource = str
 
 
 class PerformanceDatasetStatus(BaseModel):
     period: str
     row_count: int
+    revision: int = 1
     uploaded_at: datetime
     uploaded_by_user: str
     uploaded_by_name: str
